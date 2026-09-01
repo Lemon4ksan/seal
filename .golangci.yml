@@ -1,0 +1,90 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+    - golines
+
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/lemon4ksan/seal)
+
+    gofumpt:
+      module-path: github.com/lemon4ksan/seal
+      extra:
+        group-params: true
+
+    goimports:
+      local-prefixes:
+        - github.com/lemon4ksan/seal
+
+    golines:
+      max-len: 120
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - nilerr
+    - errorlint
+    - gocritic
+    - prealloc
+    - perfsprint
+    - gosec
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+      - std-error-handling
+    rules:
+      - linters: [gosec]
+        text: "G103:"
+
+      - linters: [gosec]
+        text: "G404:"
+
+      - linters: [gosec]
+        text: "G115:"
+
+      - linters: [gosec]
+        text: "G306:|G301:|G304:|G302:"
+
+      - linters: [gosec]
+        text: "G401:|G501:|G505:"
+
+      - linters: [revive]
+        path: "_test\\.go"
+        text: "exported: (exported|comment on exported)"
+
+      - linters: [gosec, errcheck, prealloc]
+        path: "_test\\.go"
+
+      - linters: [gosec]
+        text: "G703:|G706:"
+        path: "(cmd|examples)/.*"
+
+    paths:
+      - "examples/.*"
+      - "tests/.*"
+      - "codec/(flate|fse|huff0|zstd|gzip|brotli)/.*"

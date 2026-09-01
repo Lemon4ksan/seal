@@ -1,0 +1,517 @@
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package zip
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"hash/crc32"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/lemon4ksan/foundation/binkit"
+	"github.com/lemon4ksan/foundation/silicon/endian"
+
+	"github.com/lemon4ksan/seal/codec"
+	"github.com/lemon4ksan/seal/file"
+	"github.com/lemon4ksan/seal/internal/sys"
+	"github.com/lemon4ksan/seal/vfs"
+)
+
+// OpenFromArchive returns an [io.ReadCloser] providing decompressed file data.
+func OpenFromArchive(f *file.File, rAt io.ReaderAt, size int64, reg *codec.Registry) (io.ReadCloser, error) {
+	if f.IsDir() {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+
+	offset := f.LocalHeaderOffset()
+	sr := io.NewSectionReader(rAt, offset, size-offset)
+	var sig [4]byte
+	if _, err := io.ReadFull(sr, sig[:]); err != nil {
+		return nil, fmt.Errorf("read local signature: %w", err)
+	}
+	if endian.Load32(sig[:], 0) != LocalFileHeaderSignature {
+		return nil, errors.New("zip: invalid local file header signature")
+	}
+
+	lfh, err := ReadLocalFileHeader(sr)
+	if err != nil {
+		return nil, fmt.Errorf("read local header: %w", err)
+	}
+
+	payloadOffset := offset + 30 + int64(lfh.FilenameLength) + int64(lfh.ExtraFieldLength)
+	payloadReader := io.NewSectionReader(rAt, payloadOffset, f.CompressedSize())
+
+	var inReader io.Reader = payloadReader
+	if f.Encryption() == file.AES256 {
+		pwd := f.Password()
+		if pwd == "" {
+			return nil, ErrPasswordMismatch
+		}
+		aesR, err := NewAES256Reader(payloadReader, pwd, f.CompressedSize())
+		if err != nil {
+			return nil, err
+		}
+		inReader = aesR
+	}
+
+	if f.Method() == codec.Store {
+		return io.NopCloser(inReader), nil
+	}
+
+	reader, err := codec.NewReader("deflate", inReader)
+	if err != nil {
+		return nil, err
+	}
+
+	return &crcVerifyingReader{
+		r:        reader,
+		expected: f.CRC(),
+		size:     f.UncompressedSize(),
+	}, nil
+}
+
+// Reader provides random-access read and inspection over a ZIP archive.
+type Reader struct {
+	rAt      io.ReaderAt
+	size     int64
+	entries  []*file.File
+	byName   map[string]*file.File
+	comment  string
+	password string
+	registry *codec.Registry
+}
+
+// NewReader initializes a random-access ZIP archive reader.
+func NewReader(rAt io.ReaderAt, size int64, password string, reg *codec.Registry) (*Reader, error) {
+	if reg == nil {
+		reg = codec.DefaultRegistry
+	}
+
+	zr := &Reader{
+		rAt:      rAt,
+		size:     size,
+		byName:   make(map[string]*file.File),
+		password: password,
+		registry: reg,
+	}
+
+	if err := zr.init(); err != nil {
+		return nil, err
+	}
+	return zr, nil
+}
+
+func (zr *Reader) init() error {
+	end, endOffset, err := findEOCD(zr.rAt, zr.size)
+	if err != nil {
+		return err
+	}
+	zr.comment = end.Comment
+
+	entriesCount := uint64(end.EntriesNum)
+	cdSize := int64(end.CentralDirSize)
+	cdOffset := int64(end.CentralDirOffset)
+
+	// Check for Zip64 EOCD Locator preceding standard EOCD
+	if endOffset >= 20 {
+		var locBuf [20]byte
+		if _, err := zr.rAt.ReadAt(locBuf[:], endOffset-20); err == nil {
+			if endian.Load32(locBuf[:], 0) == Zip64EOCDLocatorSignature {
+				z64Offset := int64(endian.Load64(locBuf[:], 8))
+				z64Rec := io.NewSectionReader(zr.rAt, z64Offset, 56)
+				if z64EOCD, err := ReadZip64EOCD(z64Rec); err == nil {
+					entriesCount = z64EOCD.EntriesNum
+					cdSize = int64(z64EOCD.CentralDirSize)
+					cdOffset = int64(z64EOCD.CentralDirOffset)
+				}
+			}
+		}
+	}
+
+	if cdOffset < 0 || cdOffset+cdSize > zr.size {
+		return errors.New("zip: invalid central directory offset")
+	}
+
+	cdReader := io.NewSectionReader(zr.rAt, cdOffset, cdSize)
+	zr.entries = make([]*file.File, 0, entriesCount)
+
+	for i := uint64(0); i < entriesCount; i++ {
+		var sig [4]byte
+		if _, err := io.ReadFull(cdReader, sig[:]); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("read CD signature: %w", err)
+		}
+		if endian.Load32(sig[:], 0) != CentralDirectorySignature {
+			return errors.New("zip: corrupted central directory entry signature")
+		}
+
+		cd, err := ReadCentralDirEntry(cdReader)
+		if err != nil {
+			return err
+		}
+
+		entry := zr.createEntry(cd)
+		zr.entries = append(zr.entries, entry)
+		zr.byName[entry.Name()] = entry
+	}
+
+	return nil
+}
+
+// Entries returns a copy of all entries in the archive.
+func (zr *Reader) Entries() []*file.File {
+	res := make([]*file.File, len(zr.entries))
+	copy(res, zr.entries)
+	return res
+}
+
+// Entry returns a named entry if present.
+func (zr *Reader) Entry(name string) (*file.File, bool) {
+	e, ok := zr.byName[name]
+	return e, ok
+}
+
+// Comment returns the archive comment.
+func (zr *Reader) Comment() string {
+	return zr.comment
+}
+
+// ExtractEntry opens and returns the decompressed data payload for a single entry.
+func (zr *Reader) ExtractEntry(entry *file.File) (io.ReadCloser, error) {
+	return OpenFromArchive(entry, zr.rAt, zr.size, zr.registry)
+}
+
+func (zr *Reader) createEntry(cd CentralDirectory) *file.File {
+	cleanName := vfs.CleanPath(cd.Filename)
+	mode := ParseFileMode(cd)
+	modTime := dosDateTimeToTime(cd.LastModFileDate, cd.LastModFileTime)
+	method := codec.Method(cd.CompressionMethod)
+	hostSystem := sys.HostSystem(cd.VersionMadeBy >> 8)
+	isDir := mode.IsDir() || strings.HasSuffix(cleanName, "/")
+
+	enc := file.NotEncrypted
+	if cd.GeneralPurposeBitFlag&0x0001 != 0 {
+		enc = file.ZipCrypto
+	}
+
+	uncompSize := int64(cd.UncompressedSize)
+	compSize := int64(cd.CompressedSize)
+	localOffset := int64(cd.LocalHeaderOffset)
+
+	extraMap := ParseExtraFields(cd.ExtraField)
+	var metadata sys.Metadata
+
+	// Parse Zip64 Extra Field (0x0001)
+	if z64Data, ok := extraMap[Zip64ExtraFieldTag]; ok {
+		r := binkit.NewReader(z64Data)
+		r.Skip(4) // Skip tag and size
+		if cd.UncompressedSize == uint32(MaxUint32) && r.Remaining() >= 8 {
+			uncompSize = int64(r.U64LE())
+		}
+		if cd.CompressedSize == uint32(MaxUint32) && r.Remaining() >= 8 {
+			compSize = int64(r.U64LE())
+		}
+		if cd.LocalHeaderOffset == uint32(MaxUint32) && r.Remaining() >= 8 {
+			localOffset = int64(r.U64LE())
+		}
+	}
+
+	// Parse NTFS Extra Field (0x000A)
+	if ntfsData, ok := extraMap[NTFSFieldTag]; ok {
+		metadata = ParseNTFSExtraField(ntfsData)
+		if metadata.LastWriteTime != 0 {
+			modTime = winFiletimeToTime(metadata.LastWriteTime)
+		}
+	}
+
+	// Parse WinZip AES Extra Field (0x9901)
+	if aesData, ok := extraMap[AESEncryptionTag]; ok && len(aesData) >= 11 {
+		enc = file.AES256
+		r := binkit.NewReader(aesData)
+		r.Skip(9)
+		method = codec.Method(r.U16LE())
+	}
+
+	entry := file.NewArchiveFile(
+		cleanName,
+		cd.Comment,
+		uncompSize,
+		compSize,
+		localOffset,
+		cd.CRC32,
+		cd.GeneralPurposeBitFlag,
+		method,
+		enc,
+		zr.password,
+		mode,
+		modTime,
+		hostSystem,
+		extraMap,
+		cd.ExtraField,
+		metadata,
+		isDir,
+	)
+
+	entry.SetOpenFunc(func() (io.ReadCloser, error) {
+		return OpenFromArchive(entry, zr.rAt, zr.size, zr.registry)
+	})
+	entry.SetRawFunc(func() (*io.SectionReader, error) {
+		dataOffset, err := zr.findDataOffset(entry.LocalHeaderOffset())
+		if err != nil {
+			return nil, err
+		}
+		return io.NewSectionReader(zr.rAt, dataOffset, entry.CompressedSize()), nil
+	})
+
+	return entry
+}
+
+func (zr *Reader) findDataOffset(localOffset int64) (int64, error) {
+	var sig [4]byte
+	if _, err := zr.rAt.ReadAt(sig[:], localOffset); err != nil {
+		return 0, fmt.Errorf("read local header signature: %w", err)
+	}
+	if endian.Load32(sig[:], 0) != LocalFileHeaderSignature {
+		return 0, errors.New("zip: corrupted local file header signature")
+	}
+
+	sr := io.NewSectionReader(zr.rAt, localOffset+4, zr.size-(localOffset+4))
+	lfh, err := ReadLocalFileHeader(sr)
+	if err != nil {
+		return 0, err
+	}
+
+	dataOffset := localOffset + 30 + int64(lfh.FilenameLength) + int64(lfh.ExtraFieldLength)
+	return dataOffset, nil
+}
+
+// StreamReader enables sequential streaming parsing of ZIP streams without seek capability.
+type StreamReader struct {
+	reader   io.Reader
+	registry *codec.Registry
+	password string
+	current  *file.File
+}
+
+// NewStreamReader constructs a sequential streaming ZIP parser.
+func NewStreamReader(r io.Reader, password string, reg *codec.Registry) *StreamReader {
+	if reg == nil {
+		reg = codec.DefaultRegistry
+	}
+	return &StreamReader{
+		reader:   r,
+		registry: reg,
+		password: password,
+	}
+}
+
+// Next advances to the next entry in the streaming archive.
+func (sr *StreamReader) Next() (*file.File, io.Reader, error) {
+	var sig [4]byte
+	if _, err := io.ReadFull(sr.reader, sig[:]); err != nil {
+		return nil, nil, err
+	}
+
+	s := endian.Load32(sig[:], 0)
+	if s != LocalFileHeaderSignature {
+		if s == CentralDirectorySignature || s == EOCDSignature {
+			return nil, nil, io.EOF // Reached central directory
+		}
+		return nil, nil, fmt.Errorf("zip stream: invalid local header signature 0x%08x", s)
+	}
+
+	lfh, err := ReadLocalFileHeader(sr.reader)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	method := codec.Method(lfh.CompressionMethod)
+	enc := file.NotEncrypted
+	if lfh.GeneralPurposeBitFlag&0x0001 != 0 {
+		enc = file.ZipCrypto
+	}
+
+	extraMap := ParseExtraFields(lfh.ExtraField)
+	var metadata sys.Metadata
+
+	if ntfsData, ok := extraMap[NTFSFieldTag]; ok {
+		metadata = ParseNTFSExtraField(ntfsData)
+	}
+	if aesData, ok := extraMap[AESEncryptionTag]; ok && len(aesData) >= 11 {
+		enc = file.AES256
+		r := binkit.NewReader(aesData)
+		r.Skip(9)
+		method = codec.Method(r.U16LE())
+	}
+
+	uncompSize := int64(lfh.UncompressedSize)
+	compSize := int64(lfh.CompressedSize)
+	if z64Data, ok := extraMap[Zip64ExtraFieldTag]; ok && len(z64Data) >= 20 {
+		r := binkit.NewReader(z64Data)
+		r.Skip(4)
+		uncompSize = int64(r.U64LE())
+		compSize = int64(r.U64LE())
+	}
+
+	modTime := dosDateTimeToTime(lfh.LastModFileDate, lfh.LastModFileTime)
+	cleanName := vfs.CleanPath(lfh.Filename)
+	isDir := strings.HasSuffix(cleanName, "/")
+
+	entry := file.NewArchiveFile(
+		cleanName,
+		"",
+		uncompSize,
+		compSize,
+		0,
+		lfh.CRC32,
+		lfh.GeneralPurposeBitFlag,
+		method,
+		enc,
+		sr.password,
+		0o644,
+		modTime,
+		sys.DefaultHostSystem,
+		extraMap,
+		lfh.ExtraField,
+		metadata,
+		isDir,
+	)
+
+	var limitedReader io.Reader
+	switch {
+	case compSize > 0:
+		limitedReader = io.LimitReader(sr.reader, compSize)
+	case lfh.GeneralPurposeBitFlag&0x0008 != 0:
+		// Data descriptor follows compressed payload
+		limitedReader = sr.reader
+	default:
+		limitedReader = io.LimitReader(sr.reader, 0)
+	}
+
+	var payloadReader io.Reader
+	if entry.Encryption() == file.AES256 {
+		pwd := entry.Password()
+		if pwd == "" {
+			return nil, nil, ErrPasswordMismatch
+		}
+		aesR, err := NewAES256Reader(limitedReader, pwd, compSize)
+		if err != nil {
+			return nil, nil, err
+		}
+		limitedReader = aesR
+	}
+
+	if entry.Method() == codec.Store {
+		payloadReader = limitedReader
+	} else {
+		cr, err := codec.NewReader("deflate", limitedReader)
+		if err != nil {
+			return nil, nil, err
+		}
+		payloadReader = cr
+	}
+
+	sr.current = entry
+	return entry, payloadReader, nil
+}
+
+func findEOCD(rAt io.ReaderAt, size int64) (EOCD, int64, error) {
+	if size < 22 {
+		return EOCD{}, 0, errors.New("zip: file size too small for ZIP archive")
+	}
+
+	bufSize := min(size, 65536+22)
+	buf := make([]byte, bufSize)
+	readOffset := size - bufSize
+
+	if _, err := rAt.ReadAt(buf, readOffset); err != nil {
+		return EOCD{}, 0, fmt.Errorf("read end of central directory search buffer: %w", err)
+	}
+
+	for i := len(buf) - 22; i >= 0; i-- {
+		if endian.Load32(buf[i:], 0) == EOCDSignature {
+			eocdOffset := readOffset + int64(i)
+			sr := io.NewSectionReader(rAt, eocdOffset+4, size-(eocdOffset+4))
+			eocd, err := ReadEOCD(sr)
+			if err != nil {
+				return EOCD{}, 0, err
+			}
+			return eocd, eocdOffset, nil
+		}
+	}
+
+	return EOCD{}, 0, errors.New("zip: End of Central Directory signature not found")
+}
+
+func dosDateTimeToTime(date, timeVal uint16) time.Time {
+	year := int((date>>9)&0x7F) + 1980
+	month := time.Month((date >> 5) & 0x0F)
+	day := int(date & 0x1F)
+
+	hour := int((timeVal >> 11) & 0x1F)
+	min := int((timeVal >> 5) & 0x3F)
+	sec := int((timeVal & 0x1F) * 2)
+
+	if month < 1 || month > 12 || day < 1 || day > 31 {
+		return time.Unix(0, 0).UTC()
+	}
+
+	return time.Date(year, month, day, hour, min, sec, 0, time.UTC)
+}
+
+func timeToMsDos(t time.Time) (date, timeVal uint16) {
+	t = t.UTC()
+	year := t.Year()
+	if year < 1980 {
+		year = 1980
+	}
+	date = uint16((year-1980)<<9 | int(t.Month())<<5 | t.Day())
+	timeVal = uint16(t.Hour()<<11 | t.Minute()<<5 | t.Second()/2)
+	return date, timeVal
+}
+
+func winFiletimeToTime(ft uint64) time.Time {
+	// FILETIME is 100-nanosecond intervals since January 1, 1601 UTC
+	const epochDiff = 116444736000000000
+	if ft < epochDiff {
+		return time.Unix(0, 0).UTC()
+	}
+	nsec := int64((ft - epochDiff) * 100)
+	return time.Unix(0, nsec).UTC()
+}
+
+type crcVerifyingReader struct {
+	r        io.ReadCloser
+	expected uint32
+	size     int64
+	read     int64
+	crc      uint32
+}
+
+func (c *crcVerifyingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	if n > 0 {
+		c.read += int64(n)
+		c.crc = crc32.Update(c.crc, crc32.IEEETable, p[:n])
+	}
+	if err == io.EOF {
+		if c.read != c.size {
+			return n, fmt.Errorf("zip: uncompressed size mismatch: got %d, want %d", c.read, c.size)
+		}
+		if c.crc != c.expected && c.expected != 0 {
+			return n, fmt.Errorf("zip: CRC-32 checksum mismatch: got 0x%08x, want 0x%08x", c.crc, c.expected)
+		}
+	}
+	return n, err
+}
+
+func (c *crcVerifyingReader) Close() error {
+	return c.r.Close()
+}
