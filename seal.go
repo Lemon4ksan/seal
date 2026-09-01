@@ -9,6 +9,7 @@ import (
 
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/container/sevenzip"
 	"github.com/lemon4ksan/seal/container/tar"
 	"github.com/lemon4ksan/seal/container/targz"
 	"github.com/lemon4ksan/seal/container/zip"
@@ -28,6 +29,8 @@ func DefaultEngine(t ContainerType) (Container, error) {
 		return tar.New(), nil
 	case container.TarGz:
 		return targz.New(), nil
+	case container.SevenZip:
+		return sevenzip.New(), nil
 	default:
 		return nil, fmt.Errorf("seal: unsupported container type %q", t)
 	}
@@ -66,6 +69,16 @@ func NewTar(opts ...Option) *Archive {
 // NewTarGz constructs a new [Archive] configured specifically for the TAR.GZ container.
 func NewTarGz(opts ...Option) *Archive {
 	return NewArchive(append([]Option{archive.WithEngine(targz.New())}, opts...)...)
+}
+
+// NewSevenZip constructs a new [Archive] configured specifically for the 7-Zip container.
+func NewSevenZip(opts ...Option) *Archive {
+	return NewArchive(append([]Option{archive.WithEngine(sevenzip.New())}, opts...)...)
+}
+
+// New7z is an alias for [NewSevenZip].
+func New7z(opts ...Option) *Archive {
+	return NewSevenZip(opts...)
 }
 
 // NewFile constructs a standalone [File] entry.

@@ -81,7 +81,7 @@ func TestZip_Roundtrip_AES256(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	// 1. Decrypt with correct password
+	// Verify authentication and decryption succeeds when matching passphrase is provided
 	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "SecretPassword123", codec.DefaultRegistry)
 	if err != nil {
 		t.Fatalf("NewReader: %v", err)
@@ -109,7 +109,7 @@ func TestZip_Roundtrip_AES256(t *testing.T) {
 		t.Fatalf("decrypted mismatch: got %q, want %q", string(decrypted), string(content))
 	}
 
-	// 2. Decrypt with wrong password
+	// Verify authentication failure when incorrect passphrase is provided
 	rBad, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "WrongPassword", codec.DefaultRegistry)
 	if err != nil {
 		t.Fatalf("NewReader bad: %v", err)

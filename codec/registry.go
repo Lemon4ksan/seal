@@ -38,6 +38,9 @@ func NewRegistry() *Registry {
 
 	r.RegisterDecompressor(BZIP2, NewBzip2Decompressor)
 
+	r.RegisterCompressor(LZMA, NewLZMACompressor)
+	r.RegisterDecompressor(LZMA, NewLZMADecompressor)
+
 	return r
 }
 

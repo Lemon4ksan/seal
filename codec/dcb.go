@@ -39,18 +39,18 @@ func UnbrotliDCB(src, dst, dictBytes []byte) ([]byte, error) {
 		return nil, ErrInvalidDCBHeader
 	}
 
-	// 1. Verify 4-byte DCB magic: 0xff, 0x44, 0x43, 0x42 (RFC 9842 §4)
+	// Validate RFC 9842 Section 4 magic signature (\xFFDCB)
 	if !bytes.Equal(src[:4], MagicDCB[:]) {
 		return nil, ErrInvalidDCBHeader
 	}
 
-	// 2. Verify 32-byte SHA-256 hash
+	// Validate expected dictionary hash using constant-time comparison
 	expectedHash := sha256.Sum256(dictBytes)
 	if subtle.ConstantTimeCompare(src[4:36], expectedHash[:]) != 1 {
 		return nil, fmt.Errorf("%w: expected %x, got %x", ErrDictionaryMismatch, expectedHash, src[4:36])
 	}
 
-	// 3. Decompress Brotli payload starting at offset 36
+	// Decompress trailing Brotli stream against shared dictionary context
 	return Unbrotli(src[36:], dst)
 }
 

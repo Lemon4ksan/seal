@@ -35,12 +35,12 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 1. Pack directory
+	// Create initial archive
 	if err := seal.ArchiveDir(srcDir, seal.ToFilePath(destZip)); err != nil {
 		t.Fatalf("ArchiveDir failed: %v", err)
 	}
 
-	// 2. Count & Exists
+	// Verify catalog metadata
 	count, err := seal.FileCount(seal.FromFilePath(destZip))
 	if err != nil {
 		t.Fatalf("FileCount failed: %v", err)
@@ -54,7 +54,7 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 		t.Fatalf("ExistsIn hello.txt failed: exists=%v, err=%v", exists, err)
 	}
 
-	// 3. Read single file directly
+	// Stream payload without unpacking container
 	data, err := seal.ReadFile(seal.FromFilePath(destZip), "hello.txt")
 	if err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
@@ -63,7 +63,7 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 		t.Errorf("ReadFile content mismatch: got %q", string(data))
 	}
 
-	// 4. Extract single file
+	// Extract individual file entry
 	extractedSingle := filepath.Join(tempDir, "single_hello.txt")
 	if err := seal.ExtractFile(seal.FromFilePath(destZip), "hello.txt", extractedSingle); err != nil {
 		t.Fatalf("ExtractFile failed: %v", err)
@@ -73,7 +73,7 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 		t.Fatalf("single file content mismatch: got %q", string(singleData))
 	}
 
-	// 5. Unarchive all
+	// Extract complete filesystem tree
 	if err := seal.Unarchive(seal.FromFilePath(destZip), outDir); err != nil {
 		t.Fatalf("Unarchive failed: %v", err)
 	}
@@ -86,12 +86,12 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 		t.Errorf("extracted content mismatch: got %q", string(extractedDoc))
 	}
 
-	// 6. Verify integrity
+	// Validate container checksums and structural integrity
 	if err := seal.Verify(seal.FromFilePath(destZip)); err != nil {
 		t.Fatalf("Verify failed: %v", err)
 	}
 
-	// 7. Tree rendering
+	// Generate ASCII directory visualization
 	tree, err := seal.Tree(seal.FromFilePath(destZip))
 	if err != nil || tree == "" {
 		t.Fatalf("Tree failed: %v", err)
@@ -171,5 +171,55 @@ func TestArchiver_ArchiveDirAndUnarchive_TarGz(t *testing.T) {
 	outData, err := os.ReadFile(filepath.Join(outDir, "config.yaml"))
 	if err != nil || string(outData) != "env: production\nport: 8080" {
 		t.Fatalf("Unarchived tar.gz content mismatch: got %q", string(outData))
+	}
+}
+
+func TestArchiver_ArchiveDirAndUnarchive_SevenZip(t *testing.T) {
+	tempDir := t.TempDir()
+	srcDir := filepath.Join(tempDir, "src_7z")
+	dest7z := filepath.Join(tempDir, "bundle.7z")
+	outDir := filepath.Join(tempDir, "extracted_7z")
+
+	if err := os.MkdirAll(filepath.Join(srcDir, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "hello.txt"), []byte("Hello 7-Zip Universal!"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(srcDir, "nested", "binary.dat"),
+		[]byte("7z Substream payload"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	archiver := seal.NewArchiver(option.WithContainer(container.SevenZip))
+	if err := archiver.ArchiveDir(srcDir, seal.ToFilePath(dest7z)); err != nil {
+		t.Fatalf("ArchiveDir (7z) failed: %v", err)
+	}
+
+	// Verify direct file payload extraction using container format auto-detection
+	data, err := seal.ReadFile(seal.FromFilePath(dest7z), "hello.txt")
+	if err != nil {
+		t.Fatalf("ReadFile (7z) failed: %v", err)
+	}
+	if string(data) != "Hello 7-Zip Universal!" {
+		t.Errorf("7z content mismatch: got %q", string(data))
+	}
+
+	// Verify recursive extraction of entire 7z directory hierarchy
+	if err := seal.Unarchive(seal.FromFilePath(dest7z), outDir); err != nil {
+		t.Fatalf("Unarchive (7z) failed: %v", err)
+	}
+
+	outHello, err := os.ReadFile(filepath.Join(outDir, "hello.txt"))
+	if err != nil || string(outHello) != "Hello 7-Zip Universal!" {
+		t.Fatalf("Unarchived 7z hello.txt mismatch: got %q", string(outHello))
+	}
+
+	outBinary, err := os.ReadFile(filepath.Join(outDir, "nested", "binary.dat"))
+	if err != nil || string(outBinary) != "7z Substream payload" {
+		t.Fatalf("Unarchived 7z nested binary mismatch: got %q", string(outBinary))
 	}
 }

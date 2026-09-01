@@ -9,14 +9,14 @@ import (
 	"hash/crc32"
 	"testing"
 
-	"github.com/lemon4ksan/seal/codec/gzip"
 	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/seal/codec/gzip"
 )
 
 func TestCRC32_DifferentialAgainstStdlib(t *testing.T) {
 	t.Parallel()
 
-	// 1. Boundary sizes from 0 to 512 bytes
+	// Validate small buffer edge cases and byte-aligned boundary conditions
 	for size := 0; size <= 512; size++ {
 		data := make([]byte, size)
 		_, _ = rand.Read(data)
@@ -27,7 +27,7 @@ func TestCRC32_DifferentialAgainstStdlib(t *testing.T) {
 		assert.Equal(t, expected, actual)
 	}
 
-	// 2. Large chunks (64KB, 1MB, 4MB) with unaligned offsets
+	// Validate large chunk throughput and non-power-of-two unaligned buffer slices
 	largeSizes := []int{64 * 1024, 1024*1024 + 3, 4*1024*1024 + 7}
 	for _, size := range largeSizes {
 		data := make([]byte, size)
@@ -39,7 +39,7 @@ func TestCRC32_DifferentialAgainstStdlib(t *testing.T) {
 		assert.Equal(t, expected, actual)
 	}
 
-	// 3. Multi-part streaming updates: crc(A + B + C) == crc(crc(crc(0, A), B), C)
+	// Verify rolling state commutativity: crc(A + B + C) == crc(crc(crc(0, A), B), C)
 	partA := []byte("The quick brown fox ")
 	partB := []byte("jumps over ")
 	partC := []byte("the lazy dog.")
@@ -54,7 +54,7 @@ func TestCRC32_DifferentialAgainstStdlib(t *testing.T) {
 
 	assert.Equal(t, expected, running)
 
-	// 4. Fuzzing with random subslice windows
+	// Fuzz test sliding windows and arbitrary subslice offsets
 	buf := make([]byte, 4096)
 	_, _ = rand.Read(buf)
 

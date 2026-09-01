@@ -94,6 +94,11 @@ func WithCompression(method codec.Method, level int) Option {
 	return Option{Kind: OptCompression, Method: method, Level: level}
 }
 
+// WithCompressionLevel sets the compression effort level (1 = Fastest, 5 = Normal, 9 = Ultra).
+func WithCompressionLevel(level int) Option {
+	return Option{Kind: OptCompression, Level: level}
+}
+
 // WithPassword sets the encryption password.
 func WithPassword(pwd string) Option {
 	return Option{Kind: OptPassword, Text: pwd}

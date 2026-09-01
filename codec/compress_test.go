@@ -514,6 +514,48 @@ func BenchmarkDeflate(b *testing.B) {
 	}
 }
 
+func TestZstdRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte("Testing RFC 8878 Zstandard compression and decompression in Seal.")
+	compressed, err := codec.CompressZstd(payload, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, compressed)
+
+	decompressed, err := codec.Unzstd(compressed, nil)
+	require.NoError(t, err)
+	assert.Equal(t, payload, decompressed)
+}
+
+func TestLZMA2RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte(strings.Repeat("Seal LZMA2 ultra high performance zero allocation codec testing. ", 50))
+	compressed, err := codec.Compress("lzma2", payload, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, compressed)
+
+	decompressed, err := codec.Decompress("lzma2", compressed, nil)
+	require.NoError(t, err)
+	assert.Equal(t, payload, decompressed)
+}
+
+func TestLZMA2Scoped(t *testing.T) {
+	t.Parallel()
+
+	scope := borrow.NewScope()
+	defer scope.Release()
+
+	payload := []byte(strings.Repeat("Seal Scoped LZMA2 zero allocation borrow testing. ", 50))
+	compBytes, err := codec.LZMA2Scoped(scope, payload)
+	require.NoError(t, err)
+	require.NotEmpty(t, compBytes.AsSlice())
+
+	decompBytes, err := codec.Unlzma2Scoped(scope, compBytes.AsSlice())
+	require.NoError(t, err)
+	assert.Equal(t, payload, decompBytes.AsSlice())
+}
+
 func BenchmarkBrotli(b *testing.B) {
 	payload := []byte(strings.Repeat("Zero allocation brotli compression benchmark in aoni. ", 50))
 	dst := make([]byte, 0, len(payload))

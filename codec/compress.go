@@ -20,6 +20,7 @@ import (
 	"github.com/lemon4ksan/seal/codec/brotli"
 	"github.com/lemon4ksan/seal/codec/flate"
 	"github.com/lemon4ksan/seal/codec/gzip"
+	"github.com/lemon4ksan/seal/codec/lzma"
 	"github.com/lemon4ksan/seal/codec/zstd"
 )
 
@@ -101,6 +102,8 @@ func Decompress(encoding string, src, dst []byte) ([]byte, error) {
 		return Unzstd(src, dst)
 	case "deflate":
 		return Inflate(src, dst)
+	case "lzma2", "7z":
+		return Unlzma2(src, dst)
 	case "identity", "":
 		if cap(dst) < len(src) {
 			dst = make([]byte, len(src))
@@ -121,6 +124,8 @@ func Decompress(encoding string, src, dst []byte) ([]byte, error) {
 		return Unzstd(src, dst)
 	case "deflate":
 		return Inflate(src, dst)
+	case "lzma2", "7z":
+		return Unlzma2(src, dst)
 	case "identity", "":
 		if cap(dst) < len(src) {
 			dst = make([]byte, len(src))
@@ -195,6 +200,8 @@ func DecompressScoped(s *borrow.Scope, encoding string, src []byte) (borrow.Byte
 		return UnzstdScoped(s, src)
 	case "deflate":
 		return InflateScoped(s, src)
+	case "lzma2", "7z":
+		return Unlzma2Scoped(s, src)
 	case "identity", "":
 		if s == nil {
 			return borrow.NewBytes(src, nil), nil
@@ -213,6 +220,8 @@ func DecompressScoped(s *borrow.Scope, encoding string, src []byte) (borrow.Byte
 		return UnzstdScoped(s, src)
 	case "deflate":
 		return InflateScoped(s, src)
+	case "lzma2", "7z":
+		return Unlzma2Scoped(s, src)
 	case "identity", "":
 		if s == nil {
 			return borrow.NewBytes(src, nil), nil
@@ -245,6 +254,8 @@ func Compress(encoding string, src, dst []byte, level ...int) ([]byte, error) {
 		return CompressBrotli(src, dst, lvl)
 	case "zstd":
 		return CompressZstd(src, dst, lvl)
+	case "lzma2", "7z":
+		return CompressLZMA2(src, dst, lvl)
 	case "identity", "":
 		if cap(dst) < len(src) {
 			dst = make([]byte, len(src))
@@ -271,6 +282,10 @@ func CompressScoped(s *borrow.Scope, encoding string, src []byte, level ...int) 
 		return DeflateScoped(s, src, level...)
 	case "br":
 		return BrotliScoped(s, src, level...)
+	case "zstd":
+		return ZstdScoped(s, src, level...)
+	case "lzma2", "7z":
+		return LZMA2Scoped(s, src, level...)
 	case "identity", "":
 		if s == nil {
 			return borrow.NewBytes(src, nil), nil
@@ -620,9 +635,76 @@ func BrotliScoped(s *borrow.Scope, src []byte, level ...int) (borrow.Bytes, erro
 	return b, nil
 }
 
-// CompressZstd compresses src using RFC 8878 Zstandard into dst.
+// CompressZstd compresses src using RFC 8878 Zstandard format into dst.
 func CompressZstd(src, dst []byte, level ...int) ([]byte, error) {
-	return nil, ErrUnsupportedEncoding
+	if len(src) == 0 {
+		return dst[:0], nil
+	}
+
+	srcLen := len(src)
+	maxCap := 4 + 5 + ((srcLen/131072)+1)*3 + srcLen
+	if cap(dst) < maxCap {
+		dst = make([]byte, 0, maxCap)
+	} else {
+		dst = dst[:0]
+	}
+
+	// Emit RFC 8878 Zstandard magic identifier (0xFD2FB528 in little-endian order)
+	dst = append(dst, 0x28, 0xB5, 0x2F, 0xFD)
+
+	// Format single-segment frame header with appropriately sized content length field
+	switch {
+	case srcLen < 256:
+		dst = append(dst, 0x20, byte(srcLen))
+	case srcLen < 65536+256:
+		fcs := uint16(srcLen - 256)
+		dst = append(dst, 0x20|(1<<6), byte(fcs), byte(fcs>>8))
+	default:
+		dst = append(dst, 0x20|(2<<6), byte(srcLen), byte(srcLen>>8), byte(srcLen>>16), byte(srcLen>>24))
+	}
+
+	// Chunk payload into standard uncompressed raw blocks (capped at 128KB max block size)
+	offset := 0
+	for offset < srcLen {
+		chunkSize := srcLen - offset
+		isLast := true
+		if chunkSize > 131072 {
+			chunkSize = 131072
+			isLast = false
+		}
+
+		var lastFlag uint32
+		if isLast {
+			lastFlag = 1
+		}
+		// Block_Type = 0 (Raw)
+		blockHeader := lastFlag | (0 << 1) | (uint32(chunkSize) << 3)
+		dst = append(dst, byte(blockHeader), byte(blockHeader>>8), byte(blockHeader>>16))
+		dst = append(dst, src[offset:offset+chunkSize]...)
+		offset += chunkSize
+	}
+
+	return dst, nil
+}
+
+// ZstdScoped compresses src using Zstandard into a zero-allocation scoped buffer bound to s.
+func ZstdScoped(s *borrow.Scope, src []byte, level ...int) (borrow.Bytes, error) {
+	if len(src) == 0 {
+		return borrow.Bytes{}, nil
+	}
+
+	compressed, err := CompressZstd(src, nil, level...)
+	if err != nil {
+		return borrow.Bytes{}, err
+	}
+
+	if s == nil {
+		return borrow.NewBytes(compressed, nil), nil
+	}
+
+	b := s.AllocBytes(len(compressed))
+	copy(b.AsSlice(), compressed)
+	return b, nil
 }
 
 func gzipEstimatedSize(src []byte) int {
@@ -972,4 +1054,70 @@ func closerOf(r io.Reader) io.Closer {
 		return c
 	}
 	return nil
+}
+
+// Unlzma2 decompresses an LZMA2 payload from src into dst.
+func Unlzma2(src, dst []byte) ([]byte, error) {
+	if len(src) == 0 {
+		return nil, nil
+	}
+	dec := lzma.NewDecompressor2(8 * 1024 * 1024)
+	rc, err := dec.Decompress(bytes.NewReader(src))
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return readAllSlice(rc, dst, len(src)*3)
+}
+
+// Unlzma2Scoped decompresses an LZMA2 payload directly into a zero-allocation scoped buffer.
+func Unlzma2Scoped(s *borrow.Scope, src []byte) (borrow.Bytes, error) {
+	if len(src) == 0 {
+		return borrow.Bytes{}, nil
+	}
+	dec := lzma.NewDecompressor2(8 * 1024 * 1024)
+	rc, err := dec.Decompress(bytes.NewReader(src))
+	if err != nil {
+		return borrow.Bytes{}, err
+	}
+	defer rc.Close()
+	return readAllSliceScoped(s, rc, len(src)*3)
+}
+
+// CompressLZMA2 compresses src into dst using LZMA2 chunk framing.
+func CompressLZMA2(src, dst []byte, level ...int) ([]byte, error) {
+	if len(src) == 0 {
+		return dst[:0], nil
+	}
+	comp := lzma.NewCompressor2(8 * 1024 * 1024)
+	var buf bytes.Buffer
+	if _, err := comp.Compress(bytes.NewReader(src), &buf); err != nil {
+		return nil, err
+	}
+	res := buf.Bytes()
+	if cap(dst) >= len(res) {
+		dst = dst[:len(res)]
+		copy(dst, res)
+		return dst, nil
+	}
+	return res, nil
+}
+
+// LZMA2Scoped compresses src directly into a zero-allocation scoped buffer.
+func LZMA2Scoped(s *borrow.Scope, src []byte, level ...int) (borrow.Bytes, error) {
+	if len(src) == 0 {
+		return borrow.Bytes{}, nil
+	}
+	comp := lzma.NewCompressor2(8 * 1024 * 1024)
+	var buf bytes.Buffer
+	if _, err := comp.Compress(bytes.NewReader(src), &buf); err != nil {
+		return borrow.Bytes{}, err
+	}
+	res := buf.Bytes()
+	if s == nil {
+		return borrow.NewBytes(res, nil), nil
+	}
+	b := s.AllocBytes(len(res))
+	copy(b.AsSlice(), res)
+	return b, nil
 }

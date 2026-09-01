@@ -92,9 +92,11 @@ type (
 
 // Container format constants.
 const (
-	FormatZip   = container.Zip
-	FormatTar   = container.Tar
-	FormatTarGz = container.TarGz
+	FormatZip      = container.Zip
+	FormatTar      = container.Tar
+	FormatTarGz    = container.TarGz
+	FormatSevenZip = container.SevenZip
+	Format7z       = container.SevenZip
 )
 
 // Encryption algorithm constants.

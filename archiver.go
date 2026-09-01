@@ -11,7 +11,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"sync"
+	"sync/atomic"
 
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/container"
@@ -140,90 +143,164 @@ func (a *Archiver) UnarchiveWithContext(ctx context.Context, src Source, destDir
 		}
 
 		var errs []error
+		var errMu sync.Mutex
 		var globalExtracted int64
 
+		// Ensure directory hierarchy exists prior to writing leaf files
 		for _, f := range files {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-
-			// Evaluate inclusion filters
-			if len(procCfg.filters) > 0 {
-				include := true
-				for _, filter := range procCfg.filters {
-					if !filter(f.Name(), f.IsDir()) {
-						include = false
-						break
-					}
-				}
-				if !include {
+			if f.IsDir() {
+				targetPath, err := vfs.SafePath(destDir, f.Name())
+				if err != nil {
+					errs = append(errs, wrapErr("extract", f.Name(), err))
 					continue
 				}
-			}
-
-			targetPath, err := vfs.SafePath(destDir, f.Name())
-			if err != nil {
-				errs = append(errs, wrapErr("extract", f.Name(), err))
-				continue
-			}
-
-			if f.IsDir() {
 				if err := os.MkdirAll(targetPath, 0o755); err != nil {
 					errs = append(errs, wrapErr("mkdir", f.Name(), err))
 				}
-				continue
-			}
-
-			if dir := filepath.Dir(targetPath); dir != "" && dir != "." {
-				if err := os.MkdirAll(dir, 0o755); err != nil {
-					errs = append(errs, wrapErr("mkdir", f.Name(), err))
-					continue
-				}
-			}
-
-			rc, err := f.Open()
-			if err != nil {
-				errs = append(errs, wrapErr("open", f.Name(), err))
-				if procCfg.onDone != nil {
-					procCfg.onDone(f.Name(), err)
-				}
-				continue
-			}
-
-			mode := f.Mode()
-			if mode == 0 {
-				mode = 0o644
-			}
-			out, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode.Perm())
-			if err != nil {
-				_ = rc.Close()
-				errs = append(errs, wrapErr("create", f.Name(), err))
-				if procCfg.onDone != nil {
-					procCfg.onDone(f.Name(), err)
-				}
-				continue
-			}
-
-			var w io.Writer = out
-			if procCfg.security.ResourceLimits.MaxFileSize > 0 || procCfg.security.ResourceLimits.MaxTotalSize > 0 ||
-				procCfg.security.ResourceLimits.MaxRatio > 0 {
-				w = vfs.NewSecureWriter(out, procCfg.security.ResourceLimits, f.CompressedSize(), &globalExtracted)
-			}
-
-			bufPtr := pool.Get64K()
-			_, copyErr := io.CopyBuffer(w, rc, *bufPtr)
-			pool.Put64K(bufPtr)
-			_ = rc.Close()
-			_ = out.Close()
-
-			if copyErr != nil {
-				errs = append(errs, wrapErr("write", f.Name(), copyErr))
-			}
-			if procCfg.onDone != nil {
-				procCfg.onDone(f.Name(), copyErr)
 			}
 		}
 
+		// Dispatch regular files and symlinks across worker pool for parallel disk writes
+		var nonDirFiles []*File
+		for _, f := range files {
+			if !f.IsDir() {
+				nonDirFiles = append(nonDirFiles, f)
+			}
+		}
+
+		numWorkers := procCfg.workers
+		if numWorkers <= 0 {
+			numWorkers = min(runtime.GOMAXPROCS(0), len(nonDirFiles))
+		}
+		if numWorkers <= 0 {
+			numWorkers = 1
+		}
+
+		var wg sync.WaitGroup
+		var taskCounter atomic.Int64
+
+		for w := 0; w < numWorkers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					if err := ctx.Err(); err != nil {
+						errMu.Lock()
+						errs = append(errs, err)
+						errMu.Unlock()
+						return
+					}
+
+					idx := int(taskCounter.Add(1) - 1)
+					if idx >= len(nonDirFiles) {
+						return
+					}
+					f := nonDirFiles[idx]
+
+					// Evaluate inclusion filters
+					if len(procCfg.filters) > 0 {
+						include := true
+						for _, filter := range procCfg.filters {
+							if !filter(f.Name(), f.IsDir()) {
+								include = false
+								break
+							}
+						}
+						if !include {
+							continue
+						}
+					}
+
+					targetPath, err := vfs.SafePath(destDir, f.Name())
+					if err != nil {
+						errMu.Lock()
+						errs = append(errs, wrapErr("extract", f.Name(), err))
+						errMu.Unlock()
+						continue
+					}
+
+					if dir := filepath.Dir(targetPath); dir != "" && dir != "." {
+						_ = os.MkdirAll(dir, 0o755)
+					}
+
+					rc, err := f.Open()
+					if err != nil {
+						errMu.Lock()
+						errs = append(errs, wrapErr("open", f.Name(), err))
+						errMu.Unlock()
+						if procCfg.onDone != nil {
+							procCfg.onDone(f.Name(), err)
+						}
+						continue
+					}
+
+					// Handle symlinks
+					if f.Mode()&os.ModeSymlink != 0 {
+						targetBytes, err := io.ReadAll(rc)
+						_ = rc.Close()
+						if err == nil {
+							_ = os.Remove(targetPath)
+							if err := os.Symlink(string(targetBytes), targetPath); err != nil {
+								errMu.Lock()
+								errs = append(errs, wrapErr("symlink", f.Name(), err))
+								errMu.Unlock()
+							}
+						}
+						continue
+					}
+
+					mode := f.Mode()
+					if mode == 0 {
+						mode = 0o644
+					}
+					out, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode.Perm())
+					if err != nil {
+						_ = rc.Close()
+						errMu.Lock()
+						errs = append(errs, wrapErr("create", f.Name(), err))
+						errMu.Unlock()
+						if procCfg.onDone != nil {
+							procCfg.onDone(f.Name(), err)
+						}
+						continue
+					}
+
+					var w io.Writer = out
+					if procCfg.security.ResourceLimits.MaxFileSize > 0 ||
+						procCfg.security.ResourceLimits.MaxTotalSize > 0 ||
+						procCfg.security.ResourceLimits.MaxRatio > 0 {
+						w = vfs.NewSecureWriter(
+							out,
+							procCfg.security.ResourceLimits,
+							f.CompressedSize(),
+							&globalExtracted,
+						)
+					}
+
+					bufPtr := pool.Get64K()
+					_, copyErr := io.CopyBuffer(w, rc, *bufPtr)
+					pool.Put64K(bufPtr)
+					_ = rc.Close()
+					_ = out.Close()
+
+					// Restore file modification time (mtime)
+					if !f.ModTime().IsZero() {
+						_ = os.Chtimes(targetPath, f.ModTime(), f.ModTime())
+					}
+
+					if copyErr != nil {
+						errMu.Lock()
+						errs = append(errs, wrapErr("write", f.Name(), copyErr))
+						errMu.Unlock()
+					}
+					if procCfg.onDone != nil {
+						procCfg.onDone(f.Name(), copyErr)
+					}
+				}
+			}()
+		}
+
+		wg.Wait()
 		return errors.Join(errs...)
 	})
 }

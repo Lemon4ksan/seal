@@ -24,18 +24,18 @@ func UnzstdDCZ(src, dst, dictBytes []byte) ([]byte, error) {
 		return nil, ErrInvalidDCZHeader
 	}
 
-	// 1. Verify 8-byte DCZ magic (RFC 9842 §5)
+	// Validate RFC 9842 Section 5 magic signature (\x5FDCL\xFFDCZ)
 	if !bytes.Equal(src[:8], MagicDCZ[:]) {
 		return nil, ErrInvalidDCZHeader
 	}
 
-	// 2. Verify 32-byte SHA-256 hash
+	// Validate expected dictionary hash using constant-time comparison
 	expectedHash := sha256.Sum256(dictBytes)
 	if subtle.ConstantTimeCompare(src[8:40], expectedHash[:]) != 1 {
 		return nil, fmt.Errorf("%w: expected %x, got %x", ErrDictionaryMismatch, expectedHash, src[8:40])
 	}
 
-	// 3. Decompress Zstandard payload starting at offset 40
+	// Decompress trailing Zstandard stream using registered raw dictionary context
 	dec, err := zstd.NewReader(nil,
 		zstd.WithDecoderDictRaw(0, dictBytes),
 		zstd.WithDecoderDictRaw(1, dictBytes),

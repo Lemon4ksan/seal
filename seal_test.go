@@ -119,3 +119,57 @@ func TestArchive_AddFS(t *testing.T) {
 		t.Errorf("content mismatch: got %q, want %q", string(content), "file A")
 	}
 }
+
+func TestArchive_SevenZip_BasicOperations(t *testing.T) {
+	arc := seal.NewSevenZip()
+
+	arc.AddString("7z Content test string", "data.txt")
+	arc.AddBytes([]byte("Binary Payload 123456"), "sub/binary.bin")
+
+	if arc.Format() != seal.FormatSevenZip {
+		t.Fatalf("expected format %v, got %v", seal.FormatSevenZip, arc.Format())
+	}
+
+	buf := new(bytes.Buffer)
+	written, err := arc.WriteTo(buf)
+	if err != nil {
+		t.Fatalf("7z WriteTo failed: %v", err)
+	}
+	if written <= 0 {
+		t.Fatalf("expected positive written, got %d", written)
+	}
+
+	raw := buf.Bytes()
+	fresh := seal.NewSevenZip()
+	loaded, err := fresh.Load(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		t.Fatalf("7z Load failed: %v", err)
+	}
+	if len(loaded) != 2 {
+		t.Fatalf("expected 2 loaded entries, got %d", len(loaded))
+	}
+
+	f1, ok := fresh.File("data.txt")
+	if !ok {
+		t.Fatal("data.txt not found in 7z")
+	}
+	s, err := f1.String()
+	if err != nil {
+		t.Fatalf("f1.String failed: %v", err)
+	}
+	if s != "7z Content test string" {
+		t.Errorf("f1 content mismatch: got %q", s)
+	}
+
+	f2, ok := fresh.File("sub/binary.bin")
+	if !ok {
+		t.Fatal("sub/binary.bin not found in 7z")
+	}
+	b, err := f2.Bytes()
+	if err != nil {
+		t.Fatalf("f2.Bytes failed: %v", err)
+	}
+	if string(b) != "Binary Payload 123456" {
+		t.Errorf("f2 content mismatch: got %q", string(b))
+	}
+}

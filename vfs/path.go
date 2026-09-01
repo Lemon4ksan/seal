@@ -17,6 +17,31 @@ import (
 // ErrInsecurePath indicates that a file path attempts directory traversal (Zip Slip / Tar Slip) or contains forbidden control characters.
 var ErrInsecurePath = errors.New("vfs: insecure file path")
 
+var reservedWindowsDeviceNames = map[string]bool{
+	"CON":  true,
+	"PRN":  true,
+	"AUX":  true,
+	"NUL":  true,
+	"COM1": true,
+	"COM2": true,
+	"COM3": true,
+	"COM4": true,
+	"COM5": true,
+	"COM6": true,
+	"COM7": true,
+	"COM8": true,
+	"COM9": true,
+	"LPT1": true,
+	"LPT2": true,
+	"LPT3": true,
+	"LPT4": true,
+	"LPT5": true,
+	"LPT6": true,
+	"LPT7": true,
+	"LPT8": true,
+	"LPT9": true,
+}
+
 // CleanPath normalizes an archive entry path using pathkit.Sanitize (guaranteeing forward slashes and no leading slashes).
 func CleanPath(name string) string {
 	p := pathkit.Sanitize(name)
@@ -27,7 +52,8 @@ func CleanPath(name string) string {
 }
 
 // SafePath resolves and validates a target filesystem destination path for an archive entry,
-// guaranteeing that the resulting absolute path cannot escape destDir (Zip Slip / Tar Slip defense).
+// guaranteeing that the resulting absolute path cannot escape destDir (Zip Slip / Tar Slip defense)
+// and rejecting dangerous Windows device names (CON, AUX, NUL, COM1-9, LPT1-9).
 func SafePath(destDir, fileName string) (string, error) {
 	for i := 0; i < len(fileName); i++ {
 		c := fileName[i]
@@ -56,6 +82,13 @@ func SafePath(destDir, fileName string) (string, error) {
 			}
 		} else {
 			depth++
+			baseName := part
+			if dotIdx := strings.IndexByte(baseName, '.'); dotIdx >= 0 {
+				baseName = baseName[:dotIdx]
+			}
+			if reservedWindowsDeviceNames[strings.ToUpper(baseName)] {
+				return "", fmt.Errorf("%w: reserved windows device name %q in %q", ErrInsecurePath, part, fileName)
+			}
 		}
 	}
 
