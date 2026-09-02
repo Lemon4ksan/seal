@@ -16,17 +16,11 @@ import (
 	"github.com/lemon4ksan/foundation/silicon/pool"
 )
 
-var (
-	// encoderPool and decoderPool recycle EncoderCore and DecoderCore instances per scheduler processor P.
-	// This avoids mutex contention and completely eliminates heap allocation / GC scavenging during multi-core execution.
-	encoderPool = pool.NewPerPStorage(func() *EncoderCore {
-		return NewEncoderCore(3, 0, 2, 65536)
-	})
-
-	decoderPool = pool.NewPerPStorage(func() *DecoderCore {
-		return NewDecoderCore(3, 0, 2, 65536, 65536)
-	})
-)
+// decoderPool recycles DecoderCore instances per scheduler processor P.
+// This avoids mutex contention and completely eliminates heap allocation / GC scavenging during multi-core execution.
+var decoderPool = pool.NewPerPStorage(func() *DecoderCore {
+	return NewDecoderCore(3, 0, 2, 8*1024*1024, 65536)
+})
 
 // ErrInvalidLZMA2Property indicates an invalid LZMA2 dictionary property byte (> 40).
 var ErrInvalidLZMA2Property = errors.New("lzma2: invalid property byte")
@@ -140,7 +134,6 @@ func (d *Decompressor2) Decompress(src io.Reader) (io.ReadCloser, error) {
 	var tasks []chunkTask
 	r := bytes.NewReader(rawComp)
 	var totalUnpackSize int
-	allIndependent := true
 
 	var lc, lp, pb uint = 3, 0, 2
 	for {
@@ -160,9 +153,6 @@ func (d *Decompressor2) Decompress(src io.Reader) (io.ReadCloser, error) {
 
 		if control < 0x80 {
 			// Uncompressed Chunk: control 1 resets dictionary, control 2 retains dictionary history.
-			if control != 1 {
-				allIndependent = false
-			}
 			var sizeBuf [2]byte
 			if _, err := io.ReadFull(r, sizeBuf[:]); err != nil {
 				return nil, err
@@ -184,9 +174,6 @@ func (d *Decompressor2) Decompress(src io.Reader) (io.ReadCloser, error) {
 		}
 
 		mode := (control >> 5) & 3
-		if mode != 3 {
-			allIndependent = false
-		}
 		var header [4]byte
 		if _, err := io.ReadFull(r, header[:]); err != nil {
 			return nil, err
@@ -227,66 +214,30 @@ func (d *Decompressor2) Decompress(src io.Reader) (io.ReadCloser, error) {
 
 	finalOut := make([]byte, totalUnpackSize)
 
-	if !allIndependent {
-		// Sequential streaming decompression preserving dictionary history across chunks
-		core := NewDecoderCore(3, 0, 2, d.DictSize, 0)
-		for i := range tasks {
-			t := &tasks[i]
-			if t.isRaw {
-				copy(finalOut[t.offset:], t.rawSlice)
-				for _, b := range t.rawSlice {
-					core.win[core.winPos] = b
-					core.winPos = (core.winPos + 1) & core.dictMask
-				}
-				if t.mode == 1 {
-					core.InitProbs()
-				}
-				continue
-			}
-
-			if t.mode >= 2 {
-				core.lc = t.lc
-				core.lp = t.lp
-				core.pb = t.pb
-				core.posMask = (1 << t.pb) - 1
-			}
-			if t.mode >= 1 {
-				core.InitProbs()
-			}
-
-			var rd RangeDecoder
-			if err := rd.Init(bytes.NewReader(t.chunkData)); err != nil {
-				return nil, err
-			}
-
-			destSlice := finalOut[t.offset : t.offset+int(t.unpackSize)]
-			if _, err := core.DecodeToSlice(
-				&rd,
-				destSlice,
-				t.unpackSize,
-			); err != nil && !errors.Is(err, io.EOF) &&
-				!errors.Is(err, io.ErrUnexpectedEOF) {
-				return nil, err
-			}
-		}
-		return io.NopCloser(bytes.NewReader(finalOut)), nil
+	type blockRange struct {
+		startTask int
+		endTask   int
 	}
-
-	// Copy raw chunks directly
+	var blocks []blockRange
+	curBlockStart := 0
 	for i := range tasks {
-		if tasks[i].isRaw {
-			copy(finalOut[tasks[i].offset:], tasks[i].rawSlice)
+		t := &tasks[i]
+		if i > 0 && (t.mode == 3 || (t.isRaw && t.mode == 1)) {
+			blocks = append(blocks, blockRange{startTask: curBlockStart, endTask: i})
+			curBlockStart = i
 		}
 	}
+	if len(tasks) > 0 {
+		blocks = append(blocks, blockRange{startTask: curBlockStart, endTask: len(tasks)})
+	}
 
-	// Decompress chunks in parallel using lock-free atomic work stealing
-	numWorkers := min(runtime.GOMAXPROCS(0), len(tasks))
+	numWorkers := min(runtime.GOMAXPROCS(0), len(blocks))
 	if numWorkers <= 0 {
 		numWorkers = 1
 	}
 
 	var wg sync.WaitGroup
-	var taskCounter atomic.Int64
+	var blockCounter atomic.Int64
 	var decErr atomic.Pointer[error]
 
 	for w := 0; w < numWorkers; w++ {
@@ -294,39 +245,66 @@ func (d *Decompressor2) Decompress(src io.Reader) (io.ReadCloser, error) {
 		go func() {
 			defer wg.Done()
 			core := decoderPool.Get()
+			if d.DictSize > core.dictSize {
+				core = NewDecoderCore(3, 0, 2, d.DictSize, 0)
+			}
 			defer decoderPool.Put(core)
 			var rd RangeDecoder
 
 			for {
-				idx := int(taskCounter.Add(1) - 1)
-				if idx >= len(tasks) || decErr.Load() != nil {
+				bIdx := int(blockCounter.Add(1) - 1)
+				if bIdx >= len(blocks) || decErr.Load() != nil {
 					return
 				}
-				t := &tasks[idx]
-				if t.isRaw {
-					continue
-				}
-
-				core.lc = t.lc
-				core.lp = t.lp
-				core.pb = t.pb
-				core.posMask = (1 << t.pb) - 1
+				blk := blocks[bIdx]
+				core.winPos = 0
 				core.InitProbs()
 
-				if err := rd.Init(bytes.NewReader(t.chunkData)); err != nil {
-					decErr.Store(&err)
-					return
-				}
+				for i := blk.startTask; i < blk.endTask; i++ {
+					t := &tasks[i]
+					if t.isRaw {
+						if t.mode == 1 {
+							core.winPos = 0
+						}
+						copy(finalOut[t.offset:], t.rawSlice)
+						for _, b := range t.rawSlice {
+							core.win[core.winPos] = b
+							core.winPos = (core.winPos + 1) & core.dictMask
+						}
+						if t.mode == 1 {
+							core.InitProbs()
+						}
+						continue
+					}
 
-				destSlice := finalOut[t.offset : t.offset+int(t.unpackSize)]
-				if _, err := core.DecodeToSlice(
-					&rd,
-					destSlice,
-					t.unpackSize,
-				); err != nil && !errors.Is(err, io.EOF) &&
-					!errors.Is(err, io.ErrUnexpectedEOF) {
-					decErr.Store(&err)
-					return
+					if t.mode == 3 {
+						core.winPos = 0
+					}
+					if t.mode >= 2 {
+						core.lc = t.lc
+						core.lp = t.lp
+						core.pb = t.pb
+						core.posMask = (1 << t.pb) - 1
+					}
+					if t.mode >= 1 {
+						core.InitProbs()
+					}
+
+					if err := rd.Init(bytes.NewReader(t.chunkData)); err != nil {
+						decErr.Store(&err)
+						return
+					}
+
+					destSlice := finalOut[t.offset : t.offset+int(t.unpackSize)]
+					if _, err := core.DecodeToSlice(
+						&rd,
+						destSlice,
+						t.unpackSize,
+					); err != nil && !errors.Is(err, io.EOF) &&
+						!errors.Is(err, io.ErrUnexpectedEOF) {
+						decErr.Store(&err)
+						return
+					}
 				}
 			}
 		}()
@@ -594,34 +572,42 @@ func NewCompressor2WithOptions(opts Options) *Compressor2 {
 	return &Compressor2{Options: opts}
 }
 
-// Compress reads from src and compresses into dest using LZMA2 chunk framing with parallel lock-free work stealing.
-// It streams data in small sliding batches, keeping memory usage constant (< 5MB RAM) regardless of input size.
+// Compress reads from src and compresses into dest using LZMA2 chunk framing with continuous dictionary blocks.
+// Parallel workers compress independent multi-megabyte blocks, preserving dictionary history within each block.
 func (c *Compressor2) Compress(src io.Reader, dest io.Writer) (int64, error) {
-	maxChunk := c.Options.ChunkSize
-	if maxChunk <= 0 {
-		maxChunk = 64 * 1024
-	}
-
 	numWorkers := runtime.GOMAXPROCS(0)
 	if numWorkers <= 0 {
 		numWorkers = 1
 	}
 
-	batchChunks := numWorkers * 16
-	if batchChunks < 64 {
-		batchChunks = 64
+	blockSize := int(c.Options.DictSize)
+	if numWorkers > 1 {
+		if blockSize > 2*1024*1024 {
+			blockSize = 2 * 1024 * 1024
+		}
 	}
-	batchBufSize := batchChunks * maxChunk
+	if blockSize < 512*1024 {
+		blockSize = 512 * 1024
+	}
+	chunkSize := 64 * 1024
+
+	batchBufSize := numWorkers * blockSize
+	if batchBufSize < 8*1024*1024 {
+		batchBufSize = 8 * 1024 * 1024
+	}
 	batchBuf := make([]byte, batchBufSize)
 
-	type chunkResult struct {
+	type encodedChunk struct {
+		isRaw     bool
+		mode      byte
+		rawSlice  []byte
 		compBytes []byte
 		chunkLen  int
-		isRaw     bool
-		rawSlice  []byte
 	}
 
-	results := make([]chunkResult, batchChunks)
+	type blockResult struct {
+		chunks []encodedChunk
+	}
 
 	var totalWritten int64
 	var totalProcessedChunks int64
@@ -629,11 +615,9 @@ func (c *Compressor2) Compress(src io.Reader, dest io.Writer) (int64, error) {
 	firstBatch := true
 
 	for {
-		// Read a batch of up to batchBufSize from src
 		n, err := io.ReadFull(src, batchBuf)
 		if n == 0 {
 			if firstBatch {
-				// Empty stream -> write end marker
 				if _, err := dest.Write([]byte{0x00}); err != nil {
 					return 0, err
 				}
@@ -643,71 +627,86 @@ func (c *Compressor2) Compress(src io.Reader, dest io.Writer) (int64, error) {
 		}
 		firstBatch = false
 		totalUncompressedBytes += int64(n)
-
 		rawBatch := batchBuf[:n]
-		numBatchChunks := (n + maxChunk - 1) / maxChunk
+
+		numBlocks := (n + blockSize - 1) / blockSize
+		results := make([]blockResult, numBlocks)
 
 		var wg sync.WaitGroup
-		var taskCounter atomic.Int64
+		var blockCounter atomic.Int64
 		var compErr atomic.Pointer[error]
 
-		workersForBatch := min(numWorkers, numBatchChunks)
-
+		workersForBatch := min(numWorkers, numBlocks)
 		for w := 0; w < workersForBatch; w++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				core := encoderPool.Get()
-				if c.Options.ChainLength > 0 {
-					core.chainLimit = c.Options.ChainLength
-				}
-				if c.Options.FastBytes > 0 {
-					core.fastBytesLimit = c.Options.FastBytes
-				}
-				defer encoderPool.Put(core)
+				core := NewEncoderCoreWithOptions(c.Options)
 				var re RangeEncoder
 				var compBuf bytes.Buffer
 
 				for {
-					idx := int(taskCounter.Add(1) - 1)
-					if idx >= numBatchChunks || compErr.Load() != nil {
-						return
-					}
-					offset := idx * maxChunk
-					chunkLen := min(maxChunk, len(rawBatch)-offset)
-					chunk := rawBatch[offset : offset+chunkLen]
-
-					compBuf.Reset()
-					re.Init(&compBuf)
-					core.Reset()
-
-					if err := core.EncodeStream(chunk, &re); err != nil {
-						compErr.Store(&err)
-						return
-					}
-					if err := re.Flush(); err != nil {
-						compErr.Store(&err)
+					bIdx := int(blockCounter.Add(1) - 1)
+					if bIdx >= numBlocks || compErr.Load() != nil {
 						return
 					}
 
-					compBytes := compBuf.Bytes()
-					if len(compBytes) >= chunkLen || len(compBytes) > 65536 {
-						rawCopy := make([]byte, chunkLen)
-						copy(rawCopy, chunk)
-						results[idx] = chunkResult{
-							isRaw:    true,
-							chunkLen: chunkLen,
-							rawSlice: rawCopy,
+					blockStart := bIdx * blockSize
+					blockEnd := min(blockStart+blockSize, n)
+					blockData := rawBatch[blockStart:blockEnd]
+					blockLen := blockEnd - blockStart
+
+					numChunksInBlock := (blockLen + chunkSize - 1) / chunkSize
+					chunks := make([]encodedChunk, 0, numChunksInBlock)
+
+					for cIdx := 0; cIdx < numChunksInBlock; cIdx++ {
+						cStart := cIdx * chunkSize
+						cEnd := min(cStart+chunkSize, blockLen)
+						cLen := cEnd - cStart
+						rawSlice := blockData[cStart:cEnd]
+
+						compBuf.Reset()
+						re.Init(&compBuf)
+
+						mode := byte(1)
+						if cIdx == 0 {
+							mode = 3
+							core.Reset()
+						} else {
+							core.ResetStateKeepDict()
 						}
-					} else {
-						chunkCopy := make([]byte, len(compBytes))
-						copy(chunkCopy, compBytes)
-						results[idx] = chunkResult{
-							compBytes: chunkCopy,
-							chunkLen:  chunkLen,
-							isRaw:     false,
+
+						if err := core.EncodeChunk(blockData, cStart, cEnd, &re); err != nil {
+							compErr.Store(&err)
+							return
+						}
+						if err := re.Flush(); err != nil {
+							compErr.Store(&err)
+							return
+						}
+
+						compBytes := compBuf.Bytes()
+						if len(compBytes) >= cLen || len(compBytes) > 65536 {
+							rawCopy := make([]byte, cLen)
+							copy(rawCopy, rawSlice)
+							chunks = append(chunks, encodedChunk{
+								isRaw:    true,
+								mode:     mode,
+								rawSlice: rawCopy,
+								chunkLen: cLen,
+							})
+						} else {
+							chunkCopy := make([]byte, len(compBytes))
+							copy(chunkCopy, compBytes)
+							chunks = append(chunks, encodedChunk{
+								isRaw:     false,
+								mode:      mode,
+								compBytes: chunkCopy,
+								chunkLen:  cLen,
+							})
 						}
 					}
+					results[bIdx] = blockResult{chunks: chunks}
 				}
 			}()
 		}
@@ -718,50 +717,73 @@ func (c *Compressor2) Compress(src io.Reader, dest io.Writer) (int64, error) {
 			return totalUncompressedBytes, *ptr
 		}
 
-		// Write completed batch chunks directly to dest
-		for i := 0; i < numBatchChunks; i++ {
-			res := &results[i]
-			if res.isRaw {
-				var uncompHeader [3]byte
-				uncompHeader[0] = 0x01 // uncompressed, reset dict
-				uncompHeader[1] = byte((res.chunkLen - 1) >> 8)
-				uncompHeader[2] = byte(res.chunkLen - 1)
-				if _, err := dest.Write(uncompHeader[:]); err != nil {
-					return totalUncompressedBytes, err
-				}
-				totalWritten += 3
-				if _, err := dest.Write(res.rawSlice); err != nil {
-					return totalUncompressedBytes, err
-				}
-				totalWritten += int64(len(res.rawSlice))
-			} else {
-				var control byte = 0x80 | (3 << 5) // mode 3 (reset dict, state, props)
-				unpackSizeMinus1 := uint32(res.chunkLen - 1)
-				control |= byte((unpackSizeMinus1 >> 16) & 0x1F)
+		// Write completed blocks and chunks directly to dest
+		for bIdx := 0; bIdx < numBlocks; bIdx++ {
+			for _, res := range results[bIdx].chunks {
+				if res.isRaw {
+					var uncompHeader [3]byte
+					if res.mode == 3 {
+						uncompHeader[0] = 0x01 // reset dict
+					} else {
+						uncompHeader[0] = 0x02 // keep dict
+					}
+					uncompHeader[1] = byte((res.chunkLen - 1) >> 8)
+					uncompHeader[2] = byte(res.chunkLen - 1)
+					if _, err := dest.Write(uncompHeader[:]); err != nil {
+						return totalUncompressedBytes, err
+					}
+					totalWritten += 3
+					if _, err := dest.Write(res.rawSlice); err != nil {
+						return totalUncompressedBytes, err
+					}
+					totalWritten += int64(len(res.rawSlice))
+				} else {
+					unpackSizeMinus1 := uint32(res.chunkLen - 1)
+					packSizeMinus1 := uint16(len(res.compBytes) - 1)
 
-				var chunkHeader [6]byte
-				chunkHeader[0] = control
-				chunkHeader[1] = byte(unpackSizeMinus1 >> 8)
-				chunkHeader[2] = byte(unpackSizeMinus1)
+					if res.mode == 3 {
+						var control byte = 0x80 | (3 << 5) // mode 3
+						control |= byte((unpackSizeMinus1 >> 16) & 0x1F)
 
-				packSizeMinus1 := uint16(len(res.compBytes) - 1)
-				chunkHeader[3] = byte(packSizeMinus1 >> 8)
-				chunkHeader[4] = byte(packSizeMinus1)
-				chunkHeader[5] = byte((c.Options.Pb*5+c.Options.Lp)*9 + c.Options.Lc)
+						var chunkHeader [6]byte
+						chunkHeader[0] = control
+						chunkHeader[1] = byte(unpackSizeMinus1 >> 8)
+						chunkHeader[2] = byte(unpackSizeMinus1)
+						chunkHeader[3] = byte(packSizeMinus1 >> 8)
+						chunkHeader[4] = byte(packSizeMinus1)
+						chunkHeader[5] = byte((c.Options.Pb*5+c.Options.Lp)*9 + c.Options.Lc)
 
-				if _, err := dest.Write(chunkHeader[:]); err != nil {
-					return totalUncompressedBytes, err
+						if _, err := dest.Write(chunkHeader[:]); err != nil {
+							return totalUncompressedBytes, err
+						}
+						totalWritten += 6
+					} else {
+						var control byte = 0x80 | (1 << 5) // mode 1
+						control |= byte((unpackSizeMinus1 >> 16) & 0x1F)
+
+						var chunkHeader [5]byte
+						chunkHeader[0] = control
+						chunkHeader[1] = byte(unpackSizeMinus1 >> 8)
+						chunkHeader[2] = byte(unpackSizeMinus1)
+						chunkHeader[3] = byte(packSizeMinus1 >> 8)
+						chunkHeader[4] = byte(packSizeMinus1)
+
+						if _, err := dest.Write(chunkHeader[:]); err != nil {
+							return totalUncompressedBytes, err
+						}
+						totalWritten += 5
+					}
+
+					if _, err := dest.Write(res.compBytes); err != nil {
+						return totalUncompressedBytes, err
+					}
+					totalWritten += int64(len(res.compBytes))
 				}
-				totalWritten += 6
-				if _, err := dest.Write(res.compBytes); err != nil {
-					return totalUncompressedBytes, err
-				}
-				totalWritten += int64(len(res.compBytes))
-			}
 
-			totalProcessedChunks++
-			if c.Options.OnProgress != nil {
-				c.Options.OnProgress(totalProcessedChunks, totalProcessedChunks)
+				totalProcessedChunks++
+				if c.Options.OnProgress != nil {
+					c.Options.OnProgress(totalProcessedChunks, totalProcessedChunks)
+				}
 			}
 		}
 

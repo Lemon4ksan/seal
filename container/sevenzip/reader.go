@@ -380,7 +380,7 @@ func (zr *Reader) readUnpackInfo(r io.Reader) error {
 					zr.folders[i].UnpackSizes[j] = sz
 				}
 				if len(zr.folders[i].UnpackSizes) > 0 {
-					zr.subStreamSizes[i] = []uint64{zr.folders[i].UnpackSizes[0]}
+					zr.subStreamSizes[i] = []uint64{zr.folders[i].GetUnpackSize()}
 				}
 			}
 
@@ -644,8 +644,9 @@ func (zr *Reader) decompressFolder(folderIdx int) ([]byte, error) {
 	defer rc.Close()
 
 	var data []byte
-	if len(folder.UnpackSizes) > 0 && folder.UnpackSizes[0] > 0 && folder.UnpackSizes[0] < 1<<31 {
-		data = make([]byte, folder.UnpackSizes[0])
+	unpackSize := folder.GetUnpackSize()
+	if unpackSize > 0 && unpackSize < 1<<31 {
+		data = make([]byte, unpackSize)
 		_, err = io.ReadFull(rc, data)
 	} else {
 		data, err = io.ReadAll(rc)

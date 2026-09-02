@@ -104,11 +104,10 @@ func (rd *RangeDecoder) DecodeBit(prob *uint16) (int, error) {
 		rd.range_ = bound
 		*prob += uint16((kBitModelTotal - p) >> kNumMoveBits)
 		if rd.range_ < kTopValue {
+			rd.range_ <<= 8
 			if rd.pos < rd.limit {
-				b := rd.buf[rd.pos]
+				rd.code = (rd.code << 8) | uint32(rd.buf[rd.pos])
 				rd.pos++
-				rd.range_ <<= 8
-				rd.code = (rd.code << 8) | uint32(b)
 			} else {
 				if err := rd.normalizeSlow(); err != nil {
 					return 0, err
@@ -121,11 +120,10 @@ func (rd *RangeDecoder) DecodeBit(prob *uint16) (int, error) {
 	rd.code -= bound
 	*prob -= uint16(p >> kNumMoveBits)
 	if rd.range_ < kTopValue {
+		rd.range_ <<= 8
 		if rd.pos < rd.limit {
-			b := rd.buf[rd.pos]
+			rd.code = (rd.code << 8) | uint32(rd.buf[rd.pos])
 			rd.pos++
-			rd.range_ <<= 8
-			rd.code = (rd.code << 8) | uint32(b)
 		} else {
 			if err := rd.normalizeSlow(); err != nil {
 				return 0, err

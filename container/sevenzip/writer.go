@@ -16,6 +16,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/lemon4ksan/seal/codec/bcj"
+	"github.com/lemon4ksan/seal/codec/bcj2"
 	"github.com/lemon4ksan/seal/codec/lzma"
 	"github.com/lemon4ksan/seal/codec/ppmd"
 	"github.com/lemon4ksan/seal/file"
@@ -29,6 +30,7 @@ const (
 	FilterNone FilterType = iota
 	FilterBCJ
 	FilterARM
+	FilterBCJ2
 )
 
 // MethodType defines primary compression codecs for 7z containers.
@@ -86,9 +88,10 @@ func NewWriterWithOptions(w io.Writer, opts WriterOptions) *Writer {
 }
 
 type prefetchBlock struct {
-	buf  *[]byte
-	data []byte
-	err  error
+	buf    *[]byte
+	is256K bool
+	data   []byte
+	err    error
 }
 
 type asyncPrefetchPipe struct {
@@ -227,7 +230,7 @@ func (p *asyncPrefetchPipe) prefetchLoop() {
 			_ = rErr
 		} else {
 			for {
-				bufPtr := pool.Get64K()
+				bufPtr := pool.Get256K()
 				bufSlice := (*bufPtr)
 
 				nr, rErr := rc.Read(bufSlice)
@@ -247,11 +250,12 @@ func (p *asyncPrefetchPipe) prefetchLoop() {
 					}
 
 					p.blockChan <- prefetchBlock{
-						buf:  bufPtr,
-						data: bufSlice[:nr],
+						buf:    bufPtr,
+						is256K: true,
+						data:   bufSlice[:nr],
 					}
 				} else {
-					pool.Put64K(bufPtr)
+					pool.Put256K(bufPtr)
 				}
 
 				if rErr != nil {
@@ -289,7 +293,11 @@ func (p *asyncPrefetchPipe) Read(b []byte) (int, error) {
 			p.currOff += n
 			if p.currOff >= len(p.currBlock.data) {
 				if p.currBlock.buf != nil {
-					pool.Put64K(p.currBlock.buf)
+					if p.currBlock.is256K {
+						pool.Put256K(p.currBlock.buf)
+					} else {
+						pool.Put64K(p.currBlock.buf)
+					}
 					p.currBlock.buf = nil
 				}
 				p.currBlock.data = nil
@@ -428,7 +436,62 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		targetW = &compCounter
 	}
 
-	if method == MethodPPMDDefault {
+	var bcj2PackSizes []uint64
+	var bcj2UnpackSizes [3]uint64
+
+	switch {
+	case filter == FilterBCJ2:
+		var allUncomp bytes.Buffer
+		if _, err := io.Copy(&allUncomp, solidReader); err != nil {
+			return totalWritten, err
+		}
+
+		var mainBuf, callBuf, jumpBuf, rcBuf bytes.Buffer
+		if err := bcj2.EncodeStreams(&allUncomp, &mainBuf, &callBuf, &jumpBuf, &rcBuf); err != nil {
+			return totalWritten, err
+		}
+
+		bcj2UnpackSizes[0] = uint64(mainBuf.Len())
+		bcj2UnpackSizes[1] = uint64(callBuf.Len())
+		bcj2UnpackSizes[2] = uint64(jumpBuf.Len())
+
+		opts := zw.options.LZMA
+		if opts.Level == 0 && opts.DictSize == 0 && opts.ChainLength == 0 {
+			opts = lzma.DefaultOptions()
+		}
+
+		// Stream 0 (Main) -> LZMA2
+		st0 := cw.n
+		comp0 := lzma.NewCompressor2WithOptions(opts)
+		if _, err := comp0.Compress(&mainBuf, targetW); err != nil {
+			return totalWritten, err
+		}
+		bcj2PackSizes = append(bcj2PackSizes, uint64(cw.n-st0))
+
+		// Stream 1 (Call) -> LZMA2
+		st1 := cw.n
+		comp1 := lzma.NewCompressor2WithOptions(opts)
+		if _, err := comp1.Compress(&callBuf, targetW); err != nil {
+			return totalWritten, err
+		}
+		bcj2PackSizes = append(bcj2PackSizes, uint64(cw.n-st1))
+
+		// Stream 2 (Jump) -> LZMA2
+		st2 := cw.n
+		comp2 := lzma.NewCompressor2WithOptions(opts)
+		if _, err := comp2.Compress(&jumpBuf, targetW); err != nil {
+			return totalWritten, err
+		}
+		bcj2PackSizes = append(bcj2PackSizes, uint64(cw.n-st2))
+
+		// Stream 3 (RC) -> Raw
+		st3 := cw.n
+		if _, err := targetW.Write(rcBuf.Bytes()); err != nil {
+			return totalWritten, err
+		}
+		bcj2PackSizes = append(bcj2PackSizes, uint64(cw.n-st3))
+
+	case method == MethodPPMDDefault:
 		// PPMd Compression
 		order := zw.options.PPMdOrder
 		if order < 2 {
@@ -442,7 +505,8 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		if _, err := comp.Compress(solidReader, targetW); err != nil {
 			return totalWritten, err
 		}
-	} else {
+
+	default:
 		// LZMA2 Compression
 		opts := zw.options.LZMA
 		if opts.Level == 0 && opts.DictSize == 0 && opts.ChainLength == 0 {
@@ -494,9 +558,17 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	// PackInfo
 	headerBuf.WriteByte(NIDPackInfo)
 	_ = WriteNumber(&headerBuf, 0) // PackPos = 0
-	_ = WriteNumber(&headerBuf, 1) // NumPackStreams = 1
-	headerBuf.WriteByte(NIDSize)
-	_ = WriteNumber(&headerBuf, packSize)
+	if filter == FilterBCJ2 {
+		_ = WriteNumber(&headerBuf, uint64(len(bcj2PackSizes)))
+		headerBuf.WriteByte(NIDSize)
+		for _, sz := range bcj2PackSizes {
+			_ = WriteNumber(&headerBuf, sz)
+		}
+	} else {
+		_ = WriteNumber(&headerBuf, 1) // NumPackStreams = 1
+		headerBuf.WriteByte(NIDSize)
+		_ = WriteNumber(&headerBuf, packSize)
+	}
 	headerBuf.WriteByte(NIDEnd)
 
 	// UnpackInfo
@@ -506,8 +578,43 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	headerBuf.WriteByte(0)         // External = 0
 
 	hasEncryption := len(aesProps) > 0
+	lzmaDictProp := lzma.PropFromDictSize(zw.options.LZMA.DictSize)
+	if lzmaDictProp == 0 {
+		lzmaDictProp = 0x18
+	}
+	lzmaPropBytes := []byte{lzmaDictProp}
 
 	switch {
+	case filter == FilterBCJ2:
+		_ = WriteNumber(&headerBuf, 4) // NumCoders = 4
+		writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
+		writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
+		writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
+		writeComplexCoder(&headerBuf, MethodBCJ2, 4, 1, nil)
+
+		// BindPairs (count is not written, exactly 3 pairs):
+		// InStream 3 (BCJ2 In 0, Main) <- OutStream 0 (Coder 0 Out)
+		_ = WriteNumber(&headerBuf, 3)
+		_ = WriteNumber(&headerBuf, 0)
+		// InStream 4 (BCJ2 In 1, Call) <- OutStream 1 (Coder 1 Out)
+		_ = WriteNumber(&headerBuf, 4)
+		_ = WriteNumber(&headerBuf, 1)
+		// InStream 5 (BCJ2 In 2, Jump) <- OutStream 2 (Coder 2 Out)
+		_ = WriteNumber(&headerBuf, 5)
+		_ = WriteNumber(&headerBuf, 2)
+
+		// PackedIndices for 4 unbound streams:
+		_ = WriteNumber(&headerBuf, 0) // Coder 0 In (Main)
+		_ = WriteNumber(&headerBuf, 1) // Coder 1 In (Call)
+		_ = WriteNumber(&headerBuf, 2) // Coder 2 In (Jump)
+		_ = WriteNumber(&headerBuf, 6) // Coder 3 In 3 (RC)
+
+		headerBuf.WriteByte(NIDCodersUnpackSize)
+		_ = WriteNumber(&headerBuf, bcj2UnpackSizes[0]) // Coder 0 Out (Main)
+		_ = WriteNumber(&headerBuf, bcj2UnpackSizes[1]) // Coder 1 Out (Call)
+		_ = WriteNumber(&headerBuf, bcj2UnpackSizes[2]) // Coder 2 Out (Jump)
+		_ = WriteNumber(&headerBuf, totalUnpackSize)    // Coder 3 Out (BCJ2 Final)
+
 	case filter == FilterBCJ || filter == FilterARM:
 		filterMethod := uint64(MethodBCJ)
 		if filter == FilterARM {
@@ -517,7 +624,7 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		if hasEncryption {
 			_ = WriteNumber(&headerBuf, 3) // NumCoders = 3
 			writeCoder(&headerBuf, filterMethod, nil)
-			writeCoder(&headerBuf, MethodLZMA2, []byte{0x18})
+			writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
 			writeCoder(&headerBuf, MethodAES, aesProps)
 
 			// NumBindPairs = 2:
@@ -536,7 +643,7 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 			// 2 Coders: Coder 0 = BCJ/ARM filter, Coder 1 = LZMA2
 			_ = WriteNumber(&headerBuf, 2) // NumCoders = 2
 			writeCoder(&headerBuf, filterMethod, nil)
-			writeCoder(&headerBuf, MethodLZMA2, []byte{0x18}) // 8MB dictionary
+			writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
 
 			// BindPairs (NumBindPairs = 1: Coder 0 in <- Coder 1 out)
 			_ = WriteNumber(&headerBuf, 0) // InIndex = 0
@@ -583,7 +690,7 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	default:
 		if hasEncryption {
 			_ = WriteNumber(&headerBuf, 2)
-			writeCoder(&headerBuf, MethodLZMA2, []byte{0x18})
+			writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
 			writeCoder(&headerBuf, MethodAES, aesProps)
 
 			_ = WriteNumber(&headerBuf, 0)
@@ -593,9 +700,9 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 			_ = WriteNumber(&headerBuf, totalUnpackSize)
 			_ = WriteNumber(&headerBuf, compSizeBeforeAES)
 		} else {
-			// 1 Coder (LZMA2: 8MB dictionary)
+			// 1 Coder (LZMA2)
 			_ = WriteNumber(&headerBuf, 1) // NumCoders = 1
-			writeCoder(&headerBuf, MethodLZMA2, []byte{0x18})
+			writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
 
 			// CodersUnpackSize
 			headerBuf.WriteByte(NIDCodersUnpackSize)
@@ -834,6 +941,10 @@ func (cw *countingWriter) Write(p []byte) (int, error) {
 }
 
 func writeCoder(buf *bytes.Buffer, method uint64, props []byte) {
+	writeComplexCoder(buf, method, 1, 1, props)
+}
+
+func writeComplexCoder(buf *bytes.Buffer, method uint64, inStreams, outStreams int, props []byte) {
 	var idBytes []byte
 	switch {
 	case method <= 0xFF:
@@ -847,11 +958,18 @@ func writeCoder(buf *bytes.Buffer, method uint64, props []byte) {
 	}
 
 	mainByte := byte(len(idBytes))
+	if inStreams != 1 || outStreams != 1 {
+		mainByte |= 0x10
+	}
 	if len(props) > 0 {
 		mainByte |= 0x20
 	}
 	buf.WriteByte(mainByte)
 	buf.Write(idBytes)
+	if inStreams != 1 || outStreams != 1 {
+		_ = WriteNumber(buf, uint64(inStreams))
+		_ = WriteNumber(buf, uint64(outStreams))
+	}
 	if len(props) > 0 {
 		_ = WriteNumber(buf, uint64(len(props)))
 		buf.Write(props)

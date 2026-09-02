@@ -12,6 +12,7 @@ import (
 	"github.com/lemon4ksan/seal/container/sevenzip"
 	"github.com/lemon4ksan/seal/container/tar"
 	"github.com/lemon4ksan/seal/container/targz"
+	"github.com/lemon4ksan/seal/container/wim"
 	"github.com/lemon4ksan/seal/container/zip"
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/option"
@@ -37,6 +38,8 @@ func DefaultEngine(t ContainerType) (Container, error) {
 		return tar.NewFormat(container.TarZst), nil
 	case container.SevenZip:
 		return sevenzip.New(), nil
+	case container.Wim:
+		return wim.New(), nil
 	default:
 		return nil, fmt.Errorf("seal: unsupported container type %q", t)
 	}

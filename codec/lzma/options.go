@@ -47,7 +47,7 @@ func OptionsForLevel(lvl Level) Options {
 	opts := Options{
 		Level:     lvl,
 		DictSize:  8 * 1024 * 1024,
-		ChunkSize: 64 * 1024,
+		ChunkSize: 2 * 1024 * 1024,
 		Lc:        3,
 		Lp:        0,
 		Pb:        2,
@@ -56,25 +56,34 @@ func OptionsForLevel(lvl Level) Options {
 	switch {
 	case lvl <= LevelFastest:
 		opts.Level = LevelFastest
-		opts.ChainLength = 4
-		opts.FastBytes = 16
+		opts.DictSize = 1 * 1024 * 1024
+		opts.ChainLength = 8
+		opts.FastBytes = 32
+		opts.ChunkSize = 512 * 1024
 	case lvl <= LevelFast:
 		opts.Level = LevelFast
-		opts.ChainLength = 8
-		opts.FastBytes = 24
-	case lvl <= LevelNormal:
-		opts.Level = LevelNormal
+		opts.DictSize = 2 * 1024 * 1024
 		opts.ChainLength = 16
 		opts.FastBytes = 32
-	case lvl <= LevelMaximum:
-		opts.Level = LevelMaximum
-		opts.ChainLength = 24
-		opts.FastBytes = 48
-	default:
-		opts.Level = LevelUltra
+		opts.ChunkSize = 1 * 1024 * 1024
+	case lvl <= LevelNormal:
+		opts.Level = LevelNormal
+		opts.DictSize = 8 * 1024 * 1024
 		opts.ChainLength = 32
 		opts.FastBytes = 64
+		opts.ChunkSize = 2 * 1024 * 1024
+	case lvl <= LevelMaximum:
+		opts.Level = LevelMaximum
 		opts.DictSize = 16 * 1024 * 1024
+		opts.ChainLength = 48
+		opts.FastBytes = 96
+		opts.ChunkSize = 2 * 1024 * 1024
+	default:
+		opts.Level = LevelUltra
+		opts.DictSize = 32 * 1024 * 1024
+		opts.ChainLength = 96
+		opts.FastBytes = 128
+		opts.ChunkSize = 2 * 1024 * 1024
 	}
 
 	return opts

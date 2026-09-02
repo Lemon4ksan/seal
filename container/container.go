@@ -51,6 +51,9 @@ const (
 	// SevenZip represents the 7-Zip archive container (.7z).
 	SevenZip Type = "7z"
 
+	// Wim represents the Windows Imaging Format container (.wim).
+	Wim Type = "wim"
+
 	// Rar represents the RAR archive container (.rar).
 	Rar Type = "rar"
 )
@@ -144,6 +147,8 @@ func DetectExtension(filename string) Type {
 		return Bz2
 	case strings.HasSuffix(lower, ".7z"):
 		return SevenZip
+	case strings.HasSuffix(lower, ".wim"), strings.HasSuffix(lower, ".swm"), strings.HasSuffix(lower, ".esd"):
+		return Wim
 	case strings.HasSuffix(lower, ".rar"):
 		return Rar
 	default:
@@ -180,6 +185,12 @@ func SniffHeader(header []byte) Type {
 		header[4] == 0x27 &&
 		header[5] == 0x1C {
 		return SevenZip
+	}
+
+	// WIM container (MSWIM\0\0\0)
+	if len(header) >= 8 && header[0] == 'M' && header[1] == 'S' && header[2] == 'W' && header[3] == 'I' &&
+		header[4] == 'M' && header[5] == 0 && header[6] == 0 && header[7] == 0 {
+		return Wim
 	}
 
 	// Zstandard container

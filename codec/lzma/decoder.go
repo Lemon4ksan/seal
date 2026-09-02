@@ -385,15 +385,138 @@ func (d *DecoderCore) DecodeStream(rd *RangeDecoder, dest io.Writer, maxUnpack u
 	return totalWritten, nil
 }
 
+type fastDecoder struct {
+	rd     *RangeDecoder
+	range_ uint32
+	code   uint32
+	pos    int
+	limit  int
+	buf    unsafe.Pointer
+	err    error
+}
+
+func (fd *fastDecoder) decodeBit(prob *uint16) int {
+	p := uint32(*prob)
+	bound := (fd.range_ >> kNumBitModelTotalBits) * p
+	if fd.code < bound {
+		fd.range_ = bound
+		*prob += uint16((kBitModelTotal - p) >> kNumMoveBits)
+		if fd.range_ < kTopValue {
+			if fd.pos < fd.limit {
+				b := *(*byte)(unsafe.Add(fd.buf, fd.pos))
+				fd.pos++
+				fd.range_ <<= 8
+				fd.code = (fd.code << 8) | uint32(b)
+			} else {
+				fd.normalize()
+			}
+		}
+		return 0
+	}
+	fd.range_ -= bound
+	fd.code -= bound
+	*prob -= uint16(p >> kNumMoveBits)
+	if fd.range_ < kTopValue {
+		if fd.pos < fd.limit {
+			b := *(*byte)(unsafe.Add(fd.buf, fd.pos))
+			fd.pos++
+			fd.range_ <<= 8
+			fd.code = (fd.code << 8) | uint32(b)
+		} else {
+			fd.normalize()
+		}
+	}
+	return 1
+}
+
+func (fd *fastDecoder) normalize() {
+	fd.rd.range_ = fd.range_
+	fd.rd.code = fd.code
+	fd.rd.pos = fd.pos
+	if err := fd.rd.normalizeSlow(); err != nil {
+		fd.err = err
+		return
+	}
+	fd.range_ = fd.rd.range_
+	fd.code = fd.rd.code
+	fd.pos = fd.rd.pos
+	fd.limit = fd.rd.limit
+}
+
+func (fd *fastDecoder) decodeDirectBits(numBits int) uint32 {
+	var val uint32
+	for i := 0; i < numBits; i++ {
+		fd.range_ >>= 1
+		if fd.code >= fd.range_ {
+			fd.code -= fd.range_
+			val = (val << 1) | 1
+		} else {
+			val <<= 1
+		}
+		if fd.range_ < kTopValue {
+			if fd.pos < fd.limit {
+				b := *(*byte)(unsafe.Add(fd.buf, fd.pos))
+				fd.pos++
+				fd.range_ <<= 8
+				fd.code = (fd.code << 8) | uint32(b)
+			} else {
+				fd.normalize()
+			}
+		}
+	}
+	return val
+}
+
+func (fd *fastDecoder) decodeTree(probs []uint16, numBits int) uint32 {
+	var m uint32 = 1
+	for i := 0; i < numBits; i++ {
+		bit := fd.decodeBit(&probs[m])
+		m = (m << 1) | uint32(bit)
+	}
+	return m - (1 << numBits)
+}
+
+func (fd *fastDecoder) decodeReverseTree(probs []uint16, numBits int) uint32 {
+	var m uint32 = 1
+	var symbol uint32
+	for i := 0; i < numBits; i++ {
+		bit := fd.decodeBit(&probs[m])
+		m = (m << 1) | uint32(bit)
+		symbol |= uint32(bit) << i
+	}
+	return symbol
+}
+
+func (fd *fastDecoder) decodeLen(ld *LenDecoder, posState int) int {
+	if fd.decodeBit(&ld.choice) == 0 {
+		probs := ld.low[posState][:]
+		var m uint32 = 1
+		m = (m << 1) | uint32(fd.decodeBit(&probs[m]))
+		m = (m << 1) | uint32(fd.decodeBit(&probs[m]))
+		m = (m << 1) | uint32(fd.decodeBit(&probs[m]))
+		return int(m - 8)
+	}
+	if fd.decodeBit(&ld.choice2) == 0 {
+		probs := ld.mid[posState][:]
+		var m uint32 = 1
+		m = (m << 1) | uint32(fd.decodeBit(&probs[m]))
+		m = (m << 1) | uint32(fd.decodeBit(&probs[m]))
+		m = (m << 1) | uint32(fd.decodeBit(&probs[m]))
+		return int(m-8) + kLenNumLowSymbols
+	}
+	probs := ld.high[:]
+	var m uint32 = 1
+	for i := 0; i < kLenNumHighBits; i++ {
+		m = (m << 1) | uint32(fd.decodeBit(&probs[m]))
+	}
+	return int(m-(1<<kLenNumHighBits)) + kLenNumLowSymbols + kLenNumMidSymbols
+}
+
 // DecodeToSlice directly decodes LZMA payload into a destination byte slice with local register pinning.
 func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uint64) (int, error) {
 	var totalWritten int
 	var prevByte byte
 	maxLen := min(int(maxUnpack), len(dest))
-	range_ := rd.range_
-	code := rd.code
-	bufPos := rd.pos
-	bufLimit := rd.limit
 	buf := rd.buf[:]
 	win := d.win
 	winPos := d.winPos
@@ -416,144 +539,17 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 		bufPtr = unsafe.Pointer(&buf[0])
 	}
 
-	var decodeErr error
-
-	// Inlined local bit decoder
-	decodeBitFast := func(prob *uint16) int {
-		p := uint32(*prob)
-		bound := (range_ >> kNumBitModelTotalBits) * p
-		if code < bound {
-			range_ = bound
-			*prob += uint16((kBitModelTotal - p) >> kNumMoveBits)
-			if range_ < kTopValue {
-				if bufPos < bufLimit {
-					b := *(*byte)(unsafe.Add(bufPtr, bufPos))
-					bufPos++
-					range_ <<= 8
-					code = (code << 8) | uint32(b)
-				} else {
-					rd.range_ = range_
-					rd.code = code
-					rd.pos = bufPos
-					if err := rd.normalizeSlow(); err != nil {
-						decodeErr = err
-						return 0
-					}
-					range_ = rd.range_
-					code = rd.code
-					bufPos = rd.pos
-					bufLimit = rd.limit
-				}
-			}
-			return 0
-		}
-		range_ -= bound
-		code -= bound
-		*prob -= uint16(p >> kNumMoveBits)
-		if range_ < kTopValue {
-			if bufPos < bufLimit {
-				b := *(*byte)(unsafe.Add(bufPtr, bufPos))
-				bufPos++
-				range_ <<= 8
-				code = (code << 8) | uint32(b)
-			} else {
-				rd.range_ = range_
-				rd.code = code
-				rd.pos = bufPos
-				if err := rd.normalizeSlow(); err != nil {
-					decodeErr = err
-					return 0
-				}
-				range_ = rd.range_
-				code = rd.code
-				bufPos = rd.pos
-				bufLimit = rd.limit
-			}
-		}
-		return 1
-	}
-
-	decodeDirectBitsFast := func(numBits int) uint32 {
-		var val uint32
-		for i := 0; i < numBits; i++ {
-			range_ >>= 1
-			if code >= range_ {
-				code -= range_
-				val = (val << 1) | 1
-			} else {
-				val <<= 1
-			}
-			if range_ < kTopValue {
-				if bufPos < bufLimit {
-					b := *(*byte)(unsafe.Add(bufPtr, bufPos))
-					bufPos++
-					range_ <<= 8
-					code = (code << 8) | uint32(b)
-				} else {
-					rd.range_ = range_
-					rd.code = code
-					rd.pos = bufPos
-					if err := rd.normalizeSlow(); err != nil {
-						decodeErr = err
-						return 0
-					}
-					range_ = rd.range_
-					code = rd.code
-					bufPos = rd.pos
-					bufLimit = rd.limit
-				}
-			}
-		}
-		return val
-	}
-
-	decodeTreeFast := func(probs []uint16, numBits int) uint32 {
-		var m uint32 = 1
-		for i := 0; i < numBits; i++ {
-			bit := decodeBitFast(&probs[m])
-			m = (m << 1) | uint32(bit)
-		}
-		return m - (1 << numBits)
-	}
-
-	decodeReverseTreeFast := func(probs []uint16, numBits int) uint32 {
-		var m uint32 = 1
-		var symbol uint32
-		for i := 0; i < numBits; i++ {
-			bit := decodeBitFast(&probs[m])
-			m = (m << 1) | uint32(bit)
-			symbol |= uint32(bit) << i
-		}
-		return symbol
-	}
-
-	decodeLenFast := func(ld *LenDecoder, posState int) int {
-		if decodeBitFast(&ld.choice) == 0 {
-			probs := ld.low[posState][:]
-			var m uint32 = 1
-			m = (m << 1) | uint32(decodeBitFast(&probs[m]))
-			m = (m << 1) | uint32(decodeBitFast(&probs[m]))
-			m = (m << 1) | uint32(decodeBitFast(&probs[m]))
-			return int(m - 8)
-		}
-		if decodeBitFast(&ld.choice2) == 0 {
-			probs := ld.mid[posState][:]
-			var m uint32 = 1
-			m = (m << 1) | uint32(decodeBitFast(&probs[m]))
-			m = (m << 1) | uint32(decodeBitFast(&probs[m]))
-			m = (m << 1) | uint32(decodeBitFast(&probs[m]))
-			return int(m-8) + kLenNumLowSymbols
-		}
-		probs := ld.high[:]
-		var m uint32 = 1
-		for i := 0; i < kLenNumHighBits; i++ {
-			m = (m << 1) | uint32(decodeBitFast(&probs[m]))
-		}
-		return int(m-(1<<kLenNumHighBits)) + kLenNumLowSymbols + kLenNumMidSymbols
+	fd := fastDecoder{
+		rd:     rd,
+		range_: rd.range_,
+		code:   rd.code,
+		pos:    rd.pos,
+		limit:  rd.limit,
+		buf:    bufPtr,
 	}
 
 	for totalWritten < maxLen {
-		if decodeErr != nil {
+		if fd.err != nil {
 			break
 		}
 		// posState isolates the lowest pb bits of uncompressed stream offset.
@@ -561,7 +557,7 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 		posState := int(uint32(totalWritten) & posMask)
 
 		// isMatch determines whether the next token is a Literal (0) or a Match/Repetition (1).
-		bit := decodeBitFast(&d.isMatch[state][posState])
+		bit := fd.decodeBit(&d.isMatch[state][posState])
 
 		if bit == 0 {
 			// Literal decoding pathway:
@@ -580,11 +576,11 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 					matchBit := int((matchByte >> 7) & 1)
 					matchByte <<= 1
 					probIdx := uint32(0x100 + (matchBit << 8) + int(symbol))
-					b := decodeBitFast(&probs[probIdx])
+					b := fd.decodeBit(&probs[probIdx])
 					symbol = (symbol << 1) | uint32(b)
 					if matchBit != b {
 						for symbol < 0x100 {
-							symbol = (symbol << 1) | uint32(decodeBitFast(&probs[symbol]))
+							symbol = (symbol << 1) | uint32(fd.decodeBit(&probs[symbol]))
 						}
 						break
 					}
@@ -595,14 +591,14 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 			} else {
 				// Pure Literal mode: Unrolled 8-step binary tree descent without loop branching.
 				// Each step shifts the accumulated symbol and resolves 1 bit using local register pinned range state.
-				symbol = (symbol << 1) | uint32(decodeBitFast(&probs[symbol]))
-				symbol = (symbol << 1) | uint32(decodeBitFast(&probs[symbol]))
-				symbol = (symbol << 1) | uint32(decodeBitFast(&probs[symbol]))
-				symbol = (symbol << 1) | uint32(decodeBitFast(&probs[symbol]))
-				symbol = (symbol << 1) | uint32(decodeBitFast(&probs[symbol]))
-				symbol = (symbol << 1) | uint32(decodeBitFast(&probs[symbol]))
-				symbol = (symbol << 1) | uint32(decodeBitFast(&probs[symbol]))
-				symbol = (symbol << 1) | uint32(decodeBitFast(&probs[symbol]))
+				symbol = (symbol << 1) | uint32(fd.decodeBit(&probs[symbol]))
+				symbol = (symbol << 1) | uint32(fd.decodeBit(&probs[symbol]))
+				symbol = (symbol << 1) | uint32(fd.decodeBit(&probs[symbol]))
+				symbol = (symbol << 1) | uint32(fd.decodeBit(&probs[symbol]))
+				symbol = (symbol << 1) | uint32(fd.decodeBit(&probs[symbol]))
+				symbol = (symbol << 1) | uint32(fd.decodeBit(&probs[symbol]))
+				symbol = (symbol << 1) | uint32(fd.decodeBit(&probs[symbol]))
+				symbol = (symbol << 1) | uint32(fd.decodeBit(&probs[symbol]))
 			}
 
 			prevByte = byte(symbol)
@@ -616,16 +612,16 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 
 		// Match or Repetition pathway:
 		var length int
-		bit = decodeBitFast(&d.isRep[state])
+		bit = fd.decodeBit(&d.isRep[state])
 
 		if bit == 1 {
 			// Repetition Match: Reuses one of the last 4 observed match distances (reps[0..3]).
-			bit = decodeBitFast(&d.isRepG0[state])
+			bit = fd.decodeBit(&d.isRepG0[state])
 
 			var dist uint32
 			if bit == 0 {
 				dist = reps[0]
-				bit = decodeBitFast(&d.isRep0Long[state][posState])
+				bit = fd.decodeBit(&d.isRep0Long[state][posState])
 				if bit == 0 {
 					// ShortRep: Exactly 1 byte repeated at distance reps[0].
 					// Encoded in only ~4 bits total, bypassing length and distance parsing completely.
@@ -639,11 +635,11 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 				}
 			} else {
 				// Repetition distance selection (reps[1], reps[2], or reps[3]) with LRU cycling.
-				bit = decodeBitFast(&d.isRepG1[state])
+				bit = fd.decodeBit(&d.isRepG1[state])
 				if bit == 0 {
 					dist = reps[1]
 				} else {
-					bit = decodeBitFast(&d.isRepG2[state])
+					bit = fd.decodeBit(&d.isRepG2[state])
 					if bit == 0 {
 						dist = reps[2]
 					} else {
@@ -656,7 +652,7 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 				reps[0] = dist
 			}
 
-			lenVal := decodeLenFast(&d.repLenDecoder, posState)
+			lenVal := fd.decodeLen(&d.repLenDecoder, posState)
 			length = lenVal + kMatchMinLen
 			state = stateUpdateRep(state)
 		} else {
@@ -665,7 +661,7 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 			reps[2] = reps[1]
 			reps[1] = reps[0]
 
-			lenVal := decodeLenFast(&d.lenDecoder, posState)
+			lenVal := fd.decodeLen(&d.lenDecoder, posState)
 			length = lenVal + kMatchMinLen
 			state = stateUpdateMatch(state)
 
@@ -674,7 +670,7 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 				lenToPos = kNumLenToPosStates - 1
 			}
 
-			posSlotVal := decodeTreeFast(d.posSlot[lenToPos][:], kNumPosSlotBits)
+			posSlotVal := fd.decodeTree(d.posSlot[lenToPos][:], kNumPosSlotBits)
 
 			if posSlotVal >= 4 {
 				numDirectBits := int((posSlotVal >> 1) - 1)
@@ -682,12 +678,12 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 
 				if posSlotVal < 14 {
 					subProbs := d.posDecoders[posSlotVal-4][:]
-					revDist := decodeReverseTreeFast(subProbs, numDirectBits)
+					revDist := fd.decodeReverseTree(subProbs, numDirectBits)
 					dist += revDist
 				} else {
-					directBits := decodeDirectBitsFast(numDirectBits - kNumAlignBits)
+					directBits := fd.decodeDirectBits(numDirectBits - kNumAlignBits)
 					dist += directBits << kNumAlignBits
-					alignBits := decodeReverseTreeFast(d.posAlign[:], kNumAlignBits)
+					alignBits := fd.decodeReverseTree(d.posAlign[:], kNumAlignBits)
 					dist += alignBits
 				}
 				reps[0] = dist
@@ -703,9 +699,10 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 
 		dist := reps[0]
 
-		// Fast Path: Check if 8-byte chunk copy is possible
-		if dist >= 8 && length >= 8 && winPos > dist && winPos+uint32(length) < d.dictSize &&
-			totalWritten+length <= maxLen {
+		switch {
+		case dist >= 8 && length >= 8 && winPos > dist && winPos+uint32(length) < d.dictSize &&
+			totalWritten+length <= maxLen:
+			// Fast Path: Check if 8-byte chunk copy is possible
 			srcPos := winPos - dist - 1
 			rem := length
 			for rem >= 8 {
@@ -730,7 +727,32 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 				rem--
 			}
 			prevByte = *(*byte)(unsafe.Add(winPtr, winPos-1))
-		} else {
+
+		case dist == 0 && length >= 4 && winPos+uint32(length) < d.dictSize &&
+			totalWritten+length <= maxLen:
+			// RLE Fast Path: single-byte run expanded via 64-bit register store
+			b := *(*byte)(unsafe.Add(winPtr, (winPos-1)&dictMask))
+			pattern := uint64(b) * 0x0101010101010101
+			rem := length
+			for rem >= 8 {
+				wDstP := unsafe.Add(winPtr, winPos)
+				dDstP := unsafe.Add(destPtr, totalWritten)
+				*(*uint64)(wDstP) = pattern
+				*(*uint64)(dDstP) = pattern
+				winPos += 8
+				totalWritten += 8
+				rem -= 8
+			}
+			for rem > 0 {
+				*(*byte)(unsafe.Add(winPtr, winPos)) = b
+				*(*byte)(unsafe.Add(destPtr, totalWritten)) = b
+				winPos++
+				totalWritten++
+				rem--
+			}
+			prevByte = b
+
+		default:
 			for i := 0; i < length; i++ {
 				prevByte = *(*byte)(unsafe.Add(winPtr, ((winPos - dist - 1) & dictMask)))
 				*(*byte)(unsafe.Add(winPtr, winPos)) = prevByte
@@ -742,15 +764,15 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 	}
 
 	// Write back local register state to structs
-	rd.range_ = range_
-	rd.code = code
-	rd.pos = bufPos
+	rd.range_ = fd.range_
+	rd.code = fd.code
+	rd.pos = fd.pos
 	d.winPos = winPos
 	d.state = state
 	d.reps = reps
 
-	if decodeErr != nil {
-		return totalWritten, decodeErr
+	if fd.err != nil {
+		return totalWritten, fd.err
 	}
 	return totalWritten, nil
 }

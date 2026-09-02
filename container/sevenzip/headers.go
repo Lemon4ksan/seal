@@ -98,6 +98,19 @@ type Folder struct {
 	NumUnpackStreams int
 }
 
+// GetUnpackSize returns the final uncompressed output size of the folder.
+func (f *Folder) GetUnpackSize() uint64 {
+	if len(f.UnpackSizes) == 0 {
+		return 0
+	}
+	for i, c := range f.Coders {
+		if c.MethodID == MethodBCJ2 && i < len(f.UnpackSizes) {
+			return f.UnpackSizes[i]
+		}
+	}
+	return f.UnpackSizes[0]
+}
+
 // FileEntry represents a file entry in the 7z metadata table.
 type FileEntry struct {
 	Name           string

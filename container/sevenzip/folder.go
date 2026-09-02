@@ -27,31 +27,45 @@ func DecodeFolderStream(folder *Folder, packedStreams []io.Reader, password stri
 	}
 
 	// Check if this is a standard BCJ2 graph (4 streams: Main, Call, Jump, RC)
-	// Coder 0: BCJ2 (4 in, 1 out)
-	// Coders 1..3: LZMA/LZMA2 decompressors for streams 0..2, Stream 3 is raw RC
-	if len(folder.Coders) == 4 && len(packedStreams) == 4 && folder.Coders[0].MethodID == MethodBCJ2 {
-		r0, err := decodeSingleCoder(folder.Coders[1], packedStreams[0], nil, password)
-		if err != nil {
-			return nil, err
+	if len(folder.Coders) == 4 && len(packedStreams) == 4 {
+		var lzmaCoders [3]CoderInfo
+		var hasBCJ2 bool
+
+		if folder.Coders[0].MethodID == MethodBCJ2 {
+			hasBCJ2 = true
+			lzmaCoders = [3]CoderInfo{folder.Coders[1], folder.Coders[2], folder.Coders[3]}
+		} else if folder.Coders[3].MethodID == MethodBCJ2 {
+			hasBCJ2 = true
+			lzmaCoders = [3]CoderInfo{folder.Coders[0], folder.Coders[1], folder.Coders[2]}
 		}
-		defer r0.Close()
 
-		r1, err := decodeSingleCoder(folder.Coders[2], packedStreams[1], nil, password)
-		if err != nil {
-			return nil, err
+		if hasBCJ2 {
+			r0, err := decodeSingleCoder(lzmaCoders[0], packedStreams[0], nil, password)
+			if err != nil {
+				return nil, err
+			}
+
+			r1, err := decodeSingleCoder(lzmaCoders[1], packedStreams[1], nil, password)
+			if err != nil {
+				_ = r0.Close()
+				return nil, err
+			}
+
+			r2, err := decodeSingleCoder(lzmaCoders[2], packedStreams[2], nil, password)
+			if err != nil {
+				_ = r0.Close()
+				_ = r1.Close()
+				return nil, err
+			}
+
+			r3 := packedStreams[3] // RC stream is raw copy
+
+			dec := bcj2.NewStreamDecoder(r0, r1, r2, r3)
+			return &multiCloser{
+				Reader:  dec,
+				closers: []io.Closer{r0, r1, r2},
+			}, nil
 		}
-		defer r1.Close()
-
-		r2, err := decodeSingleCoder(folder.Coders[3], packedStreams[2], nil, password)
-		if err != nil {
-			return nil, err
-		}
-		defer r2.Close()
-
-		r3 := packedStreams[3] // RC stream is raw copy
-
-		dec := bcj2.NewStreamDecoder(r0, r1, r2, r3)
-		return io.NopCloser(dec), nil
 	}
 
 	// Linear coder pipeline (1 packed stream, N coders linked in sequence)
@@ -171,4 +185,21 @@ func decodeSingleCoder(coder CoderInfo, in io.Reader, unpackSizes []uint64, pass
 	default:
 		return nil, fmt.Errorf("%w: ID=0x%X", ErrUnsupportedMethod, coder.MethodID)
 	}
+}
+
+type multiCloser struct {
+	io.Reader
+	closers []io.Closer
+}
+
+func (m *multiCloser) Close() error {
+	var firstErr error
+	for _, c := range m.closers {
+		if c != nil {
+			if err := c.Close(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
 }
