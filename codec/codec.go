@@ -28,6 +28,7 @@ const (
 	BZIP2     Method = 12  // BZIP2 (Burrows-Wheeler)
 	LZMA      Method = 14  // LZMA
 	LZMA2     Method = 15  // LZMA2
+	IBMCmpsc  Method = 16  // IBM z/OS CMPSC
 	ZStandard Method = 93  // Zstandard (RFC 8878)
 	XZ        Method = 95  // XZ stream container (LZMA2 + BCJ)
 	Gzip      Method = 96  // GZIP container compression
@@ -54,6 +55,8 @@ func (m Method) String() string {
 		return "LZMA"
 	case LZMA2:
 		return "LZMA2"
+	case IBMCmpsc:
+		return "IBM-CMPSC"
 	case ZStandard:
 		return "Zstandard"
 	case XZ:

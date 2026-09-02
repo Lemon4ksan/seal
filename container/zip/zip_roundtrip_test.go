@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/seal/codec"
+	_ "github.com/lemon4ksan/seal/codec/legacy/cmpsc"
 	"github.com/lemon4ksan/seal/file"
 )
 
@@ -352,5 +353,53 @@ func TestZip_StrictCompliance_APPNOTE441_VersionNeeded(t *testing.T) {
 			t.Errorf("ComputeVersionNeeded(%v, %v, %v, %v) = %d, want %d",
 				tt.method, tt.isDir, tt.isEncrypted, tt.isZip64, got, tt.wantVersion)
 		}
+	}
+}
+
+func TestZip_IBM_CMPSC_Roundtrip(t *testing.T) {
+	buf := new(bytes.Buffer)
+	w := NewWriter(buf, codec.DefaultRegistry)
+
+	file1, err := file.New("mainframe_job.jcl", false)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	file1.WithMethod(codec.IBMCmpsc)
+	content := []byte("//JOB01 EXEC PGM=IEFBR14\n//DD1 DD DSN=SYS1.LINKLIB,DISP=SHR\n//SYSIN DD *\n/*\n")
+
+	if err := w.WriteEntry(file1, bytes.NewReader(content)); err != nil {
+		t.Fatalf("WriteEntry: %v", err)
+	}
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "", codec.DefaultRegistry)
+	if err != nil {
+		t.Fatalf("NewReader: %v", err)
+	}
+
+	entries := r.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Method() != codec.IBMCmpsc {
+		t.Fatalf("expected Method 16 (IBMCmpsc), got %v", entries[0].Method())
+	}
+
+	rc, err := entries[0].Open()
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer rc.Close()
+
+	decomp, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	if !bytes.Equal(decomp, content) {
+		t.Fatalf("mismatch: got %q, want %q", string(decomp), string(content))
 	}
 }

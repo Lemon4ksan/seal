@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/lemon4ksan/seal/codec"
+	"github.com/lemon4ksan/seal/codec/legacy/cmpsc"
 	"github.com/lemon4ksan/seal/codec/legacy/dcl"
 	"github.com/lemon4ksan/seal/codec/legacy/deflate64"
 	"github.com/lemon4ksan/seal/codec/legacy/implode"
@@ -62,6 +63,14 @@ func RegisterAll(reg *codec.Registry) {
 	reg.RegisterDecompressor(codec.PKWAREDCL, func() codec.Decompressor {
 		return &dclDecompressor{}
 	})
+
+	// Method 16: IBM z/OS CMPSC
+	reg.RegisterCompressor(codec.IBMCmpsc, func(level int) codec.Compressor {
+		return &cmpscCompressor{level: level}
+	})
+	reg.RegisterDecompressor(codec.IBMCmpsc, func() codec.Decompressor {
+		return &cmpscDecompressor{}
+	})
 }
 
 type shrinkDecompressor struct{}
@@ -94,4 +103,24 @@ type dclDecompressor struct{}
 
 func (d *dclDecompressor) Decompress(src io.Reader) (io.ReadCloser, error) {
 	return dcl.NewReader(src), nil
+}
+
+type cmpscDecompressor struct{}
+
+func (c *cmpscDecompressor) Decompress(src io.Reader) (io.ReadCloser, error) {
+	return cmpsc.NewReader(src)
+}
+
+type cmpscCompressor struct {
+	level int
+}
+
+func (c *cmpscCompressor) Compress(src io.Reader, dest io.Writer) (int64, error) {
+	zw := cmpsc.NewWriterLevel(dest, c.level)
+	n, err := io.Copy(zw, src)
+	if err != nil {
+		_ = zw.Close()
+		return n, err
+	}
+	return n, zw.Close()
 }

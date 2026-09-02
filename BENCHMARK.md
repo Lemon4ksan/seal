@@ -1,8 +1,10 @@
-# ⚔️ Compression Battle: 35 Years of Algorithmic Evolution (1989 – 2026)
+# Compression Battle: 35 Years of Algorithmic Evolution (1989 – 2026)
 
 This benchmark analyzes the performance, compression density, memory behavior, and historical evolution of data compression algorithms implemented in the **`seal`** engine, spanning from **PKZIP 1.0 (1989)** to **Brotli & Zstandard (2020s)**.
 
----
+```bash
+go run ./cmd/bench_battle
+```
 
 ## 📊 Summary Across Datasets
 
@@ -22,7 +24,6 @@ This benchmark analyzes the performance, compression density, memory behavior, a
 
 > 🏆 **Winner:** **Brotli Level 9** ($187\times$ smaller than Shrink, $10\times$ smaller than Deflate).
 
----
 
 ### 2. Tabular CSV & Server Logs (`512 KB` Database Records)
 *Semi-structured column-oriented records with recurring timestamps, HTTP status codes, and IP addresses.*
@@ -41,7 +42,6 @@ This benchmark analyzes the performance, compression density, memory behavior, a
 
 > 🏆 **Winner:** **Brotli Level 9** and **LZMA2 Ultra** (LZMA2 provides balanced $123\text{ MB/s}$ speed with sub-10% ratio).
 
----
 
 ### 3. Binary Machine Code (`512 KB` x86_64 Instructions)
 *Binary instruction stream with relative `CALL` (0xE8) and `JMP` (0xE9) offsets.*
@@ -55,7 +55,6 @@ This benchmark analyzes the performance, compression density, memory behavior, a
 | **BCJ + LZMA2** | 2000s (7-Zip) | **18.8 KB** | **3.68%** | 110.8 MB/s | 331.1 MB/s |
 | **PPMd (Order 8)** | 2000s (PPM) | **106.9 KB** | **20.87%** | 21.2 MB/s | 17.6 MB/s |
 
----
 
 ### 4. High-Entropy / Incompressible Data (`256 KB` Random Noise)
 *Cryptographically random data simulating pre-compressed archives or encrypted payloads.*
@@ -67,9 +66,8 @@ This benchmark analyzes the performance, compression density, memory behavior, a
 | **PPMd (Order 8)** | 2000s (PPM) | **256.1 KB** | **100.04%** | Minimal overhead |
 | ⚠️ **Shrink (LZW 9-13b)** | 1989 (DOS/ARC) | **372.0 KB** | **145.32%** | 💣 **+45.3% Expansion Penalty!** |
 
----
 
-## 🔍 In-Depth Technical Analysis
+## In-Depth Technical Analysis
 
 ### 1. The Legacy Era (1989): Why Did Shrink Suffer from Expansion?
 * **Dictionary Growth without Bypass:**
@@ -86,11 +84,3 @@ This benchmark analyzes the performance, compression density, memory behavior, a
   Brotli uses **2nd-order context modeling**, static transformation dictionaries (containing common HTML, CSS, and English tokens), and variable-length distance codes up to 30 bits ($1\text{ GB}$ window). It achieved **$0.07\%$ ratio** on code and **$3.69\%$** on logs.
 * **Why LZMA2 Dominates Heavy Engineering Workloads:**
   LZMA2's Range Coder combined with 8MB+ sliding history allows it to maintain sustained $120\text{--}500\text{ MB/s}$ throughput on multicore systems with ultra-compact archive sizes.
-
----
-
-## 🚀 How to Run the Benchmark
-
-```bash
-go run ./cmd/bench_battle
-```

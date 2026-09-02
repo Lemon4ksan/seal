@@ -115,7 +115,7 @@ func ComputeVersionNeeded(method codec.Method, isDir, isEncrypted, isZip64 bool)
 		return VersionDCLImplode // 2.5
 	case codec.Deflate64:
 		return VersionDeflate64 // 2.1
-	case codec.Deflate:
+	case codec.Deflate, codec.IBMCmpsc:
 		return VersionDeflate // 2.0
 	default:
 		if isDir || isEncrypted {
