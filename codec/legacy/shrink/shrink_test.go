@@ -44,3 +44,30 @@ func TestShrink_LiteralStream(t *testing.T) {
 		t.Errorf("expected 'AB', got %q", string(out))
 	}
 }
+
+func TestShrink_CompressDecompress_Roundtrip(t *testing.T) {
+	sample := []byte(
+		"The quick brown fox jumps over the lazy dog. The quick brown fox jumps again and again and again!",
+	)
+
+	comp := shrink.NewCompressor()
+	var compBuf bytes.Buffer
+	n, err := comp.Compress(bytes.NewReader(sample), &compBuf)
+	if err != nil {
+		t.Fatalf("Compress failed: %v", err)
+	}
+	if n != int64(len(sample)) {
+		t.Fatalf("uncompressed size mismatch: got %d, want %d", n, len(sample))
+	}
+
+	dec := shrink.NewReader(&compBuf)
+	defer dec.Close()
+
+	decomp, err := io.ReadAll(dec)
+	if err != nil {
+		t.Fatalf("Decompress failed: %v", err)
+	}
+	if !bytes.Equal(decomp, sample) {
+		t.Fatalf("roundtrip mismatch:\ngot:  %q\nwant: %q", string(decomp), string(sample))
+	}
+}

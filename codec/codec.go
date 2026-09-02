@@ -24,6 +24,7 @@ const (
 	Implode   Method = 6  // Implode algorithm
 	Deflate   Method = 8  // DEFLATE (RFC 1951)
 	Deflate64 Method = 9  // Enhanced Deflate (Deflate64)
+	PKWAREDCL Method = 10 // PKWARE Data Compression Library Implode (DCL)
 	BZIP2     Method = 12 // BZIP2 (Burrows-Wheeler)
 	LZMA      Method = 14 // LZMA
 	LZMA2     Method = 15 // LZMA2
@@ -44,6 +45,8 @@ func (m Method) String() string {
 		return "Deflate"
 	case Deflate64:
 		return "Deflate64"
+	case PKWAREDCL:
+		return "PKWARE-DCL"
 	case BZIP2:
 		return "BZIP2"
 	case LZMA:

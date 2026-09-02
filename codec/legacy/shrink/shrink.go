@@ -191,3 +191,129 @@ func (b *byteReaderWrapper) ReadByte() (byte, error) {
 	_, err := io.ReadFull(b.r, b.buf[:])
 	return b.buf[0], err
 }
+
+// bitWriter writes variable-length bits LSB-first.
+type bitWriter struct {
+	w        io.Writer
+	bitBuf   uint32
+	bitCount uint8
+	buf      [256]byte
+	bufLen   int
+}
+
+func newBitWriter(w io.Writer) *bitWriter {
+	return &bitWriter{w: w}
+}
+
+func (bw *bitWriter) writeBits(val int, n uint8) error {
+	bw.bitBuf |= uint32(val) << bw.bitCount
+	bw.bitCount += n
+	for bw.bitCount >= 8 {
+		bw.buf[bw.bufLen] = byte(bw.bitBuf)
+		bw.bufLen++
+		if bw.bufLen == len(bw.buf) {
+			if _, err := bw.w.Write(bw.buf[:]); err != nil {
+				return err
+			}
+			bw.bufLen = 0
+		}
+		bw.bitBuf >>= 8
+		bw.bitCount -= 8
+	}
+	return nil
+}
+
+func (bw *bitWriter) flush() error {
+	if bw.bitCount > 0 {
+		bw.buf[bw.bufLen] = byte(bw.bitBuf)
+		bw.bufLen++
+		bw.bitBuf = 0
+		bw.bitCount = 0
+	}
+	if bw.bufLen > 0 {
+		_, err := bw.w.Write(bw.buf[:bw.bufLen])
+		bw.bufLen = 0
+		return err
+	}
+	return nil
+}
+
+// Compressor implements PKWARE Shrink (Method 1) compression.
+type Compressor struct{}
+
+// NewCompressor returns a new Shrink compressor.
+func NewCompressor() *Compressor {
+	return &Compressor{}
+}
+
+// Compress compresses an uncompressed byte stream from src into dest.
+func (c *Compressor) Compress(src io.Reader, dest io.Writer) (int64, error) {
+	bw := newBitWriter(dest)
+
+	dict := make(map[uint32]int, maxCode)
+	for i := range 256 {
+		dict[uint32(i)] = i
+	}
+
+	codeSize := uint8(minCodeSize)
+	freeCode := firstFree
+	var uncompressedBytes int64
+
+	buf := make([]byte, 32*1024)
+	n, err := src.Read(buf)
+	if n == 0 {
+		return 0, err
+	}
+
+	prefix := int(buf[0])
+	uncompressedBytes++
+	pos := 1
+
+	for {
+		for pos < n {
+			ch := buf[pos]
+			pos++
+			uncompressedBytes++
+
+			key := (uint32(prefix) << 8) | uint32(ch)
+			if code, ok := dict[key]; ok {
+				prefix = code
+			} else {
+				if err := bw.writeBits(prefix, codeSize); err != nil {
+					return uncompressedBytes, err
+				}
+
+				if freeCode < maxCode {
+					dict[key] = freeCode
+					freeCode++
+					if freeCode >= (1<<codeSize) && codeSize < maxCodeSize {
+						if err := bw.writeBits(escapeCode, codeSize); err != nil {
+							return uncompressedBytes, err
+						}
+						if err := bw.writeBits(1, 8); err != nil {
+							return uncompressedBytes, err
+						}
+						codeSize++
+					}
+				}
+				prefix = int(ch)
+			}
+		}
+
+		n, err = src.Read(buf)
+		if n == 0 || err != nil {
+			break
+		}
+		pos = 0
+	}
+
+	if err := bw.writeBits(prefix, codeSize); err != nil {
+		return uncompressedBytes, err
+	}
+
+	if err := bw.flush(); err != nil {
+		return uncompressedBytes, err
+	}
+
+	return uncompressedBytes, nil
+}

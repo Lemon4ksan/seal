@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/lemon4ksan/seal/codec"
+	"github.com/lemon4ksan/seal/codec/legacy/dcl"
 	"github.com/lemon4ksan/seal/codec/legacy/deflate64"
 	"github.com/lemon4ksan/seal/codec/legacy/implode"
 	"github.com/lemon4ksan/seal/codec/legacy/reduce"
@@ -26,6 +27,9 @@ func RegisterAll(reg *codec.Registry) {
 	}
 
 	// Method 1: Shrink
+	reg.RegisterCompressor(codec.Shrink, func(_ int) codec.Compressor {
+		return shrink.NewCompressor()
+	})
 	reg.RegisterDecompressor(codec.Shrink, func() codec.Decompressor {
 		return &shrinkDecompressor{}
 	})
@@ -53,6 +57,11 @@ func RegisterAll(reg *codec.Registry) {
 	reg.RegisterDecompressor(codec.Deflate64, func() codec.Decompressor {
 		return &deflate64Decompressor{}
 	})
+
+	// Method 10: PKWARE DCL Implode
+	reg.RegisterDecompressor(codec.PKWAREDCL, func() codec.Decompressor {
+		return &dclDecompressor{}
+	})
 }
 
 type shrinkDecompressor struct{}
@@ -79,4 +88,10 @@ type deflate64Decompressor struct{}
 
 func (d *deflate64Decompressor) Decompress(src io.Reader) (io.ReadCloser, error) {
 	return deflate64.NewReader(src), nil
+}
+
+type dclDecompressor struct{}
+
+func (d *dclDecompressor) Decompress(src io.Reader) (io.ReadCloser, error) {
+	return dcl.NewReader(src), nil
 }

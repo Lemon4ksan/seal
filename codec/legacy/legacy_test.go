@@ -23,6 +23,7 @@ func TestLegacyCodecs_Registration(t *testing.T) {
 		codec.Reduce4,
 		codec.Implode,
 		codec.Deflate64,
+		codec.PKWAREDCL,
 	}
 
 	reg := codec.DefaultRegistry
