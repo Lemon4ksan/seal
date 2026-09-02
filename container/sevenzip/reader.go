@@ -168,6 +168,11 @@ func (zr *Reader) readEncodedHeader(r io.Reader) error {
 		return err
 	}
 
+	zr.packPos = int64(StartHeaderSize)
+	zr.folders = nil
+	zr.subStreamSizes = nil
+	zr.folderCache = make(map[int][]byte)
+
 	innerReader := bytes.NewReader(data)
 	return zr.parseHeader(innerReader)
 }
@@ -668,6 +673,7 @@ func (zr *Reader) buildEntries() error {
 		if err != nil {
 			continue
 		}
+		f.WithRawName(fe.Name)
 
 		if fe.HasModTime {
 			f.WithModTime(fe.ModTime)

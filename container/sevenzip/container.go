@@ -110,8 +110,10 @@ func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 	}
 
 	wOpts := WriterOptions{
-		LZMA:   lzmaOpts,
-		Method: MethodLZMA2Default,
+		LZMA:           lzmaOpts,
+		Method:         MethodLZMA2Default,
+		Password:       cfg.Password,
+		EncryptHeaders: cfg.Password != "",
 	}
 
 	if cfg.DefaultMethod == codec.PPMd {

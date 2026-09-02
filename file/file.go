@@ -180,6 +180,15 @@ func (f *File) updateMeta(fn func(m *fileMeta)) {
 	}
 }
 
+// WithRawName overrides the file entry name without automatic path sanitization.
+// This is used by forensic tools, security tests, and legacy archive inspectors.
+func (f *File) WithRawName(name string) *File {
+	f.updateMeta(func(m *fileMeta) {
+		m.name = name
+	})
+	return f
+}
+
 // Name returns the archive-relative normalized forward-slash path.
 func (f *File) Name() string {
 	if m := f.meta.Load(); m != nil {

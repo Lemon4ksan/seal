@@ -17,6 +17,8 @@ import (
 	"github.com/lemon4ksan/foundation/tuikit"
 
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/container/sevenzip"
 	"github.com/lemon4ksan/seal/container/zip"
 )
 
@@ -29,13 +31,15 @@ func (c *DoctorCmd) Synopsis() string {
 	return "Repair damaged archives, salvage broken CDs, and sanitize Zip Slip"
 }
 
-func (c *DoctorCmd) Usage() string { return "seal doctor [flags] <damaged-archive> -o <repaired-path>" }
+func (c *DoctorCmd) Usage() string {
+	return "seal doctor [flags] <damaged-archive> -o <repaired-path>"
+}
 
 func (c *DoctorCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	outPath := fs.String("o", "", "Repaired output archive path (required)")
 	pwd := fs.String("p", "", "Decryption password")
-	rebuildCD := fs.Bool("rebuild-cd", false, "Force linear signature scan to reconstruct Central Directory")
+	rebuildCD := fs.Bool("rebuild-cd", false, "Force linear signature scan to reconstruct Central Directory (ZIP)")
 	noSanitize := fs.Bool("no-sanitize", false, "Disable Zip Slip path sanitization")
 
 	posArgs, err := tuikit.ParseInterspersedFlags(fs, args)
@@ -67,16 +71,32 @@ func (c *DoctorCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) e
 	}
 	defer outF.Close()
 
+	cType := util.DetectContainerType(inPath)
+	if cType == container.SevenZip {
+		return doctorSevenZip(inF, stat.Size(), outF, inPath, *outPath, *pwd, !*noSanitize, stdout)
+	}
+
+	return doctorZip(inF, stat.Size(), outF, inPath, *outPath, *pwd, *rebuildCD, !*noSanitize, stdout)
+}
+
+func doctorZip(
+	inF io.ReaderAt,
+	size int64,
+	outF io.Writer,
+	inPath, outPath, pwd string,
+	rebuildCD, sanitize bool,
+	stdout io.Writer,
+) error {
 	fmt.Fprintf(
 		stdout,
-		"\n%s: Diagnosing and repairing %s...\n",
+		"\n%s: Diagnosing and repairing ZIP archive %s...\n",
 		tuikit.Bold("Seal Archive Doctor"),
 		tuikit.Bold(filepath.Base(inPath)),
 	)
-	summary, err := zip.Repair(inF, stat.Size(), outF, zip.RepairOptions{
-		RebuildCentralDirectory: *rebuildCD,
-		SanitizePaths:           !*noSanitize,
-		Password:                *pwd,
+	summary, err := zip.Repair(inF, size, outF, zip.RepairOptions{
+		RebuildCentralDirectory: rebuildCD,
+		SanitizePaths:           sanitize,
+		Password:                pwd,
 	})
 	if err != nil {
 		return fmt.Errorf("repair failed: %w", err)
@@ -86,7 +106,8 @@ func (c *DoctorCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) e
 		SetStyle(tuikit.BorderRounded).
 		SetIndent(0).
 		AddRow("Input Archive", filepath.Base(inPath)).
-		AddRow("Output Archive", tuikit.Bold(*outPath)).
+		AddRow("Output Archive", tuikit.Bold(outPath)).
+		AddRow("Format", "ZIP (PKWARE)").
 		AddRow("Files Recovered", fmt.Sprintf("%d (%s salvaged)", summary.FilesRecovered, util.FormatBytes(summary.BytesRecovered)))
 
 	if summary.FilesSkipped > 0 {
@@ -99,6 +120,51 @@ func (c *DoctorCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) e
 		"Reconstructed via linear signature scan",
 		"Preserved and sanitized")
 	box.AddRow("Central Directory", cdStatus)
+
+	fmt.Println()
+	return box.Render(stdout)
+}
+
+func doctorSevenZip(
+	inF io.ReaderAt,
+	size int64,
+	outF io.Writer,
+	inPath, outPath, pwd string,
+	sanitize bool,
+	stdout io.Writer,
+) error {
+	fmt.Fprintf(
+		stdout,
+		"\n%s: Diagnosing and repairing 7-Zip archive %s...\n",
+		tuikit.Bold("Seal Archive Doctor"),
+		tuikit.Bold(filepath.Base(inPath)),
+	)
+	summary, err := sevenzip.Repair(inF, size, outF, sevenzip.RepairOptions{
+		SanitizePaths: sanitize,
+		Password:      pwd,
+	})
+	if err != nil {
+		return fmt.Errorf("repair failed: %w", err)
+	}
+
+	box := tuikit.NewBox("Repair & Recovery Summary", 65).
+		SetStyle(tuikit.BorderRounded).
+		SetIndent(0).
+		AddRow("Input Archive", filepath.Base(inPath)).
+		AddRow("Output Archive", tuikit.Bold(outPath)).
+		AddRow("Format", "7-Zip (.7z)").
+		AddRow("Files Recovered", fmt.Sprintf("%d (%s salvaged)", summary.FilesRecovered, util.FormatBytes(summary.BytesRecovered)))
+
+	if summary.FilesSkipped > 0 {
+		box.AddRow("Files Skipped", tuikit.Yellow(fmt.Sprintf("%d (unrecoverable)", summary.FilesSkipped)))
+	}
+	if summary.PathsSanitized > 0 {
+		box.AddRow("Paths Sanitized", tuikit.Green(fmt.Sprintf("%d (Zip Slip neutralized)", summary.PathsSanitized)))
+	}
+	sigStatus := generic.Ternary(summary.SignatureRealigned,
+		"Realigned (prepended SFX/junk removed)",
+		"Correctly aligned at offset 0")
+	box.AddRow("Signature Alignment", sigStatus)
 
 	fmt.Println()
 	return box.Render(stdout)

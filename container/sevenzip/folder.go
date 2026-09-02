@@ -26,22 +26,6 @@ func DecodeFolderStream(folder *Folder, packedStreams []io.Reader, password stri
 		return io.NopCloser(bytes.NewReader(nil)), nil
 	}
 
-	// Fast path: Single simple coder
-	if len(folder.Coders) == 1 && len(packedStreams) == 1 {
-		return decodeSingleCoder(folder.Coders[0], packedStreams[0], folder.UnpackSizes, password)
-	}
-
-	// Check if this is a standard BCJ / Delta + LZMA2 chain (2 coders)
-	if len(folder.Coders) == 2 && len(packedStreams) == 1 {
-		// Outer coder (Coder 1: LZMA/LZMA2) unpacks the compressed packedStream
-		r, err := decodeSingleCoder(folder.Coders[1], packedStreams[0], folder.UnpackSizes, password)
-		if err != nil {
-			return nil, err
-		}
-		// Inner coder (Coder 0: BCJ/Delta filter) converts branch offsets back to relative
-		return decodeSingleCoder(folder.Coders[0], r, folder.UnpackSizes, password)
-	}
-
 	// Check if this is a standard BCJ2 graph (4 streams: Main, Call, Jump, RC)
 	// Coder 0: BCJ2 (4 in, 1 out)
 	// Coders 1..3: LZMA/LZMA2 decompressors for streams 0..2, Stream 3 is raw RC
@@ -68,6 +52,24 @@ func DecodeFolderStream(folder *Folder, packedStreams []io.Reader, password stri
 
 		dec := bcj2.NewStreamDecoder(r0, r1, r2, r3)
 		return io.NopCloser(dec), nil
+	}
+
+	// Linear coder pipeline (1 packed stream, N coders linked in sequence)
+	// Outer coder (Coders[len-1]) -> ... -> Inner coder (Coders[0])
+	if len(packedStreams) == 1 {
+		var curr io.Reader
+		curr = packedStreams[0]
+		for i := len(folder.Coders) - 1; i >= 0; i-- {
+			rc, err := decodeSingleCoder(folder.Coders[i], curr, folder.UnpackSizes, password)
+			if err != nil {
+				return nil, err
+			}
+			curr = rc
+		}
+		if closer, ok := curr.(io.ReadCloser); ok {
+			return closer, nil
+		}
+		return io.NopCloser(curr), nil
 	}
 
 	return nil, fmt.Errorf("sevenzip: unsupported folder coder graph with %d coders", len(folder.Coders))

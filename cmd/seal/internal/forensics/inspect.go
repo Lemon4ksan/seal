@@ -17,6 +17,8 @@ import (
 	"github.com/lemon4ksan/foundation/tuikit"
 
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/container/sevenzip"
 	"github.com/lemon4ksan/seal/container/zip"
 )
 
@@ -28,10 +30,11 @@ func (c *InspectCmd) Aliases() []string { return nil }
 func (c *InspectCmd) Synopsis() string {
 	return "Deep byte diagnostics, vintage OS analysis, and security checks"
 }
-func (c *InspectCmd) Usage() string { return "seal inspect <archive-path>" }
+func (c *InspectCmd) Usage() string { return "seal inspect [flags] <archive-path>" }
 
 func (c *InspectCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) error {
 	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
+	pwd := fs.String("p", "", "Decryption password")
 	posArgs, err := tuikit.ParseInterspersedFlags(fs, args)
 	if err != nil {
 		return err
@@ -52,7 +55,16 @@ func (c *InspectCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) 
 		return err
 	}
 
-	report, err := zip.Inspect(f, stat.Size())
+	cType := util.DetectContainerType(archivePath)
+	if cType == container.SevenZip {
+		return inspectSevenZip(f, stat.Size(), archivePath, *pwd, stdout)
+	}
+
+	return inspectZip(f, stat.Size(), archivePath, stdout)
+}
+
+func inspectZip(rAt io.ReaderAt, size int64, archivePath string, stdout io.Writer) error {
+	report, err := zip.Inspect(rAt, size)
 	if err != nil {
 		return err
 	}
@@ -62,6 +74,7 @@ func (c *InspectCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) 
 		SetIndent(0).
 		AddRow("File Name", tuikit.Bold(filepath.Base(archivePath))).
 		AddRow("File Size", util.FormatBytes(report.FileSize)).
+		AddRow("Container Format", "ZIP (PKWARE)").
 		AddRow("Container Status", fmt.Sprintf("EOCD: %t | Zip64: %t | SFX: %t", report.HasEOCD, report.IsZip64, report.IsSFX))
 
 	if report.IsSFX {
@@ -118,6 +131,78 @@ func (c *InspectCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) 
 				section = fmt.Sprintf(" [APPNOTE %s]", issue.AppnoteSection)
 			}
 			fmt.Fprintf(stdout, "  [%s] %s%s: %s\n", badge, tuikit.Bold(issue.Code), section, issue.Message)
+		}
+	} else {
+		fmt.Fprintf(stdout, "\n%s No structural issues or security hazards found.\n", tuikit.BadgePassed())
+	}
+
+	fmt.Println()
+	return nil
+}
+
+func inspectSevenZip(rAt io.ReaderAt, size int64, archivePath, pwd string, stdout io.Writer) error {
+	report, err := sevenzip.Inspect(rAt, size, pwd)
+	if err != nil {
+		return err
+	}
+
+	box := tuikit.NewBox("Seal Archive Inspector", 70).
+		SetStyle(tuikit.BorderRounded).
+		SetIndent(0).
+		AddRow("File Name", tuikit.Bold(filepath.Base(archivePath))).
+		AddRow("File Size", util.FormatBytes(report.FileSize)).
+		AddRow("Container Format", "7-Zip (.7z)").
+		AddRow("Version", fmt.Sprintf("v%d.%d", report.MajorVersion, report.MinorVersion)).
+		AddRow("Signature Status", fmt.Sprintf("Valid: %t | SFX: %t", report.SignatureValid, report.IsSFX))
+
+	if report.IsSFX {
+		box.AddRow("SFX Stub Size", util.FormatBytes(report.SFXStubSize))
+	}
+
+	headerStatus := "Plain"
+	if report.IsEncryptedHeader {
+		headerStatus = "AES-256 Encrypted (Hidden file names)"
+	} else if report.IsEncodedHeader {
+		headerStatus = "LZMA2 Compressed"
+	}
+	box.AddRow("Header Status", headerStatus).
+		AddRow("Folders (Solid Blocks)", fmt.Sprintf("%d blocks", report.FoldersCount))
+
+	if len(report.Folders) > 0 {
+		var coderNames []string
+		for _, c := range report.Folders[0].Coders {
+			coderNames = append(coderNames, c.MethodName)
+		}
+		box.AddRow("Primary Coders", strings.Join(coderNames, " -> "))
+	}
+
+	box.AddRow("Entries Count", fmt.Sprintf("%d files", report.EntriesCount)).
+		AddRow("Total Uncompressed", util.FormatBytes(report.TotalUncompressedSize)).
+		AddRow("Total Compressed", util.FormatBytes(report.TotalCompressedSize)).
+		AddRow("Global Ratio", fmt.Sprintf("%.1f%%", report.GlobalRatioPercent))
+
+	if report.TrailingGarbageSize > 0 {
+		box.AddRow("Trailing Garbage", tuikit.Red(util.FormatBytes(report.TrailingGarbageSize)+" unreferenced bytes"))
+	}
+
+	fmt.Println()
+	if err := box.Render(stdout); err != nil {
+		return err
+	}
+
+	if len(report.Issues) > 0 {
+		fmt.Fprintf(stdout, "\n%s (%d):\n", tuikit.Bold("Diagnostic Findings & Security Alerts"), len(report.Issues))
+		for _, issue := range report.Issues {
+			badge := tuikit.BadgeInfo()
+			switch issue.Severity {
+			case sevenzip.SeverityWarning:
+				badge = tuikit.BadgeWarn()
+			case sevenzip.SeverityError:
+				badge = tuikit.BadgeFail()
+			case sevenzip.SeveritySecurityHazard:
+				badge = tuikit.Red("SEC")
+			}
+			fmt.Fprintf(stdout, "  [%s] %s: %s\n", badge, tuikit.Bold(issue.Code), issue.Message)
 		}
 	} else {
 		fmt.Fprintf(stdout, "\n%s No structural issues or security hazards found.\n", tuikit.BadgePassed())

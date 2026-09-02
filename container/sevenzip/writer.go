@@ -41,12 +41,14 @@ const (
 
 // WriterOptions specifies configuration options for the 7z Writer.
 type WriterOptions struct {
-	LZMA       lzma.Options
-	Filter     FilterType
-	Method     MethodType
-	PPMdOrder  int
-	PPMdMem    uint32
-	OnProgress func(phase string, current, total int64)
+	LZMA           lzma.Options
+	Filter         FilterType
+	Method         MethodType
+	PPMdOrder      int
+	PPMdMem        uint32
+	Password       string
+	EncryptHeaders bool
+	OnProgress     func(phase string, current, total int64)
 }
 
 // Writer implements 7-Zip archive serialization.
@@ -411,6 +413,21 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 
 	cw := &countingWriter{w: zw.w}
 
+	var encW io.WriteCloser
+	var aesProps []byte
+	targetW := io.Writer(cw)
+
+	var compCounter countingWriter
+	if zw.options.Password != "" {
+		var err error
+		encW, aesProps, err = EncryptStream(cw, zw.options.Password, 19)
+		if err != nil {
+			return totalWritten, err
+		}
+		compCounter = countingWriter{w: encW}
+		targetW = &compCounter
+	}
+
 	if method == MethodPPMDDefault {
 		// PPMd Compression
 		order := zw.options.PPMdOrder
@@ -422,7 +439,7 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 			mem = ppmd.DefaultMemSize
 		}
 		comp := ppmd.NewCompressor(order, mem)
-		if _, err := comp.Compress(solidReader, cw); err != nil {
+		if _, err := comp.Compress(solidReader, targetW); err != nil {
 			return totalWritten, err
 		}
 	} else {
@@ -437,7 +454,13 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 			}
 		}
 		comp2 := lzma.NewCompressor2WithOptions(opts)
-		if _, err := comp2.Compress(solidReader, cw); err != nil {
+		if _, err := comp2.Compress(solidReader, targetW); err != nil {
+			return totalWritten, err
+		}
+	}
+
+	if encW != nil {
+		if err := encW.Close(); err != nil {
 			return totalWritten, err
 		}
 	}
@@ -449,6 +472,11 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	unpackCRC := solidReader.totalCRC.Sum32()
 	fileEntries := solidReader.fileEntries
 	unpackSizes := solidReader.unpackSizes
+
+	compSizeBeforeAES := uint64(cw.n)
+	if encW != nil {
+		compSizeBeforeAES = uint64(compCounter.n)
+	}
 
 	if onProg != nil {
 		onProg("Finalizing", 1, 1)
@@ -477,9 +505,50 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	_ = WriteNumber(&headerBuf, 1) // 1 Folder
 	headerBuf.WriteByte(0)         // External = 0
 
+	hasEncryption := len(aesProps) > 0
+
 	switch {
+	case filter == FilterBCJ || filter == FilterARM:
+		filterMethod := uint64(MethodBCJ)
+		if filter == FilterARM {
+			filterMethod = uint64(MethodARM)
+		}
+
+		if hasEncryption {
+			_ = WriteNumber(&headerBuf, 3) // NumCoders = 3
+			writeCoder(&headerBuf, filterMethod, nil)
+			writeCoder(&headerBuf, MethodLZMA2, []byte{0x18})
+			writeCoder(&headerBuf, MethodAES, aesProps)
+
+			// NumBindPairs = 2:
+			// Coder 0 in <- Coder 1 out
+			_ = WriteNumber(&headerBuf, 0)
+			_ = WriteNumber(&headerBuf, 1)
+			// Coder 1 in <- Coder 2 out
+			_ = WriteNumber(&headerBuf, 1)
+			_ = WriteNumber(&headerBuf, 2)
+
+			headerBuf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(&headerBuf, totalUnpackSize)
+			_ = WriteNumber(&headerBuf, totalUnpackSize)
+			_ = WriteNumber(&headerBuf, compSizeBeforeAES)
+		} else {
+			// 2 Coders: Coder 0 = BCJ/ARM filter, Coder 1 = LZMA2
+			_ = WriteNumber(&headerBuf, 2) // NumCoders = 2
+			writeCoder(&headerBuf, filterMethod, nil)
+			writeCoder(&headerBuf, MethodLZMA2, []byte{0x18}) // 8MB dictionary
+
+			// BindPairs (NumBindPairs = 1: Coder 0 in <- Coder 1 out)
+			_ = WriteNumber(&headerBuf, 0) // InIndex = 0
+			_ = WriteNumber(&headerBuf, 1) // OutIndex = 1
+
+			// CodersUnpackSize (both coders output totalUnpackSize)
+			headerBuf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(&headerBuf, totalUnpackSize)
+			_ = WriteNumber(&headerBuf, totalUnpackSize)
+		}
+
 	case method == MethodPPMDDefault:
-		_ = WriteNumber(&headerBuf, 1) // NumCoders = 1
 		order := byte(zw.options.PPMdOrder)
 		if order < 2 {
 			order = byte(ppmd.DefaultOrder)
@@ -492,40 +561,46 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		propB[0] = order
 		binary.LittleEndian.PutUint32(propB[1:5], mem)
 
-		writeCoder(&headerBuf, MethodPPMD, propB[:])
+		if hasEncryption {
+			_ = WriteNumber(&headerBuf, 2)
+			writeCoder(&headerBuf, MethodPPMD, propB[:])
+			writeCoder(&headerBuf, MethodAES, aesProps)
 
-		// CodersUnpackSize
-		headerBuf.WriteByte(NIDCodersUnpackSize)
-		_ = WriteNumber(&headerBuf, totalUnpackSize)
+			_ = WriteNumber(&headerBuf, 0)
+			_ = WriteNumber(&headerBuf, 1)
 
-	case filter == FilterBCJ || filter == FilterARM:
-		// 2 Coders: Coder 0 = BCJ/ARM filter, Coder 1 = LZMA2
-		_ = WriteNumber(&headerBuf, 2) // NumCoders = 2
+			headerBuf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(&headerBuf, totalUnpackSize)
+			_ = WriteNumber(&headerBuf, compSizeBeforeAES)
+		} else {
+			_ = WriteNumber(&headerBuf, 1) // NumCoders = 1
+			writeCoder(&headerBuf, MethodPPMD, propB[:])
 
-		filterMethod := uint64(MethodBCJ)
-		if filter == FilterARM {
-			filterMethod = uint64(MethodARM)
+			headerBuf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(&headerBuf, totalUnpackSize)
 		}
-		writeCoder(&headerBuf, filterMethod, nil)
-		writeCoder(&headerBuf, MethodLZMA2, []byte{0x18}) // 8MB dictionary
-
-		// BindPairs (NumBindPairs = 1: Coder 0 in <- Coder 1 out)
-		_ = WriteNumber(&headerBuf, 0) // InIndex = 0
-		_ = WriteNumber(&headerBuf, 1) // OutIndex = 1
-
-		// CodersUnpackSize (both coders output totalUnpackSize)
-		headerBuf.WriteByte(NIDCodersUnpackSize)
-		_ = WriteNumber(&headerBuf, totalUnpackSize)
-		_ = WriteNumber(&headerBuf, totalUnpackSize)
 
 	default:
-		// 1 Coder (LZMA2: 8MB dictionary)
-		_ = WriteNumber(&headerBuf, 1) // NumCoders = 1
-		writeCoder(&headerBuf, MethodLZMA2, []byte{0x18})
+		if hasEncryption {
+			_ = WriteNumber(&headerBuf, 2)
+			writeCoder(&headerBuf, MethodLZMA2, []byte{0x18})
+			writeCoder(&headerBuf, MethodAES, aesProps)
 
-		// CodersUnpackSize
-		headerBuf.WriteByte(NIDCodersUnpackSize)
-		_ = WriteNumber(&headerBuf, totalUnpackSize)
+			_ = WriteNumber(&headerBuf, 0)
+			_ = WriteNumber(&headerBuf, 1)
+
+			headerBuf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(&headerBuf, totalUnpackSize)
+			_ = WriteNumber(&headerBuf, compSizeBeforeAES)
+		} else {
+			// 1 Coder (LZMA2: 8MB dictionary)
+			_ = WriteNumber(&headerBuf, 1) // NumCoders = 1
+			writeCoder(&headerBuf, MethodLZMA2, []byte{0x18})
+
+			// CodersUnpackSize
+			headerBuf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(&headerBuf, totalUnpackSize)
+		}
 	}
 
 	// CRC
@@ -621,21 +696,109 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	headerBuf.WriteByte(NIDEnd) // End Header
 
 	headerBytes := headerBuf.Bytes()
-	headerSize := uint64(len(headerBytes))
-	headerCRC := crc32.ChecksumIEEE(headerBytes)
 
-	if _, err := zw.w.Write(headerBytes); err != nil {
-		return totalWritten, err
+	var nextHeaderOffset uint64
+	var nextHeaderSize uint64
+	var nextHeaderCRC uint32
+
+	if zw.options.EncryptHeaders && zw.options.Password != "" {
+		// Encrypt the header catalog into an EncodedHeader folder
+		var compHeaderBuf bytes.Buffer
+		encHeaderW, headerAESProps, err := EncryptStream(&compHeaderBuf, zw.options.Password, 19)
+		if err != nil {
+			return totalWritten, err
+		}
+		headerCompCounter := countingWriter{w: encHeaderW}
+		compH := lzma.NewCompressor2WithOptions(lzma.DefaultOptions())
+		if _, err := compH.Compress(bytes.NewReader(headerBytes), &headerCompCounter); err != nil {
+			return totalWritten, err
+		}
+		if err := encHeaderW.Close(); err != nil {
+			return totalWritten, err
+		}
+
+		headerPackSize := uint64(compHeaderBuf.Len())
+		headerUnpackSize := uint64(len(headerBytes))
+		headerCRC := crc32.ChecksumIEEE(headerBytes)
+
+		// Emit the packed header stream
+		if _, err := zw.w.Write(compHeaderBuf.Bytes()); err != nil {
+			return totalWritten, err
+		}
+		totalWritten += int64(headerPackSize)
+
+		// Build outer EncodedHeader metadata
+		var outerBuf bytes.Buffer
+		outerBuf.WriteByte(NIDEncodedHeader)
+		outerBuf.WriteByte(NIDMainStreamsInfo)
+
+		// PackInfo
+		outerBuf.WriteByte(NIDPackInfo)
+		_ = WriteNumber(&outerBuf, packSize) // PackPos: starts after file pack stream!
+		_ = WriteNumber(&outerBuf, 1)        // 1 pack stream
+		outerBuf.WriteByte(NIDSize)
+		_ = WriteNumber(&outerBuf, headerPackSize)
+		outerBuf.WriteByte(NIDEnd)
+
+		// UnpackInfo
+		outerBuf.WriteByte(NIDUnpackInfo)
+		outerBuf.WriteByte(NIDFolder)
+		_ = WriteNumber(&outerBuf, 1) // 1 folder
+		outerBuf.WriteByte(0)         // External = 0
+
+		// 2 Coders: LZMA2 + AES
+		_ = WriteNumber(&outerBuf, 2)
+		writeCoder(&outerBuf, MethodLZMA2, []byte{0x18})
+		writeCoder(&outerBuf, MethodAES, headerAESProps)
+		_ = WriteNumber(&outerBuf, 0)
+		_ = WriteNumber(&outerBuf, 1)
+
+		outerBuf.WriteByte(NIDCodersUnpackSize)
+		_ = WriteNumber(&outerBuf, headerUnpackSize)
+		_ = WriteNumber(&outerBuf, uint64(headerCompCounter.n))
+
+		// CRC
+		outerBuf.WriteByte(NIDCRC)
+		outerBuf.WriteByte(1) // AllDefined = 1
+		var hCrcB [4]byte
+		binary.LittleEndian.PutUint32(hCrcB[:], headerCRC)
+		outerBuf.Write(hCrcB[:])
+
+		outerBuf.WriteByte(NIDEnd) // End UnpackInfo
+		outerBuf.WriteByte(NIDEnd) // End MainStreamsInfo
+		outerBuf.WriteByte(NIDEnd) // End EncodedHeader
+
+		finalHeaderBytes := outerBuf.Bytes()
+		finalHeaderSize := uint64(len(finalHeaderBytes))
+		finalHeaderCRC := crc32.ChecksumIEEE(finalHeaderBytes)
+
+		if _, err := zw.w.Write(finalHeaderBytes); err != nil {
+			return totalWritten, err
+		}
+		totalWritten += int64(finalHeaderSize)
+
+		nextHeaderOffset = packSize + headerPackSize
+		nextHeaderSize = finalHeaderSize
+		nextHeaderCRC = finalHeaderCRC
+	} else {
+		headerSize := uint64(len(headerBytes))
+		headerCRC := crc32.ChecksumIEEE(headerBytes)
+
+		if _, err := zw.w.Write(headerBytes); err != nil {
+			return totalWritten, err
+		}
+		totalWritten += int64(len(headerBytes))
+
+		nextHeaderOffset = packSize
+		nextHeaderSize = headerSize
+		nextHeaderCRC = headerCRC
 	}
-	totalWritten += int64(len(headerBytes))
 
 	// Re-patch the 32-byte StartHeader
-	nextHeaderOffset := uint64(packSize)
-
 	var startHeader [20]byte
 	binary.LittleEndian.PutUint64(startHeader[0:8], nextHeaderOffset)
-	binary.LittleEndian.PutUint64(startHeader[8:16], headerSize)
-	binary.LittleEndian.PutUint32(startHeader[16:20], headerCRC)
+	binary.LittleEndian.PutUint64(startHeader[8:16], nextHeaderSize)
+	binary.LittleEndian.PutUint32(startHeader[16:20], nextHeaderCRC)
 
 	startCRC := crc32.ChecksumIEEE(startHeader[:])
 

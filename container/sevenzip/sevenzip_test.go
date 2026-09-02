@@ -231,3 +231,103 @@ func TestContainerRegistration(t *testing.T) {
 		t.Fatalf("expected container type %v, got %v", container.SevenZip, c.Type())
 	}
 }
+
+func TestSevenZip_AES256_EncryptedHeader_Roundtrip(t *testing.T) {
+	pwd := "Strong7zPassword!#2026"
+	var outBuf inMemoryWriteSeeker
+
+	wOpts := WriterOptions{
+		Password:       pwd,
+		EncryptHeaders: true,
+	}
+	zw := NewWriterWithOptions(&outBuf, wOpts)
+
+	content1 := []byte("Top-secret confidential document classified for 7z AES-256 storage.")
+	content2 := []byte("Secondary payload with encrypted headers hiding file names.")
+
+	f1, err := file.New("secret/doc.txt", false)
+	if err != nil {
+		t.Fatalf("file.New f1 failed: %v", err)
+	}
+	f1.WithData(content1)
+
+	f2, err := file.New("confidential.json", false)
+	if err != nil {
+		t.Fatalf("file.New f2 failed: %v", err)
+	}
+	f2.WithData(content2)
+
+	n, err := zw.WriteArchive([]*file.File{f1, f2})
+	if err != nil {
+		t.Fatalf("WriteArchive failed: %v", err)
+	}
+	if n <= 0 {
+		t.Fatalf("expected written bytes > 0, got %d", n)
+	}
+
+	archiveBytes := outBuf.buf
+
+	// 1. Attempt to open without password: must fail on encrypted header
+	_, err = NewReader(bytes.NewReader(archiveBytes), int64(len(archiveBytes)), "")
+	if err == nil {
+		t.Fatalf("expected error reading encrypted header without password, got nil")
+	}
+
+	// 2. Attempt to open with wrong password: must fail
+	_, err = NewReader(bytes.NewReader(archiveBytes), int64(len(archiveBytes)), "WrongPassword")
+	if err == nil {
+		t.Fatalf("expected error reading encrypted header with wrong password, got nil")
+	}
+
+	// 3. Open with correct password: must succeed and extract both files
+	zr, err := NewReader(bytes.NewReader(archiveBytes), int64(len(archiveBytes)), pwd)
+	if err != nil {
+		t.Fatalf("NewReader with correct password failed: %v", err)
+	}
+
+	entries := zr.Entries()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	entryMap := make(map[string]*file.File)
+	for _, e := range entries {
+		entryMap[e.Name()] = e
+	}
+
+	// Verify doc.txt
+	e1, ok := entryMap["secret/doc.txt"]
+	if !ok {
+		t.Fatalf("missing 'secret/doc.txt' in encrypted archive")
+	}
+	rc1, err := e1.Open()
+	if err != nil {
+		t.Fatalf("open e1 failed: %v", err)
+	}
+	data1, err := io.ReadAll(rc1)
+	_ = rc1.Close()
+	if err != nil {
+		t.Fatalf("read e1 failed: %v", err)
+	}
+	if !bytes.Equal(data1, content1) {
+		t.Errorf("e1 content mismatch: got %q, want %q", string(data1), string(content1))
+	}
+
+	// Verify confidential.json
+	e2, ok := entryMap["confidential.json"]
+	if !ok {
+		t.Fatalf("missing 'confidential.json' in encrypted archive")
+	}
+	rc2, err := e2.Open()
+	if err != nil {
+		t.Fatalf("open e2 failed: %v", err)
+	}
+	data2, err := io.ReadAll(rc2)
+	_ = rc2.Close()
+	if err != nil {
+		t.Fatalf("read e2 failed: %v", err)
+	}
+	if !bytes.Equal(data2, content2) {
+		t.Errorf("e2 content mismatch: got %q, want %q", string(data2), string(content2))
+	}
+}
