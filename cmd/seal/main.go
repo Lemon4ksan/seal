@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -20,9 +21,12 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/lemon4ksan/foundation/generic"
+
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/container/zip"
 	"github.com/lemon4ksan/seal/option"
 )
 
@@ -49,6 +53,10 @@ func main() {
 		err = runTest()
 	case "tree":
 		err = runTree()
+	case "inspect":
+		err = runInspect()
+	case "doctor", "fix", "repair":
+		err = runDoctor()
 	case "bench":
 		err = runBench()
 	case "version", "-v", "--version":
@@ -80,6 +88,8 @@ Commands:
   cat         Stream a specific file entry directly to stdout
   test, t     Verify checksum and decompression integrity
   tree        Display visual ASCII directory tree of the archive
+  inspect     Deep byte diagnostics, vintage OS analysis, and security checks
+  doctor, fix Repair damaged archives, salvage broken CDs, and sanitize Zip Slip
   bench       Run compression speed benchmark
   version     Print seal version
 
@@ -433,6 +443,171 @@ func runBench() error {
 	elapsed := runRun()
 	throughputMB := float64(*sizeMB) / elapsed.Seconds()
 	fmt.Printf("Throughput: %.2f MB/s (%v)\n", throughputMB, elapsed)
+
+	return nil
+}
+
+func runInspect() error {
+	if len(os.Args) < 2 {
+		return errors.New("usage: seal inspect <archive-path>")
+	}
+	archivePath := os.Args[1]
+
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	stat, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	report, err := zip.Inspect(f, stat.Size())
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("🔍 Seal Archive Inspector: %s (%s)\n", filepath.Base(archivePath), formatBytes(report.FileSize))
+	fmt.Printf("--------------------------------------------------------------------------------\n")
+	fmt.Printf("Format Status:      EOCD: %t | Zip64: %t | SFX: %t", report.HasEOCD, report.IsZip64, report.IsSFX)
+	if report.IsSFX {
+		fmt.Printf(" (Stub: %s)", formatBytes(report.SFXStubSize))
+	}
+	fmt.Println()
+	fmt.Printf(
+		"Entries Count:      %d files (Uncompressed: %s, Compressed: %s, Ratio: %.1f%%)\n",
+		report.EntriesCount,
+		formatBytes(report.TotalUncompressedSize),
+		formatBytes(report.TotalCompressedSize),
+		report.GlobalRatioPercent,
+	)
+	if report.Comment != "" {
+		fmt.Printf("Global Comment:     %q\n", report.Comment)
+	}
+	if len(report.VintageSystems) > 0 {
+		fmt.Printf("Vintage Creator OS: %s\n", strings.Join(report.VintageSystems, ", "))
+	}
+	if len(report.ExoticExtraFields) > 0 {
+		var tags []string
+		for _, info := range report.ExoticExtraFields {
+			tags = append(tags, fmt.Sprintf("%s (%s)", info.TagHex, info.Name))
+		}
+		fmt.Printf("Exotic ExtraTags:   %s\n", strings.Join(tags, ", "))
+	}
+	if len(report.UnassignedExtraFields) > 0 {
+		var tags []string
+		for _, info := range report.UnassignedExtraFields {
+			tags = append(tags, info.TagHex)
+		}
+		fmt.Printf("Unassigned Extra:   %s (Undocumented/Proprietary)\n", strings.Join(tags, ", "))
+	}
+	if report.TrailingGarbageSize > 0 {
+		fmt.Printf("⚠️  Trailing Garbage: %s unreferenced bytes at file end\n", formatBytes(report.TrailingGarbageSize))
+	}
+
+	if len(report.Issues) > 0 {
+		fmt.Printf("\n📋 Diagnostic Findings & Security Alerts (%d):\n", len(report.Issues))
+		for _, issue := range report.Issues {
+			badge := "ℹ️ INFO"
+			switch issue.Severity {
+			case zip.SeverityWarning:
+				badge = "⚠️ WARN"
+			case zip.SeverityError:
+				badge = "❌ ERR "
+			case zip.SeveritySecurityHazard:
+				badge = "🚨 SEC "
+			}
+			section := ""
+			if issue.AppnoteSection != "" {
+				section = fmt.Sprintf(" [APPNOTE %s]", issue.AppnoteSection)
+			}
+			fmt.Printf("  [%s] %s%s: %s\n", badge, issue.Code, section, issue.Message)
+		}
+	} else {
+		fmt.Printf("\n✅ No structural issues or security hazards found.\n")
+	}
+
+	return nil
+}
+
+func runDoctor() error {
+	var inPath, outPath, pwd string
+	var rebuildCD bool
+	sanitize := true
+
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		switch {
+		case arg == "-o" && i+1 < len(os.Args):
+			outPath = os.Args[i+1]
+			i++
+		case arg == "-p" && i+1 < len(os.Args):
+			pwd = os.Args[i+1]
+			i++
+		case arg == "-rebuild-cd" || arg == "--rebuild-cd":
+			rebuildCD = true
+		case arg == "-no-sanitize":
+			sanitize = false
+		case !strings.HasPrefix(arg, "-") && inPath == "":
+			inPath = arg
+		}
+	}
+
+	if inPath == "" || outPath == "" {
+		return errors.New("usage: seal doctor [options] <damaged-archive-path> -o <repaired-path>")
+	}
+
+	inF, err := os.Open(inPath)
+	if err != nil {
+		return err
+	}
+	defer inF.Close()
+
+	stat, err := inF.Stat()
+	if err != nil {
+		return err
+	}
+
+	outF, err := os.Create(outPath)
+	if err != nil {
+		return err
+	}
+	defer outF.Close()
+
+	fmt.Printf("🩺 Seal Archive Doctor: Diagnosing and repairing %s...\n", filepath.Base(inPath))
+	summary, err := zip.Repair(inF, stat.Size(), outF, zip.RepairOptions{
+		RebuildCentralDirectory: rebuildCD,
+		SanitizePaths:           sanitize,
+		Password:                pwd,
+	})
+	if err != nil {
+		return fmt.Errorf("repair failed: %w", err)
+	}
+
+	fmt.Printf("\n✨ Repair & Recovery Complete!\n")
+	fmt.Printf("--------------------------------------------------------------------------------\n")
+	fmt.Printf(
+		"Files Recovered:        %d (%s salvaged)\n",
+		summary.FilesRecovered,
+		formatBytes(summary.BytesRecovered),
+	)
+	if summary.FilesSkipped > 0 {
+		fmt.Printf("Files Skipped:          %d (unrecoverable)\n", summary.FilesSkipped)
+	}
+	if summary.PathsSanitized > 0 {
+		fmt.Printf("Paths Sanitized:        %d (Zip Slip neutralized)\n", summary.PathsSanitized)
+	}
+	fmt.Printf(
+		"Central Directory:      %s\n",
+		generic.Ternary(
+			summary.CentralDirectoryRebuilt,
+			"Reconstructed via linear signature scan",
+			"Preserved and sanitized",
+		),
+	)
+	fmt.Printf("Output File:            %s\n", outPath)
 
 	return nil
 }
