@@ -192,8 +192,8 @@ func (d *Decompressor2) Decompress(src io.Reader) (io.ReadCloser, error) {
 			return nil, err
 		}
 
-		unpackSize := (uint64(control&0x1F) << 16) | (uint64(header[0]) << 8) | uint64(header[1]) + 1
-		packSize := (int(header[2]) << 8) | int(header[3]) + 1
+		unpackSize := ((uint64(control&0x1F) << 16) | (uint64(header[0]) << 8) | uint64(header[1])) + 1
+		packSize := ((int(header[2]) << 8) | int(header[3])) + 1
 
 		if mode >= 2 {
 			var prop [1]byte
@@ -339,6 +339,225 @@ func (d *Decompressor2) Decompress(src io.Reader) (io.ReadCloser, error) {
 	}
 
 	return io.NopCloser(bytes.NewReader(finalOut)), nil
+}
+
+// DecompressStream reads LZMA2 chunks directly from r until the 0x00 end marker is reached, returning the decompressed payload and total compressed bytes consumed.
+func (d *Decompressor2) DecompressStream(r io.Reader) ([]byte, int, error) {
+	type chunkTask struct {
+		isRaw      bool
+		rawSlice   []byte
+		chunkData  []byte
+		unpackSize uint64
+		offset     int
+		mode       int
+		lc, lp, pb uint
+	}
+
+	var tasks []chunkTask
+	var totalUnpackSize int
+	totalRead := 0
+	allIndependent := true
+
+	var lc, lp, pb uint = 3, 0, 2
+	for {
+		var ctrl [1]byte
+		n, err := io.ReadFull(r, ctrl[:])
+		totalRead += n
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				break
+			}
+			return nil, totalRead, err
+		}
+
+		control := ctrl[0]
+		if control == 0x00 {
+			// Stream End Marker (1 byte 0x00)
+			break
+		}
+
+		if control < 0x80 {
+			// Uncompressed chunk
+			if control != 1 {
+				allIndependent = false
+			}
+			var sizeBuf [2]byte
+			if _, err := io.ReadFull(r, sizeBuf[:]); err != nil {
+				return nil, totalRead, err
+			}
+			totalRead += 2
+			uncompressedSize := int(binary.BigEndian.Uint16(sizeBuf[:])) + 1
+			data := make([]byte, uncompressedSize)
+			if _, err := io.ReadFull(r, data); err != nil {
+				return nil, totalRead, err
+			}
+			totalRead += uncompressedSize
+			tasks = append(tasks, chunkTask{
+				isRaw:      true,
+				rawSlice:   data,
+				unpackSize: uint64(uncompressedSize),
+				offset:     totalUnpackSize,
+				mode:       int(control),
+			})
+			totalUnpackSize += uncompressedSize
+			continue
+		}
+
+		mode := (control >> 5) & 3
+		if mode != 3 {
+			allIndependent = false
+		}
+		var header [4]byte
+		if _, err := io.ReadFull(r, header[:]); err != nil {
+			return nil, totalRead, err
+		}
+		totalRead += 4
+
+		unpackSize := ((uint64(control&0x1F) << 16) | (uint64(header[0]) << 8) | uint64(header[1])) + 1
+		packSize := ((int(header[2]) << 8) | int(header[3])) + 1
+
+		if mode >= 2 {
+			var prop [1]byte
+			if _, err := io.ReadFull(r, prop[:]); err != nil {
+				return nil, totalRead, err
+			}
+			totalRead += 1
+			p := prop[0]
+			pb = uint(p / (9 * 5))
+			p %= 9 * 5
+			lp = uint(p / 9)
+			lc = uint(p % 9)
+		}
+
+		chunkBytes := make([]byte, packSize)
+		if _, err := io.ReadFull(r, chunkBytes); err != nil {
+			return nil, totalRead, err
+		}
+		totalRead += packSize
+
+		tasks = append(tasks, chunkTask{
+			isRaw:      false,
+			chunkData:  chunkBytes,
+			unpackSize: unpackSize,
+			offset:     totalUnpackSize,
+			mode:       int(mode),
+			lc:         lc,
+			lp:         lp,
+			pb:         pb,
+		})
+		totalUnpackSize += int(unpackSize)
+	}
+
+	finalOut := make([]byte, totalUnpackSize)
+
+	if !allIndependent {
+		core := NewDecoderCore(3, 0, 2, d.DictSize, 0)
+		for i := range tasks {
+			t := &tasks[i]
+			if t.isRaw {
+				copy(finalOut[t.offset:], t.rawSlice)
+				for _, b := range t.rawSlice {
+					core.win[core.winPos] = b
+					core.winPos = (core.winPos + 1) & core.dictMask
+				}
+				if t.mode == 1 {
+					core.InitProbs()
+				}
+				continue
+			}
+
+			if t.mode >= 2 {
+				core.lc = t.lc
+				core.lp = t.lp
+				core.pb = t.pb
+				core.posMask = (1 << t.pb) - 1
+			}
+			if t.mode >= 1 {
+				core.InitProbs()
+			}
+			if t.mode == 3 {
+				core.winPos = 0
+			}
+
+			var rd RangeDecoder
+			if err := rd.Init(bytes.NewReader(t.chunkData)); err != nil {
+				return nil, totalRead, err
+			}
+			destSlice := finalOut[t.offset : t.offset+int(t.unpackSize)]
+			if _, err := core.DecodeToSlice(&rd, destSlice, t.unpackSize); err != nil &&
+				!errors.Is(err, io.EOF) &&
+				!errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil, totalRead, err
+			}
+		}
+	} else {
+		for i := range tasks {
+			if tasks[i].isRaw {
+				copy(finalOut[tasks[i].offset:], tasks[i].rawSlice)
+			}
+		}
+
+		numWorkers := runtime.GOMAXPROCS(0)
+		if numWorkers > len(tasks) {
+			numWorkers = len(tasks)
+		}
+		if numWorkers < 1 {
+			numWorkers = 1
+		}
+
+		var wg sync.WaitGroup
+		var taskCounter atomic.Int64
+		var decErr atomic.Pointer[error]
+
+		for range numWorkers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				core := decoderPool.Get()
+				defer decoderPool.Put(core)
+				var rd RangeDecoder
+
+				for {
+					idx := int(taskCounter.Add(1) - 1)
+					if idx >= len(tasks) || decErr.Load() != nil {
+						return
+					}
+					t := &tasks[idx]
+					if t.isRaw {
+						continue
+					}
+
+					core.lc = t.lc
+					core.lp = t.lp
+					core.pb = t.pb
+					core.posMask = (1 << t.pb) - 1
+					core.InitProbs()
+
+					if err := rd.Init(bytes.NewReader(t.chunkData)); err != nil {
+						decErr.Store(&err)
+						return
+					}
+
+					destSlice := finalOut[t.offset : t.offset+int(t.unpackSize)]
+					if _, err := core.DecodeToSlice(
+						&rd,
+						destSlice,
+						t.unpackSize,
+					); err != nil && !errors.Is(err, io.EOF) &&
+						!errors.Is(err, io.ErrUnexpectedEOF) {
+						decErr.Store(&err)
+						return
+					}
+				}
+			}()
+		}
+		wg.Wait()
+		if ptr := decErr.Load(); ptr != nil {
+			return nil, totalRead, *ptr
+		}
+	}
+
+	return finalOut, totalRead, nil
 }
 
 // Compressor2 implements compression for LZMA2 streams.

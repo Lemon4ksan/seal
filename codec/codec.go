@@ -15,25 +15,26 @@ type Method uint16
 
 // Standard compression methods across archive specifications.
 const (
-	Store     Method = 0  // No compression (raw copy)
-	Shrink    Method = 1  // Shrink algorithm
-	Reduce1   Method = 2  // Reduce algorithm (factor 1)
-	Reduce2   Method = 3  // Reduce algorithm (factor 2)
-	Reduce3   Method = 4  // Reduce algorithm (factor 3)
-	Reduce4   Method = 5  // Reduce algorithm (factor 4)
-	Implode   Method = 6  // Implode algorithm
-	Deflate   Method = 8  // DEFLATE (RFC 1951)
-	Deflate64 Method = 9  // Enhanced Deflate (Deflate64)
-	PKWAREDCL Method = 10 // PKWARE Data Compression Library Implode (DCL)
-	BZIP2     Method = 12 // BZIP2 (Burrows-Wheeler)
-	LZMA      Method = 14 // LZMA
-	LZMA2     Method = 15 // LZMA2
-	ZStandard Method = 93 // Zstandard (RFC 8878)
-	PPMd      Method = 95 // PPMd (Prediction by Partial Matching)
-	Gzip      Method = 96 // GZIP container compression
-	Zlib      Method = 97 // ZLIB container compression
-	Brotli    Method = 98 // Brotli (RFC 7932)
-	Snappy    Method = 99 // Snappy framing
+	Store     Method = 0   // No compression (raw copy)
+	Shrink    Method = 1   // Shrink algorithm
+	Reduce1   Method = 2   // Reduce algorithm (factor 1)
+	Reduce2   Method = 3   // Reduce algorithm (factor 2)
+	Reduce3   Method = 4   // Reduce algorithm (factor 3)
+	Reduce4   Method = 5   // Reduce algorithm (factor 4)
+	Implode   Method = 6   // Implode algorithm
+	Deflate   Method = 8   // DEFLATE (RFC 1951)
+	Deflate64 Method = 9   // Enhanced Deflate (Deflate64)
+	PKWAREDCL Method = 10  // PKWARE Data Compression Library Implode (DCL)
+	BZIP2     Method = 12  // BZIP2 (Burrows-Wheeler)
+	LZMA      Method = 14  // LZMA
+	LZMA2     Method = 15  // LZMA2
+	ZStandard Method = 93  // Zstandard (RFC 8878)
+	XZ        Method = 95  // XZ stream container (LZMA2 + BCJ)
+	Gzip      Method = 96  // GZIP container compression
+	Zlib      Method = 97  // ZLIB container compression
+	PPMd      Method = 98  // PPMd (Prediction by Partial Matching)
+	Brotli    Method = 99  // Brotli (RFC 7932)
+	Snappy    Method = 100 // Snappy framing
 )
 
 // String returns the human-readable identifier of the compression method.
@@ -53,10 +54,12 @@ func (m Method) String() string {
 		return "LZMA"
 	case LZMA2:
 		return "LZMA2"
-	case PPMd:
-		return "PPMd"
 	case ZStandard:
 		return "Zstandard"
+	case XZ:
+		return "XZ"
+	case PPMd:
+		return "PPMd"
 	case Gzip:
 		return "Gzip"
 	case Zlib:
