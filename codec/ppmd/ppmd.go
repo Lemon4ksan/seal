@@ -182,8 +182,8 @@ func (c *Compressor) Compress(src io.Reader, dest io.Writer) (int64, error) {
 
 	const numContexts = 65536
 	type FastContext struct {
-		model   FenwickModel
-		inited  bool
+		model  FenwickModel
+		inited bool
 	}
 	contexts := make([]FastContext, numContexts)
 

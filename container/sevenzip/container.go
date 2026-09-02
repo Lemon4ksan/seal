@@ -32,32 +32,37 @@ func (e *Engine) Type() container.Type {
 	return container.SevenZip
 }
 
-// ReadIndex parses the table of contents and file entries from a random-access or streaming reader.
-func (e *Engine) ReadIndex(
-	r io.Reader,
+// OpenCatalog parses the 7-Zip header and file catalog from a random-access source.
+func (e *Engine) OpenCatalog(
 	rAt io.ReaderAt,
 	size int64,
 	password string,
 	reg *codec.Registry,
 ) ([]*file.File, string, error) {
-	if rAt == nil {
-		if r == nil {
-			return nil, "", errors.New("sevenzip: invalid source reader")
-		}
-		data, err := io.ReadAll(r)
-		if err != nil {
-			return nil, "", err
-		}
-		rAt = bytes.NewReader(data)
-		size = int64(len(data))
+	if rAt == nil || size < 0 {
+		return nil, "", errors.New("sevenzip: invalid source reader")
 	}
-
 	zr, err := NewReader(rAt, size, password)
 	if err != nil {
 		return nil, "", err
 	}
-
 	return zr.Entries(), "", nil
+}
+
+// ScanStream reads an incoming 7z stream into memory to parse its catalog.
+func (e *Engine) ScanStream(
+	r io.Reader,
+	password string,
+	reg *codec.Registry,
+) ([]*file.File, string, error) {
+	if r == nil {
+		return nil, "", errors.New("sevenzip: nil stream reader")
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, "", err
+	}
+	return e.OpenCatalog(bytes.NewReader(data), int64(len(data)), password, reg)
 }
 
 // MemoryWriteSeeker provides an in-memory seekable byte buffer for non-seekable destinations.

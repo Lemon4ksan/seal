@@ -34,6 +34,9 @@ func (tw *Writer) WriteHeader(h *Header) error {
 	if tw.closed {
 		return errors.New("tar: writer is closed")
 	}
+	if h.Size < 0 {
+		return errors.New("tar: invalid negative file size")
+	}
 
 	// 1. Flush any remaining padding from the previous entry
 	if tw.currRem > 0 {
@@ -59,7 +62,7 @@ func (tw *Writer) WriteHeader(h *Header) error {
 	if len(h.Linkname) > 100 {
 		pax["linkpath"] = h.Linkname
 	}
-	if h.Size > 077777777777 { // > 8GB
+	if h.Size > 0o77777777777 { // > 8GB
 		pax["size"] = strconv.FormatInt(h.Size, 10)
 	}
 
@@ -71,7 +74,7 @@ func (tw *Writer) WriteHeader(h *Header) error {
 			Name:     "PaxHeaders.0/" + h.Name,
 			Size:     int64(len(paxData)),
 			ModTime:  time.Now(),
-			Mode:     0644,
+			Mode:     0o644,
 		}
 		if err := formatHeaderBlock(tw.block[:], paxHdr); err != nil {
 			return err
@@ -125,7 +128,7 @@ func (tw *Writer) Write(p []byte) (int, error) {
 func (tw *Writer) WritePayload(src io.Reader) (int64, error) {
 	bufPtr := pool.Get64K()
 	defer pool.Put64K(bufPtr)
-	buf := (*bufPtr)[:]
+	buf := (*bufPtr)
 
 	var written int64
 	for {

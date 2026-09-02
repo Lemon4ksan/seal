@@ -129,3 +129,51 @@ func TestZip_Roundtrip_AES256(t *testing.T) {
 		t.Fatalf("expected error decrypting with wrong password, got nil")
 	}
 }
+
+func TestZip_Roundtrip_AES128(t *testing.T) {
+	buf := new(bytes.Buffer)
+	w := NewWriter(buf, codec.DefaultRegistry)
+	w.SetPassword("SecretAES128Password")
+
+	f, err := file.New("secure128.txt", false)
+	if err != nil {
+		t.Fatalf("NewFile: %v", err)
+	}
+	f.WithEncryption(file.AES128, "SecretAES128Password")
+
+	content := []byte("Highly confidential data protected with WinZip AES-128 standard.")
+	if err := w.WriteEntry(f, bytes.NewReader(content)); err != nil {
+		t.Fatalf("WriteEntry: %v", err)
+	}
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "SecretAES128Password", codec.DefaultRegistry)
+	if err != nil {
+		t.Fatalf("NewReader: %v", err)
+	}
+
+	entry, ok := r.Entry("secure128.txt")
+	if !ok {
+		t.Fatalf("entry secure128.txt not found")
+	}
+	if entry.Encryption() != file.AES128 {
+		t.Fatalf("expected AES128 encryption, got %v", entry.Encryption())
+	}
+
+	rc, err := entry.Open()
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer rc.Close()
+
+	decrypted, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(decrypted) != string(content) {
+		t.Fatalf("decrypted mismatch: got %q, want %q", string(decrypted), string(content))
+	}
+}

@@ -60,6 +60,7 @@ const (
 	MethodAES     = 0x06F10701
 	MethodBCJ     = 0x03030103
 	MethodBCJ2    = 0x0303011B
+	MethodARM     = 0x03030501
 	MethodPPMD    = 0x030401
 	MethodBZip2   = 0x040202
 	MethodDeflate = 0x040108

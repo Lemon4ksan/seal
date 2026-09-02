@@ -24,7 +24,7 @@ type (
 	Archive = archive.Archive
 
 	// Zip is an alias for [Archive] providing a seamless transition for zip-focused workflows.
-	Zip = archive.Zip
+	Zip = Archive
 
 	// File represents a single canonical, lock-free file or directory record across all containers.
 	File = file.File
@@ -58,6 +58,9 @@ type (
 
 	// ArchiveOption aliases [Option] for configuring archive managers and Archiver engines.
 	ArchiveOption = option.Option
+
+	// Iterator provides cursor-based traversal over archive files.
+	Iterator = archive.Iterator
 
 	// FileOption aliases [Option] for configuring individual file entries.
 	FileOption = option.Option

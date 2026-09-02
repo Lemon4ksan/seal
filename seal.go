@@ -29,6 +29,12 @@ func DefaultEngine(t ContainerType) (Container, error) {
 		return tar.New(), nil
 	case container.TarGz:
 		return targz.New(), nil
+	case container.TarBz2:
+		return tar.NewFormat(container.TarBz2), nil
+	case container.TarXz:
+		return tar.NewFormat(container.TarXz), nil
+	case container.TarZst:
+		return tar.NewFormat(container.TarZst), nil
 	case container.SevenZip:
 		return sevenzip.New(), nil
 	default:
@@ -69,6 +75,21 @@ func NewTar(opts ...Option) *Archive {
 // NewTarGz constructs a new [Archive] configured specifically for the TAR.GZ container.
 func NewTarGz(opts ...Option) *Archive {
 	return NewArchive(append([]Option{archive.WithEngine(targz.New())}, opts...)...)
+}
+
+// NewTarBz2 constructs a new [Archive] configured specifically for the TAR.BZ2 container.
+func NewTarBz2(opts ...Option) *Archive {
+	return NewArchive(append([]Option{archive.WithEngine(tar.NewFormat(container.TarBz2))}, opts...)...)
+}
+
+// NewTarXz constructs a new [Archive] configured specifically for the TAR.XZ container.
+func NewTarXz(opts ...Option) *Archive {
+	return NewArchive(append([]Option{archive.WithEngine(tar.NewFormat(container.TarXz))}, opts...)...)
+}
+
+// NewTarZst constructs a new [Archive] configured specifically for the TAR.ZST container.
+func NewTarZst(opts ...Option) *Archive {
+	return NewArchive(append([]Option{archive.WithEngine(tar.NewFormat(container.TarZst))}, opts...)...)
 }
 
 // NewSevenZip constructs a new [Archive] configured specifically for the 7-Zip container.

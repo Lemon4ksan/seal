@@ -225,7 +225,7 @@ func parseHeaderBlock(block []byte) (*Header, error) {
 	h := &Header{}
 	h.Name = parseString(block[0:100])
 	mode, _ := parseOctal(block[100:108])
-	h.Mode = fs.FileMode(mode & 07777)
+	h.Mode = fs.FileMode(mode & 0o7777)
 	uid, _ := parseOctal(block[108:116])
 	h.UID = int(uid)
 	gid, _ := parseOctal(block[116:124])
@@ -264,9 +264,10 @@ func parseHeaderBlock(block []byte) (*Header, error) {
 		h.Devminor = devmin
 	}
 
-	if h.Typeflag == TypeDir {
+	switch h.Typeflag {
+	case TypeDir:
 		h.Mode |= fs.ModeDir
-	} else if h.Typeflag == TypeSymlink {
+	case TypeSymlink:
 		h.Mode |= fs.ModeSymlink
 	}
 
@@ -366,8 +367,8 @@ func parsePAX(r io.Reader) (map[string]string, error) {
 		if sp <= 0 {
 			break
 		}
-		length, err := strconv.Atoi(string(data[:sp]))
-		if err != nil || length > len(data) || length <= sp {
+		length, convErr := strconv.Atoi(string(data[:sp]))
+		if convErr != nil || length > len(data) || length <= sp {
 			break
 		}
 		rec := data[sp+1 : length]
@@ -382,6 +383,7 @@ func parsePAX(r io.Reader) (map[string]string, error) {
 		}
 		data = data[length:]
 	}
+	//nolint:nilerr // Ignore malformed trailing PAX attributes gracefully
 	return records, nil
 }
 

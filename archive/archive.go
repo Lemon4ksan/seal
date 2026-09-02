@@ -89,9 +89,6 @@ type Archive struct {
 	vfsFS          *vfs.FS
 }
 
-// Zip is a type alias for [Archive], providing a seamless transition for zip-focused workflows.
-type Zip = Archive
-
 type archiverConfig struct {
 	container      container.Container
 	format         container.Type
@@ -327,6 +324,18 @@ func (a *Archive) addDirEntry(
 
 	a.attachEntry(entry)
 	return entry, nil
+}
+
+// Add attaches one or more pre-configured [*file.File] entries to the archive.
+func (a *Archive) Add(files ...*file.File) {
+	for _, f := range files {
+		a.attachEntry(f)
+	}
+}
+
+// AddEntry attaches a pre-configured [file.File] entry to the archive.
+func (a *Archive) AddEntry(f *file.File) {
+	a.attachEntry(f)
 }
 
 // AddBytes attaches an in-memory byte slice as an archive entry.
@@ -584,7 +593,7 @@ func (a *Archive) Load(rAt io.ReaderAt, size int64, engines ...container.Contain
 		)
 	}
 
-	files, comment, err := c.ReadIndex(nil, rAt, size, a.password, a.registry)
+	files, comment, err := c.OpenCatalog(rAt, size, a.password, a.registry)
 	if err != nil {
 		return nil, err
 	}
@@ -622,7 +631,7 @@ func (a *Archive) LoadFromReader(r io.Reader, engines ...container.Container) ([
 		)
 	}
 
-	files, comment, err := c.ReadIndex(r, nil, -1, a.password, a.registry)
+	files, comment, err := c.ScanStream(r, a.password, a.registry)
 	if err != nil {
 		return nil, err
 	}
@@ -722,6 +731,13 @@ func (a *Archive) WriteTo(dest io.Writer, opts ...option.Option) (int64, error) 
 	if procCfg.onDone != nil {
 		onDoneWrapper = func(f *file.File, err error) {
 			procCfg.onDone(f.Name(), err)
+		}
+	}
+
+	// Pre-validation: ensure all files are valid and no overflows occur before starting write stream
+	for _, f := range filesCopy {
+		if err := f.Validate(); err != nil {
+			return 0, fmt.Errorf("archive: invalid entry %q: %w", f.Name(), err)
 		}
 	}
 

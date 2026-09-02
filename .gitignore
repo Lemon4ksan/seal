@@ -14,3 +14,12 @@ coverage.*
 *.coverprofile
 profile.cov
 *.pprof
+
+# Benchmark archives and scratch benchmarks
+*.7z
+cmd/bench_pf/
+cmd/bench_suite/
+cmd/bench_7z/
+cmd/profile_7z/
+.tmp/
+bin/

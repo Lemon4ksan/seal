@@ -98,7 +98,7 @@ func TestTar_LongPath_PAX(t *testing.T) {
 	h := &tar.Header{
 		Name:     longPath,
 		Size:     int64(len(content)),
-		Mode:     0644,
+		Mode:     0o644,
 		ModTime:  time.Unix(1700000000, 0),
 		Typeflag: tar.TypeReg,
 	}
@@ -142,7 +142,7 @@ func TestTar_UTF8_NonASCII(t *testing.T) {
 	h := &tar.Header{
 		Name:     utf8Path,
 		Size:     int64(len(content)),
-		Mode:     0644,
+		Mode:     0o644,
 		ModTime:  time.Unix(1700000000, 0),
 		Typeflag: tar.TypeReg,
 	}
@@ -181,6 +181,7 @@ func TestTar_Container_CompressedVariants(t *testing.T) {
 		container.Tar,
 		container.TarGz,
 		container.TarXz,
+		container.TarZst,
 	}
 
 	for _, fmtType := range formats {
@@ -210,9 +211,9 @@ func TestTar_Container_CompressedVariants(t *testing.T) {
 				t.Fatalf("unexpected written size: %d", written)
 			}
 
-			readFiles, _, err := engine.ReadIndex(&archiveBuf, nil, 0, "", nil)
+			readFiles, _, err := engine.ScanStream(&archiveBuf, "", nil)
 			if err != nil {
-				t.Fatalf("ReadIndex failed: %v", err)
+				t.Fatalf("ScanStream failed: %v", err)
 			}
 
 			if len(readFiles) != 2 {
@@ -243,7 +244,7 @@ func BenchmarkTar_HeaderScan(b *testing.B) {
 		h := &tar.Header{
 			Name:     "benchmark/file.txt",
 			Size:     100,
-			Mode:     0644,
+			Mode:     0o644,
 			ModTime:  time.Unix(1700000000, 0),
 			Typeflag: tar.TypeReg,
 		}

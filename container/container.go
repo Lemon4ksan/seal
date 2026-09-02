@@ -85,14 +85,11 @@ type Container interface {
 	// Type returns the container format identifier.
 	Type() Type
 
-	// ReadIndex parses the table of contents and file entries from a reader or random-access source.
-	ReadIndex(
-		r io.Reader,
-		rAt io.ReaderAt,
-		size int64,
-		password string,
-		reg *codec.Registry,
-	) ([]*file.File, string, error)
+	// OpenCatalog parses the table of contents and file entries from a random-access source (e.g. *os.File, *bytes.Reader, *io.SectionReader).
+	OpenCatalog(rAt io.ReaderAt, size int64, password string, reg *codec.Registry) ([]*file.File, string, error)
+
+	// ScanStream sequentially scans an incoming stream (e.g. stdin, HTTP body, pipe) to extract entries.
+	ScanStream(r io.Reader, password string, reg *codec.Registry) ([]*file.File, string, error)
 
 	// WriteArchive serializes the slice of files into dest and returns the total bytes written.
 	WriteArchive(dest io.Writer, files []*file.File, cfg Config) (int64, error)

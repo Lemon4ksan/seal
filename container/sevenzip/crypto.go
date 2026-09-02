@@ -5,13 +5,11 @@
 package sevenzip
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha256"
-	"encoding/binary"
+	"crypto/rand"
 	"errors"
 	"io"
-	"unicode/utf16"
+
+	"github.com/lemon4ksan/seal/crypto"
 )
 
 // ErrInvalidPassword indicates wrong or missing 7z archive password.
@@ -19,28 +17,7 @@ var ErrInvalidPassword = errors.New("sevenzip: invalid or missing password for e
 
 // DeriveKey implements 7-Zip SHA-256 key derivation with multi-round stretching.
 func DeriveKey(password string, salt []byte, numCyclesPower byte) [32]byte {
-	// Encode password into UTF-16LE
-	runes := []rune(password)
-	u16 := utf16.Encode(runes)
-	passBytes := make([]byte, len(u16)*2)
-	for i, v := range u16 {
-		binary.LittleEndian.PutUint16(passBytes[i*2:(i+1)*2], v)
-	}
-
-	h := sha256.New()
-	numCycles := uint64(1) << numCyclesPower
-
-	var counterBuf [8]byte
-	for cycle := uint64(0); cycle < numCycles; cycle++ {
-		h.Write(salt)
-		h.Write(passBytes)
-		binary.LittleEndian.PutUint64(counterBuf[:], cycle)
-		h.Write(counterBuf[:])
-	}
-
-	var key [32]byte
-	copy(key[:], h.Sum(nil))
-	return key
+	return crypto.Derive7zKey(password, salt, numCyclesPower)
 }
 
 // DecryptStream wraps an encrypted 7z stream with AES-256-CBC decryption.
@@ -64,10 +41,17 @@ func DecryptStream(r io.Reader, password string, props []byte) (io.Reader, error
 	propPos := 1
 	if saltBit != 0 && propPos < len(props) {
 		saltSize = int(props[propPos] >> 4)
-		propPos++
+		if saltSize == 0 {
+			saltSize = 16
+		}
 	}
 	if ivBit != 0 && propPos < len(props) {
 		ivSize = int(props[propPos] & 0x0F)
+		if ivSize == 0 {
+			ivSize = 16
+		}
+	}
+	if (saltBit != 0 || ivBit != 0) && propPos < len(props) {
 		propPos++
 	}
 
@@ -83,29 +67,40 @@ func DecryptStream(r io.Reader, password string, props []byte) (io.Reader, error
 	}
 
 	key := DeriveKey(password, salt, numCyclesPower)
+	return crypto.NewAESCBCReader(r, key, iv)
+}
 
-	block, err := aes.NewCipher(key[:])
+// EncryptStream wraps an output stream with 7-Zip AES-256-CBC encryption.
+// Returns the encrypting writer and the encoded 7z AES coder properties.
+func EncryptStream(w io.Writer, password string, numCyclesPower byte) (io.WriteCloser, []byte, error) {
+	if numCyclesPower == 0 {
+		numCyclesPower = 19 // Standard 7-Zip 2^19 cycles
+	}
+	if numCyclesPower > 24 {
+		numCyclesPower = 24
+	}
+
+	var salt [16]byte
+	var iv [16]byte
+	if _, err := rand.Read(salt[:]); err != nil {
+		return nil, nil, err
+	}
+	if _, err := rand.Read(iv[:]); err != nil {
+		return nil, nil, err
+	}
+
+	key := DeriveKey(password, salt[:], numCyclesPower)
+
+	props := make([]byte, 2+len(salt)+len(iv))
+	props[0] = (1 << 7) | (1 << 6) | (numCyclesPower & 0x3F)
+	props[1] = byte(((len(salt) & 0x0F) << 4) | (len(iv) & 0x0F))
+	copy(props[2:], salt[:])
+	copy(props[2+len(salt):], iv[:])
+
+	cw, err := crypto.NewAESCBCWriter(w, key, iv)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	mode := cipher.NewCBCDecrypter(block, iv[:])
-	return &cbcReader{r: r, mode: mode}, nil
-}
-
-type cbcReader struct {
-	r    io.Reader
-	mode cipher.BlockMode
-}
-
-func (cr *cbcReader) Read(p []byte) (int, error) {
-	n, err := cr.r.Read(p)
-	if n > 0 {
-		// Decrypt in full 16-byte blocks
-		aligned := (n / 16) * 16
-		if aligned > 0 {
-			cr.mode.CryptBlocks(p[:aligned], p[:aligned])
-		}
-	}
-	return n, err
+	return cw, props, nil
 }

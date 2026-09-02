@@ -36,7 +36,7 @@ type MethodType uint64
 
 const (
 	MethodLZMA2Default MethodType = MethodLZMA2
-	MethodPPMDDefault   MethodType = MethodPPMD
+	MethodPPMDDefault  MethodType = MethodPPMD
 )
 
 // WriterOptions specifies configuration options for the 7z Writer.
@@ -84,10 +84,9 @@ func NewWriterWithOptions(w io.Writer, opts WriterOptions) *Writer {
 }
 
 type prefetchBlock struct {
-	buf   *[]byte
-	data  []byte
-	err   error
-	isEOF bool
+	buf  *[]byte
+	data []byte
+	err  error
 }
 
 type asyncPrefetchPipe struct {
@@ -107,7 +106,11 @@ type asyncPrefetchPipe struct {
 	doneChan  chan struct{}
 }
 
-func newAsyncPrefetchPipe(files []*file.File, filter FilterType, onProgress func(phase string, current, total int64)) *asyncPrefetchPipe {
+func newAsyncPrefetchPipe(
+	files []*file.File,
+	filter FilterType,
+	onProgress func(phase string, current, total int64),
+) *asyncPrefetchPipe {
 	pipe := &asyncPrefetchPipe{
 		files:           files,
 		fileEntries:     make([]FileEntry, len(files)),
@@ -198,15 +201,16 @@ func (p *asyncPrefetchPipe) prefetchLoop() {
 			nr, rErr := io.ReadFull(rc, bufSlice)
 			_ = rc.Close()
 			if nr > 0 {
-				curCRC.Write(bufSlice[:nr])
-				p.totalCRC.Write(bufSlice[:nr])
+				_, _ = curCRC.Write(bufSlice[:nr])
+				_, _ = p.totalCRC.Write(bufSlice[:nr])
 				fileBytesRead = uint64(nr)
 
 				// Apply BCJ branch conversion if enabled
-				if p.filter == FilterBCJ {
+				switch p.filter {
+				case FilterBCJ:
 					bcj.Filter(bcj.X86, bufSlice[:nr], p.bcjIP, true)
 					p.bcjIP += uint32(nr)
-				} else if p.filter == FilterARM {
+				case FilterARM:
 					bcj.Filter(bcj.ARM, bufSlice[:nr], p.bcjIP, true)
 					p.bcjIP += uint32(nr)
 				}
@@ -222,19 +226,20 @@ func (p *asyncPrefetchPipe) prefetchLoop() {
 		} else {
 			for {
 				bufPtr := pool.Get64K()
-				bufSlice := (*bufPtr)[:]
+				bufSlice := (*bufPtr)
 
 				nr, rErr := rc.Read(bufSlice)
 				if nr > 0 {
-					curCRC.Write(bufSlice[:nr])
-					p.totalCRC.Write(bufSlice[:nr])
+					_, _ = curCRC.Write(bufSlice[:nr])
+					_, _ = p.totalCRC.Write(bufSlice[:nr])
 					fileBytesRead += uint64(nr)
 
 					// Apply BCJ branch conversion if enabled
-					if p.filter == FilterBCJ {
+					switch p.filter {
+					case FilterBCJ:
 						bcj.Filter(bcj.X86, bufSlice[:nr], p.bcjIP, true)
 						p.bcjIP += uint32(nr)
-					} else if p.filter == FilterARM {
+					case FilterARM:
 						bcj.Filter(bcj.ARM, bufSlice[:nr], p.bcjIP, true)
 						p.bcjIP += uint32(nr)
 					}
@@ -311,7 +316,21 @@ func extensionGroup(ext string) int {
 		".md", ".log", ".yaml", ".yml", ".ini", ".cfg", ".conf", ".toml", ".sql", ".bat", ".cmd", ".ps1", ".sh":
 		return 0 // Code & Text
 
-	case ".exe", ".dll", ".sys", ".node", ".so", ".dylib", ".pdb", ".lib", ".obj", ".o", ".a", ".ocx", ".bin", ".dat", ".rsrc":
+	case ".exe",
+		".dll",
+		".sys",
+		".node",
+		".so",
+		".dylib",
+		".pdb",
+		".lib",
+		".obj",
+		".o",
+		".a",
+		".ocx",
+		".bin",
+		".dat",
+		".rsrc":
 		return 1 // Executables & Binaries
 
 	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".rtf", ".csv", ".tsv":
@@ -458,12 +477,9 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	_ = WriteNumber(&headerBuf, 1) // 1 Folder
 	headerBuf.WriteByte(0)         // External = 0
 
-	if method == MethodPPMDDefault {
-		// PPMd Coder: 0x030401 (3 bytes ID, 5-byte properties)
+	switch {
+	case method == MethodPPMDDefault:
 		_ = WriteNumber(&headerBuf, 1) // NumCoders = 1
-		headerBuf.WriteByte(0x23)      // MainByte: 3-byte ID, has properties
-		headerBuf.Write([]byte{0x03, 0x04, 0x01})
-		_ = WriteNumber(&headerBuf, 5) // PropSize = 5
 		order := byte(zw.options.PPMdOrder)
 		if order < 2 {
 			order = byte(ppmd.DefaultOrder)
@@ -475,30 +491,23 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		var propB [5]byte
 		propB[0] = order
 		binary.LittleEndian.PutUint32(propB[1:5], mem)
-		headerBuf.Write(propB[:])
+
+		writeCoder(&headerBuf, MethodPPMD, propB[:])
 
 		// CodersUnpackSize
 		headerBuf.WriteByte(NIDCodersUnpackSize)
 		_ = WriteNumber(&headerBuf, totalUnpackSize)
 
-	} else if filter == FilterBCJ || filter == FilterARM {
-		// 2 Coders: Coder 0 = BCJ/ARM, Coder 1 = LZMA2
+	case filter == FilterBCJ || filter == FilterARM:
+		// 2 Coders: Coder 0 = BCJ/ARM filter, Coder 1 = LZMA2
 		_ = WriteNumber(&headerBuf, 2) // NumCoders = 2
 
-		// Coder 0: BCJ (0x03030103) or ARM (0x03030501)
-		if filter == FilterBCJ {
-			headerBuf.WriteByte(0x04) // 4-byte ID, no properties
-			headerBuf.Write([]byte{0x03, 0x03, 0x01, 0x03})
-		} else {
-			headerBuf.WriteByte(0x04)
-			headerBuf.Write([]byte{0x03, 0x03, 0x05, 0x01})
+		filterMethod := uint64(MethodBCJ)
+		if filter == FilterARM {
+			filterMethod = uint64(MethodARM)
 		}
-
-		// Coder 1: LZMA2 (0x21)
-		headerBuf.WriteByte(0x21) // 1-byte ID, has properties
-		headerBuf.WriteByte(0x21) // ID = 0x21
-		_ = WriteNumber(&headerBuf, 1)
-		headerBuf.WriteByte(0x18) // 8MB dict
+		writeCoder(&headerBuf, filterMethod, nil)
+		writeCoder(&headerBuf, MethodLZMA2, []byte{0x18}) // 8MB dictionary
 
 		// BindPairs (NumBindPairs = 1: Coder 0 in <- Coder 1 out)
 		_ = WriteNumber(&headerBuf, 0) // InIndex = 0
@@ -509,13 +518,10 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		_ = WriteNumber(&headerBuf, totalUnpackSize)
 		_ = WriteNumber(&headerBuf, totalUnpackSize)
 
-	} else {
-		// 1 Coder (LZMA2: 0x21, 1-byte prop 0x18 = 8MB)
+	default:
+		// 1 Coder (LZMA2: 8MB dictionary)
 		_ = WriteNumber(&headerBuf, 1) // NumCoders = 1
-		headerBuf.WriteByte(0x21)      // MainByte: 1-byte ID, Simple coder, has properties
-		headerBuf.WriteByte(0x21)      // ID = 0x21 (LZMA2)
-		_ = WriteNumber(&headerBuf, 1) // PropSize = 1
-		headerBuf.WriteByte(0x18)      // 8MB dict
+		writeCoder(&headerBuf, MethodLZMA2, []byte{0x18})
 
 		// CodersUnpackSize
 		headerBuf.WriteByte(NIDCodersUnpackSize)
@@ -662,4 +668,29 @@ func (cw *countingWriter) Write(p []byte) (int, error) {
 	n, err := cw.w.Write(p)
 	cw.n += int64(n)
 	return n, err
+}
+
+func writeCoder(buf *bytes.Buffer, method uint64, props []byte) {
+	var idBytes []byte
+	switch {
+	case method <= 0xFF:
+		idBytes = []byte{byte(method)}
+	case method <= 0xFFFF:
+		idBytes = []byte{byte(method >> 8), byte(method)}
+	case method <= 0xFFFFFF:
+		idBytes = []byte{byte(method >> 16), byte(method >> 8), byte(method)}
+	default:
+		idBytes = []byte{byte(method >> 24), byte(method >> 16), byte(method >> 8), byte(method)}
+	}
+
+	mainByte := byte(len(idBytes))
+	if len(props) > 0 {
+		mainByte |= 0x20
+	}
+	buf.WriteByte(mainByte)
+	buf.Write(idBytes)
+	if len(props) > 0 {
+		_ = WriteNumber(buf, uint64(len(props)))
+		buf.Write(props)
+	}
 }

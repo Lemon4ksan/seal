@@ -31,7 +31,9 @@ type EncryptionMethod uint16
 const (
 	NotEncrypted EncryptionMethod = 0 // Plaintext storage
 	ZipCrypto    EncryptionMethod = 1 // Legacy PKWARE ZipCrypto stream cipher
-	AES256       EncryptionMethod = 2 // WinZip AES-256 standard encryption
+	AES256       EncryptionMethod = 2 // WinZip / 7z AES-256 standard encryption
+	AES128       EncryptionMethod = 3 // WinZip / 7z AES-128
+	AES192       EncryptionMethod = 4 // WinZip / 7z AES-192
 )
 
 type fileMeta struct {
@@ -67,18 +69,24 @@ type File struct {
 }
 
 // New constructs a standalone [File] entry with initialized defaults.
-func New(name string, isDir bool) (*File, error) {
+// If isDir is omitted or false, a regular file entry is created.
+func New(name string, isDir ...bool) (*File, error) {
+	dir := false
+	if len(isDir) > 0 {
+		dir = isDir[0]
+	}
+
 	cleanName := vfs.CleanPath(name)
 	if cleanName == "" {
 		return nil, errors.New("file: filename cannot be empty")
 	}
 
-	if isDir && !strings.HasSuffix(cleanName, "/") {
+	if dir && !strings.HasSuffix(cleanName, "/") {
 		cleanName += "/"
 	}
 
 	f := &File{}
-	f.isDir.Store(isDir)
+	f.isDir.Store(dir)
 	f.method.Store(uint32(codec.Deflate))
 	f.level.Store(int32(codec.DefaultCompression))
 
@@ -89,7 +97,7 @@ func New(name string, isDir bool) (*File, error) {
 		hostSystem: sys.DefaultHostSystem,
 	}
 
-	if isDir {
+	if dir {
 		initialMeta.mode = 0o755 | fs.ModeDir
 		f.method.Store(uint32(codec.Store))
 		openFn := func() (io.ReadCloser, error) {
@@ -100,6 +108,11 @@ func New(name string, isDir bool) (*File, error) {
 
 	f.meta.Store(initialMeta)
 	return f, nil
+}
+
+// NewDir constructs a directory [File] entry with standard directory attributes (0755).
+func NewDir(name string) (*File, error) {
+	return New(name, true)
 }
 
 // NewArchiveFile constructs a [File] populated from container metadata.
@@ -423,6 +436,93 @@ func (f *File) String() (string, error) {
 	return string(b), nil
 }
 
+// WithData sets an in-memory byte slice as the file content and updates the uncompressed size.
+func (f *File) WithData(data []byte) *File {
+	f.uncompressedSize.Store(int64(len(data)))
+	f.SetOpenFunc(func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	})
+	return f
+}
+
+// WithString sets an in-memory string as the file content.
+func (f *File) WithString(content string) *File {
+	return f.WithData([]byte(content))
+}
+
+// WithReader sets a static [io.Reader] stream as the file content source.
+func (f *File) WithReader(r io.Reader) *File {
+	f.SetOpenFunc(func() (io.ReadCloser, error) {
+		if rc, ok := r.(io.ReadCloser); ok {
+			return rc, nil
+		}
+		return io.NopCloser(r), nil
+	})
+	return f
+}
+
+// WithOpenFunc assigns a dynamic lazy stream opener factory.
+func (f *File) WithOpenFunc(fn func() (io.ReadCloser, error)) *File {
+	f.SetOpenFunc(fn)
+	return f
+}
+
+// WithRawFunc assigns a raw compressed stream provider.
+func (f *File) WithRawFunc(fn func() (*io.SectionReader, error)) *File {
+	f.SetRawFunc(fn)
+	return f
+}
+
+// WithSize sets the uncompressed size.
+func (f *File) WithSize(uncompressed int64) *File {
+	f.uncompressedSize.Store(uncompressed)
+	return f
+}
+
+// WithCompressedSize sets the compressed size.
+func (f *File) WithCompressedSize(compressed int64) *File {
+	f.compressedSize.Store(compressed)
+	return f
+}
+
+// WithCRC sets the CRC-32 checksum.
+func (f *File) WithCRC(crc uint32) *File {
+	f.crc32.Store(crc)
+	return f
+}
+
+// WithSizes sets the uncompressed size, compressed size, and CRC-32 checksum.
+func (f *File) WithSizes(uncompressed, compressed int64, crc uint32) *File {
+	f.uncompressedSize.Store(uncompressed)
+	f.compressedSize.Store(compressed)
+	f.crc32.Store(crc)
+	return f
+}
+
+// WithOffset sets the byte offset in the archive container.
+func (f *File) WithOffset(offset int64) *File {
+	f.SetLocalHeaderOffset(offset)
+	return f
+}
+
+// WithFlags sets the general purpose bit flags.
+func (f *File) WithFlags(flags uint16) *File {
+	f.SetFlags(flags)
+	return f
+}
+
+// WithMethod sets the compression algorithm.
+func (f *File) WithMethod(m codec.Method) *File {
+	f.SetMethod(m)
+	return f
+}
+
+// WithLevel sets the compression level.
+func (f *File) WithLevel(level int) *File {
+	f.level.Store(int32(level))
+	return f
+}
+
 // WithCompression configures the compression algorithm and level for the file entry.
 func (f *File) WithCompression(m codec.Method, level int) *File {
 	if !f.IsDir() {
@@ -464,6 +564,12 @@ func (f *File) WithComment(comment string) *File {
 	return f
 }
 
+// WithName sets the entry relative name path.
+func (f *File) WithName(name string) *File {
+	f.SetName(name)
+	return f
+}
+
 // WithMode sets the permission and mode bits.
 func (f *File) WithMode(mode fs.FileMode) *File {
 	f.updateMeta(func(m *fileMeta) {
@@ -478,6 +584,56 @@ func (f *File) WithModTime(modTime time.Time) *File {
 		m.modTime = modTime
 	})
 	return f
+}
+
+// WithHostSystem sets the host operating system identifier.
+func (f *File) WithHostSystem(h sys.HostSystem) *File {
+	f.updateMeta(func(m *fileMeta) {
+		m.hostSystem = h
+	})
+	return f
+}
+
+// WithMetadata sets extended filesystem metadata (timestamps, attributes).
+func (f *File) WithMetadata(meta sys.Metadata) *File {
+	f.updateMeta(func(m *fileMeta) {
+		m.metadata = meta
+	})
+	return f
+}
+
+// Sentinel validation errors.
+var (
+	ErrEmptyFilename    = errors.New("file: filename cannot be empty")
+	ErrFilenameTooLong  = errors.New("file: filename length exceeds 65535 bytes limit")
+	ErrNegativeSize     = errors.New("file: uncompressed size cannot be negative")
+	ErrNullByteInPath   = errors.New("file: filename contains illegal null byte")
+	ErrNilPayloadReader = errors.New("file: regular non-empty file has nil open function")
+	ErrMissingPassword  = errors.New("file: encrypted file requires a non-empty password")
+)
+
+// Validate checks whether the File entry satisfies archive specification limits and is valid for serialization.
+func (f *File) Validate() error {
+	name := f.Name()
+	if name == "" {
+		return ErrEmptyFilename
+	}
+	if len(name) > 65535 {
+		return fmt.Errorf("%w: %q (len=%d)", ErrFilenameTooLong, name, len(name))
+	}
+	if strings.ContainsRune(name, 0) {
+		return fmt.Errorf("%w: %q", ErrNullByteInPath, name)
+	}
+	if f.UncompressedSize() < 0 {
+		return fmt.Errorf("%w: %d for file %q", ErrNegativeSize, f.UncompressedSize(), name)
+	}
+	if !f.IsDir() && f.UncompressedSize() > 0 && f.openFunc.Load() == nil {
+		return fmt.Errorf("%w for file %q", ErrNilPayloadReader, name)
+	}
+	if f.Encryption() != NotEncrypted && f.Password() == "" {
+		return fmt.Errorf("%w for file %q", ErrMissingPassword, name)
+	}
+	return nil
 }
 
 // VFS Adapter methods to implement [vfs.VFSEntry].

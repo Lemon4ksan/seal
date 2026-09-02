@@ -209,13 +209,6 @@ func (e *EncoderCore) Reset() {
 	}
 }
 
-func (e *EncoderCore) prevIdx(pos int) int {
-	if e.isPowerOf2 {
-		return pos & int(e.dictMask)
-	}
-	return pos % int(e.dictSize)
-}
-
 func (e *EncoderCore) getLitSubCoder(pos uint32, prevByte byte) *[0x300]uint16 {
 	idx := ((pos & e.lpMask) << e.lc) + (uint32(prevByte) >> e.prevShift)
 	return &e.litProbs[idx]

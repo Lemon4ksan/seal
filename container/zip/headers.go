@@ -6,6 +6,7 @@
 package zip
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/fs"
@@ -14,30 +15,6 @@ import (
 	"github.com/lemon4ksan/foundation/binkit"
 
 	"github.com/lemon4ksan/seal/internal/sys"
-)
-
-// PKWARE ZIP 32-bit header signature constants.
-const (
-	CentralDirectorySignature uint32 = 0x02014b50 // PK\x01\x02
-	LocalFileHeaderSignature  uint32 = 0x04034b50 // PK\x03\x04
-	DigitalHeaderSignature    uint32 = 0x05054b50 // PK\x05\x05
-	EOCDSignature             uint32 = 0x06054b50 // PK\x05\x06
-	Zip64EOCDSignature        uint32 = 0x06064b50 // PK\x06\x06
-	Zip64EOCDLocatorSignature uint32 = 0x07064b50 // PK\x06\x07
-	DataDescriptorSignature   uint32 = 0x08074b50 // PK\x07\x08
-)
-
-// Maximum standard integer limits before ZIP64 extensions become mandatory.
-const (
-	MaxUint16 uint64 = 1<<16 - 1
-	MaxUint32 uint64 = 1<<32 - 1
-)
-
-// Specification extra field tags.
-const (
-	Zip64ExtraFieldTag uint16 = 0x0001
-	NTFSFieldTag       uint16 = 0x000A
-	AESEncryptionTag   uint16 = 0x9901
 )
 
 // LocalFileHeader represents the binary header preceding individual entry data streams.
@@ -360,34 +337,6 @@ func EncodeZip64LocalExtraField(uncompSize, compSize int64) []byte {
 	return w.Bytes()
 }
 
-// ParseNTFSExtraField extracts high-precision FILETIMEs from tag 0x000A.
-func ParseNTFSExtraField(data []byte) sys.Metadata {
-	if len(data) < 36 {
-		return sys.Metadata{}
-	}
-	r := binkit.NewReader(data)
-	r.Skip(12) // tag(2) + size(2) + reserved(4) + attrTag(2) + attrSize(2)
-	return sys.Metadata{
-		LastWriteTime:  r.U64LE(),
-		LastAccessTime: r.U64LE(),
-		CreationTime:   r.U64LE(),
-	}
-}
-
-// EncodeNTFSExtraField formats high-precision FILETIMEs into tag 0x000A.
-func EncodeNTFSExtraField(metadata sys.Metadata) []byte {
-	w := binkit.NewWriter(nil, 36)
-	w.U16LE(NTFSFieldTag).
-		U16LE(32).
-		U32LE(0).
-		U16LE(1).  // Attribute tag 1 (file times)
-		U16LE(24). // Size of times
-		U64LE(metadata.LastWriteTime).
-		U64LE(metadata.LastAccessTime).
-		U64LE(metadata.CreationTime)
-	return w.Bytes()
-}
-
 // EncodeDataDescriptor formats a 16-byte standard or 24-byte ZIP64 Data Descriptor.
 func EncodeDataDescriptor(crc uint32, compSize, uncompSize int64) []byte {
 	if uint64(compSize) > MaxUint32 || uint64(uncompSize) > MaxUint32 {
@@ -407,15 +356,70 @@ func EncodeDataDescriptor(crc uint32, compSize, uncompSize int64) []byte {
 	return w.Bytes()
 }
 
+// DataDescriptor holds CRC-32 and compressed/uncompressed sizes parsed from a Data Descriptor record.
+type DataDescriptor struct {
+	CRC32            uint32
+	CompressedSize   int64
+	UncompressedSize int64
+}
+
+// ReadDataDescriptor parses a Data Descriptor record from src.
+// It automatically detects whether the optional 4-byte signature (0x08074b50) is present or omitted,
+// and supports both standard 32-bit and 64-bit Zip64 descriptor layouts.
+func ReadDataDescriptor(src io.Reader, isZip64 bool) (DataDescriptor, error) {
+	var first4 [4]byte
+	if _, err := io.ReadFull(src, first4[:]); err != nil {
+		return DataDescriptor{}, fmt.Errorf("read data descriptor header: %w", err)
+	}
+
+	val := binary.LittleEndian.Uint32(first4[:])
+	var crc uint32
+
+	if val == DataDescriptorSignature {
+		// Signature is present; read the actual CRC-32
+		var crcBuf [4]byte
+		if _, err := io.ReadFull(src, crcBuf[:]); err != nil {
+			return DataDescriptor{}, fmt.Errorf("read data descriptor crc: %w", err)
+		}
+		crc = binary.LittleEndian.Uint32(crcBuf[:])
+	} else {
+		// Signature was omitted; first 4 bytes ARE the CRC-32
+		crc = val
+	}
+
+	if isZip64 {
+		var sizes [16]byte
+		if _, err := io.ReadFull(src, sizes[:]); err != nil {
+			return DataDescriptor{}, fmt.Errorf("read zip64 data descriptor sizes: %w", err)
+		}
+		comp := int64(binary.LittleEndian.Uint64(sizes[0:8]))
+		uncomp := int64(binary.LittleEndian.Uint64(sizes[8:16]))
+		return DataDescriptor{CRC32: crc, CompressedSize: comp, UncompressedSize: uncomp}, nil
+	}
+
+	var sizes [8]byte
+	if _, err := io.ReadFull(src, sizes[:]); err != nil {
+		return DataDescriptor{}, fmt.Errorf("read data descriptor sizes: %w", err)
+	}
+	comp := int64(binary.LittleEndian.Uint32(sizes[0:4]))
+	uncomp := int64(binary.LittleEndian.Uint32(sizes[4:8]))
+	return DataDescriptor{CRC32: crc, CompressedSize: comp, UncompressedSize: uncomp}, nil
+}
+
 // EncodeAESExtraField encodes WinZip AES extra field (tag 0x9901).
-func EncodeAESExtraField(compMethod uint16) []byte {
+// strength: 1 for AES-128, 2 for AES-192, 3 for AES-256 (default).
+func EncodeAESExtraField(compMethod uint16, strength ...byte) []byte {
+	st := byte(0x03) // Default AES-256
+	if len(strength) > 0 && strength[0] != 0 {
+		st = strength[0]
+	}
 	w := binkit.NewWriter(nil, 11)
 	w.U16LE(AESEncryptionTag).
 		U16LE(7).
 		U16LE(0x0002). // Vendor Version AE-2
 		U8('A').
 		U8('E').
-		U8(0x03). // AES-256
+		U8(st).
 		U16LE(compMethod)
 	return w.Bytes()
 }

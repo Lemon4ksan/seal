@@ -5,7 +5,6 @@
 package zip
 
 import (
-	"bytes"
 	"errors"
 	"io"
 
@@ -32,53 +31,62 @@ func (z *Engine) Type() container.Type {
 	return container.Zip
 }
 
-// ReadIndex parses the table of contents and file entries from a random-access or streaming reader.
-func (z *Engine) ReadIndex(
-	r io.Reader,
+// OpenCatalog parses the ZIP Central Directory from a random-access source (e.g. *os.File or *bytes.Reader).
+func (z *Engine) OpenCatalog(
 	rAt io.ReaderAt,
 	size int64,
 	password string,
 	reg *codec.Registry,
 ) ([]*file.File, string, error) {
-	if rAt != nil && size > 0 {
-		zr, err := NewReader(rAt, size, password, reg)
+	if rAt == nil || size < 0 {
+		return nil, "", errors.New("zip: invalid random-access reader or size")
+	}
+
+	zr, err := NewReader(rAt, size, password, reg)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return zr.Entries(), zr.Comment(), nil
+}
+
+// ScanStream sequentially parses ZIP Local File Headers from a stream (e.g. stdin, HTTP body).
+func (z *Engine) ScanStream(
+	r io.Reader,
+	password string,
+	reg *codec.Registry,
+) ([]*file.File, string, error) {
+	if r == nil {
+		return nil, "", errors.New("zip: nil stream reader")
+	}
+
+	sr := NewStreamReader(r, password, reg)
+
+	var files []*file.File
+	for {
+		fe, payloadR, err := sr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
 		if err != nil {
 			return nil, "", err
 		}
-		return zr.Entries(), zr.Comment(), nil
-	}
 
-	if r != nil {
-		sr := NewStreamReader(r, password, reg)
-		var files []*file.File
-		for {
-			fe, payloadR, err := sr.Next()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				return nil, "", err
-			}
-
-			// Buffer content into memory for streaming entry
-			data, err := io.ReadAll(payloadR)
-			if err != nil {
-				return nil, "", err
-			}
-
-			f, _ := file.New(fe.Name(), fe.IsDir())
-			f.SetSizes(int64(len(data)), fe.CompressedSize(), fe.CRC())
-			f.SetMethod(fe.Method())
-			f.WithModTime(fe.ModTime())
-			f.SetOpenFunc(func() (io.ReadCloser, error) {
-				return io.NopCloser(bytes.NewReader(data)), nil
-			})
-			files = append(files, f)
+		// Buffer content into memory for streaming entry
+		data, err := io.ReadAll(payloadR)
+		if err != nil {
+			return nil, "", err
 		}
-		return files, "", nil
-	}
 
-	return nil, "", errors.New("zip: invalid source reader")
+		f, _ := file.New(fe.Name(), fe.IsDir())
+		f.WithData(data).
+			WithCompressedSize(fe.CompressedSize()).
+			WithCRC(fe.CRC()).
+			WithMethod(fe.Method()).
+			WithModTime(fe.ModTime())
+		files = append(files, f)
+	}
+	return files, "", nil
 }
 
 // WriteArchive serializes the entries into dest and returns the total bytes written.
@@ -100,8 +108,7 @@ func (z *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 
 		// Check if raw fast-copy is possible
 		if entry.CompressedSize() > 0 && entry.CRC() != 0 {
-			rawSec, err := entry.OpenRaw()
-			if err == nil {
+			if rawSec, err := entry.OpenRaw(); err == nil {
 				if err := w.WriteEntryRaw(entry, rawSec); err == nil {
 					totalWritten += entry.CompressedSize()
 					if cfg.OnFileDone != nil {

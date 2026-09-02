@@ -56,22 +56,28 @@ func (e *Engine) Type() container.Type {
 	return e.format
 }
 
-// ReadIndex parses the table of contents and file entries from a reader or random-access source.
-func (e *Engine) ReadIndex(
-	r io.Reader,
+// OpenCatalog reads the TAR archive from a random-access source by streaming it.
+func (e *Engine) OpenCatalog(
 	rAt io.ReaderAt,
 	size int64,
+	password string,
+	reg *codec.Registry,
+) ([]*file.File, string, error) {
+	if rAt == nil || size < 0 {
+		return nil, "", errors.New("tar: invalid source reader")
+	}
+	return e.ScanStream(io.NewSectionReader(rAt, 0, size), password, reg)
+}
+
+// ScanStream sequentially parses TAR headers and entries from a stream.
+func (e *Engine) ScanStream(
+	r io.Reader,
 	_ string,
 	_ *codec.Registry,
 ) ([]*file.File, string, error) {
 	if r == nil {
-		if rAt != nil && size > 0 {
-			r = io.NewSectionReader(rAt, 0, size)
-		} else {
-			return nil, "", errors.New("tar: invalid source reader")
-		}
+		return nil, "", errors.New("tar: nil stream reader")
 	}
-
 	rawReader, closer, err := e.wrapDecompressor(r)
 	if err != nil {
 		return nil, "", err
@@ -107,15 +113,13 @@ func (e *Engine) ReadIndex(
 			data = buf
 		}
 
-		f, _ := file.New(cleanName, isDir)
-		f.SetSizes(int64(len(data)), int64(len(data)), 0)
-		f.WithMode(h.Mode)
-		f.WithModTime(h.ModTime)
-		if len(data) > 0 {
-			f.SetOpenFunc(func() (io.ReadCloser, error) {
-				return io.NopCloser(bytes.NewReader(data)), nil
-			})
+		f, err := file.New(cleanName, isDir)
+		if err != nil {
+			return nil, "", err
 		}
+		f.WithData(data).
+			WithMode(h.Mode).
+			WithModTime(h.ModTime)
 		files = append(files, f)
 	}
 
@@ -140,6 +144,27 @@ func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 
 		compressor := lzma.NewCompressor2(8 * 1024 * 1024)
 		return compressor.Compress(&tarBuf, dest)
+
+	case container.TarZst:
+		zw, err := zstd.NewWriter(dest)
+		if err != nil {
+			return 0, err
+		}
+		countingW := &countingWriter{w: zw}
+		tw := NewWriter(countingW)
+
+		if err := writeEntries(tw, files, cfg); err != nil {
+			_ = zw.Close()
+			return countingW.n, err
+		}
+		if err := tw.Close(); err != nil {
+			_ = zw.Close()
+			return countingW.n, err
+		}
+		if err := zw.Close(); err != nil {
+			return countingW.n, err
+		}
+		return countingW.n, nil
 
 	case container.TarGz:
 		level := cfg.DefaultLevel

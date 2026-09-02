@@ -26,15 +26,15 @@ const (
 
 // Options specifies granular tuning parameters for LZMA/LZMA2 compression.
 type Options struct {
-	Level       Level  // Preset compression level (1..9, default 5)
-	DictSize    uint32 // Dictionary window size in bytes (e.g. 64KB to 1GB, default 8MB)
-	ChainLength int    // Match finder hash chain search depth (16..256)
-	FastBytes   int    // Match length threshold before early termination (32..273)
-	ChunkSize   int    // LZMA2 chunk partition size in bytes (default 64KB)
-	Lc          uint                           // Literal context bits (0..8, default 3)
-	Lp          uint                           // Literal position bits (0..4, default 0)
-	Pb          uint                           // Position bits (0..4, default 2)
-	OnProgress  func(processed, total int64)   // Optional progress reporting callback
+	Level       Level                        // Preset compression level (1..9, default 5)
+	DictSize    uint32                       // Dictionary window size in bytes (e.g. 64KB to 1GB, default 8MB)
+	ChainLength int                          // Match finder hash chain search depth (16..256)
+	FastBytes   int                          // Match length threshold before early termination (32..273)
+	ChunkSize   int                          // LZMA2 chunk partition size in bytes (default 64KB)
+	Lc          uint                         // Literal context bits (0..8, default 3)
+	Lp          uint                         // Literal position bits (0..4, default 0)
+	Pb          uint                         // Position bits (0..4, default 2)
+	OnProgress  func(processed, total int64) // Optional progress reporting callback
 }
 
 // DefaultOptions returns the standard balanced LZMA2 options preset.
