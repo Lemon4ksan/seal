@@ -145,6 +145,15 @@ func (zr *Reader) init() error {
 		}
 	}
 
+	// SFX base offset detection:
+	// In an SFX (Self-Extracting) archive or file with a prepended executable stub (PE32/ELF),
+	// the Central Directory and local file headers are shifted forward by the stub size.
+	var sfxOffset int64
+	if actualCD := endOffset - cdSize; actualCD > cdOffset {
+		sfxOffset = actualCD - cdOffset
+		cdOffset = actualCD
+	}
+
 	if cdOffset < 0 || cdOffset+cdSize > zr.size {
 		return errors.New("zip: invalid central directory offset")
 	}
@@ -169,7 +178,7 @@ func (zr *Reader) init() error {
 			return err
 		}
 
-		entry := zr.createEntry(cd)
+		entry := zr.createEntry(cd, sfxOffset)
 		zr.entries = append(zr.entries, entry)
 		zr.byName[entry.Name()] = entry
 	}
@@ -200,7 +209,7 @@ func (zr *Reader) ExtractEntry(entry *file.File) (io.ReadCloser, error) {
 	return OpenFromArchive(entry, zr.rAt, zr.size, zr.registry)
 }
 
-func (zr *Reader) createEntry(cd CentralDirectory) *file.File {
+func (zr *Reader) createEntry(cd CentralDirectory, sfxOffset int64) *file.File {
 	cleanName := vfs.CleanPath(cd.Filename)
 	mode := ParseFileMode(cd)
 	modTime := dosDateTimeToTime(cd.LastModFileDate, cd.LastModFileTime)
@@ -215,7 +224,7 @@ func (zr *Reader) createEntry(cd CentralDirectory) *file.File {
 
 	uncompSize := int64(cd.UncompressedSize)
 	compSize := int64(cd.CompressedSize)
-	localOffset := int64(cd.LocalHeaderOffset)
+	localOffset := int64(cd.LocalHeaderOffset) + sfxOffset
 
 	extraMap := ParseExtraFields(cd.ExtraField)
 
