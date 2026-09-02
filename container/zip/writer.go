@@ -18,6 +18,16 @@ import (
 	"github.com/lemon4ksan/seal/internal/sys"
 )
 
+// WriterOptions allows customizing serialization strictness and defaults.
+type WriterOptions struct {
+	Registry       *codec.Registry
+	DefaultMethod  codec.Method
+	DefaultLevel   int
+	GlobalPassword string
+	// AllowEmpty disables APPNOTE 4.1.2 enforcement (which specifies that ZIP files SHOULD contain at least one file).
+	AllowEmpty bool
+}
+
 // Writer serializes file entries and data streams into a specification-compliant ZIP archive.
 type Writer struct {
 	mu             sync.Mutex
@@ -32,22 +42,40 @@ type Writer struct {
 	defaultMethod  codec.Method
 	defaultLevel   int
 	globalPassword string
+	allowEmpty     bool
 }
 
 // NewWriter constructs a new ZIP archive serializer.
 func NewWriter(w io.Writer, reg *codec.Registry) *Writer {
+	return NewWriterOptions(w, WriterOptions{Registry: reg})
+}
+
+// NewWriterOptions constructs a ZIP archive serializer with granular options.
+func NewWriterOptions(w io.Writer, opts WriterOptions) *Writer {
 	var ws io.WriteSeeker
 	if s, ok := w.(io.WriteSeeker); ok {
 		ws = s
 	}
 
+	method := opts.DefaultMethod
+	if method == 0 {
+		method = codec.Deflate
+	}
+
+	level := opts.DefaultLevel
+	if level == 0 {
+		level = codec.DefaultCompression
+	}
+
 	return &Writer{
-		dest:          w,
-		seeker:        ws,
-		centralDir:    bytes.NewBuffer(make([]byte, 0, 64*1024)),
-		registry:      generic.CoalesceNil(reg, codec.DefaultRegistry),
-		defaultMethod: codec.Deflate,
-		defaultLevel:  codec.DefaultCompression,
+		dest:           w,
+		seeker:         ws,
+		centralDir:     bytes.NewBuffer(make([]byte, 0, 64*1024)),
+		registry:       generic.CoalesceNil(opts.Registry, codec.DefaultRegistry),
+		defaultMethod:  method,
+		defaultLevel:   level,
+		globalPassword: opts.GlobalPassword,
+		allowEmpty:     opts.AllowEmpty,
 	}
 }
 
@@ -253,8 +281,39 @@ func (w *Writer) writeSeekable(entry *file.File, src io.Reader) error {
 
 func (w *Writer) addCentralDirectoryEntry(entry *file.File) error {
 	dosDate, dosTime := timeToMsDos(entry.ModTime())
-	versionMadeBy := uint16(sys.DefaultHostSystem)<<8 | VersionDefault
-	versionNeeded := VersionDefault
+
+	name := entry.Name()
+	if len(name) > int(MaxUint16) {
+		return fmt.Errorf(
+			"zip: 4.4.3.2 entry name length %d exceeds max uint16 limit (%d): %w",
+			len(name),
+			MaxUint16,
+			ErrFileNameTooLong,
+		)
+	}
+	comment := entry.Comment()
+	if len(comment) > int(MaxUint16) {
+		return fmt.Errorf(
+			"zip: 4.4.3.2 entry comment length %d exceeds max uint16 limit (%d): %w",
+			len(comment),
+			MaxUint16,
+			ErrCommentTooLong,
+		)
+	}
+
+	uncompSize := entry.UncompressedSize()
+	compSize := entry.CompressedSize()
+	localOffset := entry.LocalHeaderOffset()
+	isZip64 := uint64(uncompSize) > MaxUint32 || uint64(compSize) > MaxUint32 || uint64(localOffset) > MaxUint32
+
+	// APPNOTE 4.4.1.1 & 4.4.3.2: Minimum Feature Versions
+	versionNeeded := ComputeVersionNeeded(
+		entry.Method(),
+		entry.IsDir(),
+		entry.Encryption() != file.NotEncrypted,
+		isZip64,
+	)
+	versionMadeBy := uint16(entry.HostSystem())<<8 | versionNeeded
 
 	extAttrs := uint32(entry.Mode().Perm()) << 16
 	if entry.IsDir() {
@@ -263,22 +322,16 @@ func (w *Writer) addCentralDirectoryEntry(entry *file.File) error {
 		extAttrs |= sys.S_IFREG << 16
 	}
 
-	name := entry.Name()
-	if len(name) > int(MaxUint16) {
-		return fmt.Errorf("zip: entry name length %d exceeds max uint16 limit (%d)", len(name), MaxUint16)
+	flags := entry.Flags()
+	// APPNOTE 4.4.4: Bit 11 (Language encoding flag / EFS)
+	if !isASCII(name) || !isASCII(comment) {
+		flags |= FlagLanguageEncodingUTF8
 	}
-	comment := entry.Comment()
-	if len(comment) > int(MaxUint16) {
-		return fmt.Errorf("zip: entry comment length %d exceeds max uint16 limit (%d)", len(comment), MaxUint16)
-	}
-	uncompSize := entry.UncompressedSize()
-	compSize := entry.CompressedSize()
-	localOffset := entry.LocalHeaderOffset()
 
 	cd := CentralDirectory{
 		VersionMadeBy:          versionMadeBy,
 		VersionNeededToExtract: versionNeeded,
-		GeneralPurposeBitFlag:  entry.Flags(),
+		GeneralPurposeBitFlag:  flags,
 		CompressionMethod:      uint16(entry.Method()),
 		LastModFileTime:        dosTime,
 		LastModFileDate:        dosDate,
@@ -300,17 +353,18 @@ func (w *Writer) addCentralDirectoryEntry(entry *file.File) error {
 		cd.ExtraField = append(cd.ExtraField, res.ExtraField...)
 	}
 
-	// Check if Zip64 is required
-	if uint64(uncompSize) > MaxUint32 || uint64(compSize) > MaxUint32 || uint64(localOffset) > MaxUint32 {
+	// APPNOTE 4.5.3: ZIP64 Extended Information Extra Field
+	if isZip64 {
 		cd.VersionNeededToExtract = VersionZip64
 		cd.ExtraField = append(cd.ExtraField, EncodeZip64ExtraField(nil, uncompSize, compSize, localOffset)...)
 	}
 
 	if len(cd.ExtraField) > int(MaxUint16) {
 		return fmt.Errorf(
-			"zip: central directory extra field length %d exceeds max uint16 limit (%d)",
+			"zip: 4.4.3.2 central directory extra field length %d exceeds max uint16 limit (%d): %w",
 			len(cd.ExtraField),
 			MaxUint16,
+			ErrExtraFieldTooLong,
 		)
 	}
 
@@ -329,18 +383,29 @@ func (w *Writer) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	// APPNOTE 4.1.2: ZIP files SHOULD contain at least one file and MAY contain multiple files.
+	if w.entriesNum == 0 && !w.allowEmpty {
+		return ErrEmptyArchive
+	}
+
 	if len(w.comment) > int(MaxUint16) {
-		return fmt.Errorf("zip: archive comment length %d exceeds max uint16 limit (%d)", len(w.comment), MaxUint16)
+		return fmt.Errorf(
+			"zip: 4.4.14 archive comment length %d exceeds max uint16 limit (%d): %w",
+			len(w.comment),
+			MaxUint16,
+			ErrCommentTooLong,
+		)
 	}
 
 	cdOffset := w.offset
 
-	// Flush Central Directory
+	// APPNOTE 4.1.5: The Central Directory MUST be placed after the last file.
 	if _, err := io.Copy(w.dest, w.centralDir); err != nil {
 		return fmt.Errorf("flush central directory: %w", err)
 	}
 	w.offset += w.cdSize
 
+	// APPNOTE 4.4.14 / 4.4.15: Check if Zip64 EOCD is required
 	requiresZip64 := uint64(w.entriesNum) > MaxUint16 || uint64(w.cdSize) > MaxUint32 || uint64(cdOffset) > MaxUint32
 	if requiresZip64 {
 		z64EOCD := EncodeZip64EOCDRecord(w.entriesNum, w.cdSize, cdOffset)
@@ -356,7 +421,7 @@ func (w *Writer) Close() error {
 		w.offset += int64(len(z64Loc))
 	}
 
-	// Write standard EOCD record
+	// APPNOTE 4.1.6 & 4.4.14: End of Central Directory Record (EOCD)
 	eocd := EncodeEOCD(w.entriesNum, w.cdSize, cdOffset, w.comment)
 	if _, err := w.dest.Write(eocd); err != nil {
 		return fmt.Errorf("write EOCD: %w", err)
@@ -379,25 +444,53 @@ func (c *countWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// createLocalFileHeader constructs a specification-compliant LocalFileHeader record.
+// createLocalFileHeader constructs a specification-compliant LocalFileHeader record (APPNOTE 4.4.1).
 func (w *Writer) createLocalFileHeader(entry *file.File, compSize, uncompSize int64, streaming bool) LocalFileHeader {
 	dosDate, dosTime := timeToMsDos(entry.ModTime())
 	name := entry.Name()
 	flags := entry.Flags()
 
-	if streaming {
-		flags |= FlagDataDescriptor
+	// APPNOTE 4.4.4: Bit 11 (Language encoding flag / EFS)
+	if !isASCII(name) || !isASCII(entry.Comment()) {
+		flags |= FlagLanguageEncodingUTF8
 	}
 
+	var (
+		crcVal        uint32
+		compSizeVal   uint32
+		uncompSizeVal uint32
+	)
+
+	// APPNOTE 4.4.4: Bit 3 (Data Descriptor).
+	// If bit 3 is set, CRC-32, compressed size and uncompressed size MUST be set to zero in the local header.
+	if streaming {
+		flags |= FlagDataDescriptor
+		crcVal = 0
+		compSizeVal = 0
+		uncompSizeVal = 0
+	} else {
+		crcVal = entry.CRC()
+		compSizeVal = uint32(min(uint64(compSize), MaxUint32))
+		uncompSizeVal = uint32(min(uint64(uncompSize), MaxUint32))
+	}
+
+	isZip64 := uint64(uncompSize) > MaxUint32 || uint64(compSize) > MaxUint32
+	versionNeeded := ComputeVersionNeeded(
+		entry.Method(),
+		entry.IsDir(),
+		entry.Encryption() != file.NotEncrypted,
+		isZip64,
+	)
+
 	lfh := LocalFileHeader{
-		VersionNeededToExtract: VersionDefault,
+		VersionNeededToExtract: versionNeeded,
 		GeneralPurposeBitFlag:  flags,
 		CompressionMethod:      generic.Ternary(entry.IsDir(), MethodStore, uint16(entry.Method())),
 		LastModFileTime:        dosTime,
 		LastModFileDate:        dosDate,
-		CRC32:                  entry.CRC(),
-		CompressedSize:         uint32(min(uint64(compSize), MaxUint32)),
-		UncompressedSize:       uint32(min(uint64(uncompSize), MaxUint32)),
+		CRC32:                  crcVal,
+		CompressedSize:         compSizeVal,
+		UncompressedSize:       uncompSizeVal,
 		FilenameLength:         uint16(len(name)),
 		Filename:               name,
 	}
@@ -410,7 +503,7 @@ func (w *Writer) createLocalFileHeader(entry *file.File, compSize, uncompSize in
 		lfh.ExtraFieldLength = uint16(len(lfh.ExtraField))
 	}
 
-	if uint64(uncompSize) > MaxUint32 || uint64(compSize) > MaxUint32 {
+	if isZip64 {
 		lfh.VersionNeededToExtract = VersionZip64
 		lfh.ExtraField = append(lfh.ExtraField, EncodeZip64LocalExtraField(uncompSize, compSize)...)
 		lfh.ExtraFieldLength = uint16(len(lfh.ExtraField))
@@ -421,14 +514,24 @@ func (w *Writer) createLocalFileHeader(entry *file.File, compSize, uncompSize in
 
 func (w *Writer) writeLocalFileHeader(entry *file.File, compSize, uncompSize int64, streaming bool) error {
 	if len(entry.Name()) > int(MaxUint16) {
-		return fmt.Errorf("zip: entry name length %d exceeds max uint16 limit (%d)", len(entry.Name()), MaxUint16)
+		return fmt.Errorf(
+			"zip: 4.4.1.2 entry name length %d exceeds max uint16 limit (%d): %w",
+			len(entry.Name()),
+			MaxUint16,
+			ErrFileNameTooLong,
+		)
 	}
 	if uncompSize < 0 || compSize < 0 {
 		return fmt.Errorf("zip: invalid negative entry size (uncomp=%d, comp=%d)", uncompSize, compSize)
 	}
 	lfh := w.createLocalFileHeader(entry, compSize, uncompSize, streaming)
 	if len(lfh.ExtraField) > int(MaxUint16) {
-		return fmt.Errorf("zip: extra field length %d exceeds max uint16 limit (%d)", len(lfh.ExtraField), MaxUint16)
+		return fmt.Errorf(
+			"zip: 4.4.1.3 extra field length %d exceeds max uint16 limit (%d): %w",
+			len(lfh.ExtraField),
+			MaxUint16,
+			ErrExtraFieldTooLong,
+		)
 	}
 	hdrBytes := lfh.AppendBytes(nil)
 	if _, err := w.dest.Write(hdrBytes); err != nil {
@@ -436,4 +539,13 @@ func (w *Writer) writeLocalFileHeader(entry *file.File, compSize, uncompSize int
 	}
 	w.offset += int64(len(hdrBytes))
 	return nil
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }

@@ -6,6 +6,7 @@ package zip
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -228,5 +229,135 @@ func TestZip_SFX_SelfExtractingArchive(t *testing.T) {
 
 	if !bytes.Equal(readBytes, content) {
 		t.Fatalf("SFX content mismatch: got %q, want %q", string(readBytes), string(content))
+	}
+}
+
+func TestZip_StrictCompliance_APPNOTE412_EmptyArchive(t *testing.T) {
+	// 1. Default strict behavior: creating empty archive MUST return ErrEmptyArchive (APPNOTE 4.1.2)
+	buf := new(bytes.Buffer)
+	w := NewWriter(buf, codec.DefaultRegistry)
+	err := w.Close()
+	if !errors.Is(err, ErrEmptyArchive) {
+		t.Fatalf("expected ErrEmptyArchive on empty archive, got: %v", err)
+	}
+
+	// 2. Explicit AllowEmpty override
+	buf2 := new(bytes.Buffer)
+	w2 := NewWriterOptions(buf2, WriterOptions{
+		Registry:   codec.DefaultRegistry,
+		AllowEmpty: true,
+	})
+	if err := w2.Close(); err != nil {
+		t.Fatalf("unexpected error with AllowEmpty: true: %v", err)
+	}
+
+	// Verify the resulting empty archive can be read
+	r, err := NewReader(bytes.NewReader(buf2.Bytes()), int64(buf2.Len()), "", codec.DefaultRegistry)
+	if err != nil {
+		t.Fatalf("NewReader on empty archive failed: %v", err)
+	}
+	if len(r.Entries()) != 0 {
+		t.Fatalf("expected 0 entries, got %d", len(r.Entries()))
+	}
+}
+
+func TestZip_StrictCompliance_APPNOTE444_DataDescriptorBit3(t *testing.T) {
+	// Streaming mode without seeker MUST set Bit 3 and zero out CRC32 & sizes in Local Header (APPNOTE 4.4.4)
+	buf := new(bytes.Buffer)
+	// Passing a non-seeker writer wrapper
+	type nonSeekerWriter struct{ io.Writer }
+	w := NewWriter(nonSeekerWriter{buf}, codec.DefaultRegistry)
+
+	f, _ := file.New("streamed.txt", false)
+	content := []byte("Testing APPNOTE 4.4.4 Data Descriptor zeroing.")
+	if err := w.WriteEntry(f, bytes.NewReader(content)); err != nil {
+		t.Fatalf("WriteEntry failed: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Parse Local File Header directly from the raw stream
+	sr := bytes.NewReader(buf.Bytes())
+	var sig [4]byte
+	_, _ = io.ReadFull(sr, sig[:])
+	lfh, err := ReadLocalFileHeader(sr)
+	if err != nil {
+		t.Fatalf("ReadLocalFileHeader failed: %v", err)
+	}
+
+	if (lfh.GeneralPurposeBitFlag & FlagDataDescriptor) == 0 {
+		t.Fatalf("expected FlagDataDescriptor (Bit 3) to be set in streaming mode")
+	}
+	if lfh.CRC32 != 0 {
+		t.Errorf("APPNOTE 4.4.4 violation: Local Header CRC32 MUST be 0 when Bit 3 is set, got 0x%08x", lfh.CRC32)
+	}
+	if lfh.CompressedSize != 0 {
+		t.Errorf(
+			"APPNOTE 4.4.4 violation: Local Header CompressedSize MUST be 0 when Bit 3 is set, got %d",
+			lfh.CompressedSize,
+		)
+	}
+	if lfh.UncompressedSize != 0 {
+		t.Errorf(
+			"APPNOTE 4.4.4 violation: Local Header UncompressedSize MUST be 0 when Bit 3 is set, got %d",
+			lfh.UncompressedSize,
+		)
+	}
+}
+
+func TestZip_StrictCompliance_APPNOTE444_UTF8EFS(t *testing.T) {
+	buf := new(bytes.Buffer)
+	w := NewWriter(buf, codec.DefaultRegistry)
+
+	// UTF-8 non-ASCII filename
+	f, _ := file.New("документ.pdf", false)
+	if err := w.WriteEntry(f, bytes.NewReader([]byte("PDF Data"))); err != nil {
+		t.Fatalf("WriteEntry failed: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "", codec.DefaultRegistry)
+	if err != nil {
+		t.Fatalf("NewReader failed: %v", err)
+	}
+
+	entry, ok := r.Entry("документ.pdf")
+	if !ok {
+		t.Fatalf("entry not found")
+	}
+	if (uint16(entry.Flags()) & FlagLanguageEncodingUTF8) == 0 {
+		t.Errorf("APPNOTE 4.4.4 violation: FlagLanguageEncodingUTF8 (Bit 11) MUST be set on non-ASCII names")
+	}
+}
+
+func TestZip_StrictCompliance_APPNOTE441_VersionNeeded(t *testing.T) {
+	tests := []struct {
+		method      codec.Method
+		isDir       bool
+		isEncrypted bool
+		isZip64     bool
+		wantVersion uint16
+	}{
+		{codec.Store, false, false, false, VersionDefault},        // 1.0 (10)
+		{codec.Deflate, false, false, false, VersionDeflate},      // 2.0 (20)
+		{codec.Store, true, false, false, VersionFolder},          // 2.0 (20)
+		{codec.Store, false, true, false, VersionZipCrypto},       // 2.0 (20)
+		{codec.Deflate64, false, false, false, VersionDeflate64},  // 2.1 (21)
+		{codec.PKWAREDCL, false, false, false, VersionDCLImplode}, // 2.5 (25)
+		{codec.BZIP2, false, false, false, VersionBZIP2},          // 4.6 (46)
+		{codec.LZMA, false, false, false, VersionLZMA},            // 6.3 (63)
+		{codec.ZStandard, false, false, false, VersionLZMA},       // 6.3 (63)
+		{codec.Store, false, false, true, VersionZip64},           // 4.5 (45)
+	}
+
+	for _, tt := range tests {
+		got := ComputeVersionNeeded(tt.method, tt.isDir, tt.isEncrypted, tt.isZip64)
+		if got != tt.wantVersion {
+			t.Errorf("ComputeVersionNeeded(%v, %v, %v, %v) = %d, want %d",
+				tt.method, tt.isDir, tt.isEncrypted, tt.isZip64, got, tt.wantVersion)
+		}
 	}
 }

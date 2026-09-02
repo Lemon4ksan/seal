@@ -4,8 +4,30 @@
 
 package zip
 
+import (
+	"errors"
+
+	"github.com/lemon4ksan/seal/codec"
+)
+
 // PKWARE APPNOTE.TXT - .ZIP File Format Specification Version 6.3.10
 // Revised: Nov 01, 2022
+
+// APPNOTE Sentinel Errors enforcing normative specification rules.
+var (
+	// ErrEmptyArchive is returned when attempting to write an empty ZIP archive (APPNOTE 4.1.2).
+	ErrEmptyArchive = errors.New("zip: should contain at least one file")
+	// ErrInvalidDataDescriptor is returned when Data Descriptor bit configuration violates APPNOTE 4.4.4.
+	ErrInvalidDataDescriptor = errors.New("zip: invalid data descriptor configuration")
+	// ErrInconsistentHeader is returned when Local File Header and Central Directory metadata conflict (APPNOTE 4.4.3).
+	ErrInconsistentHeader = errors.New("zip: local file header and central directory mismatch")
+	// ErrFileNameTooLong is returned when a file name exceeds 65535 bytes (APPNOTE 4.4.1.2).
+	ErrFileNameTooLong = errors.New("zip: file name length exceeds max uint16 limit")
+	// ErrExtraFieldTooLong is returned when an extra field exceeds 65535 bytes (APPNOTE 4.4.1.3).
+	ErrExtraFieldTooLong = errors.New("zip: extra field length exceeds max uint16 limit")
+	// ErrCommentTooLong is returned when an archive/file comment exceeds 65535 bytes (APPNOTE 4.4.14).
+	ErrCommentTooLong = errors.New("zip: comment length exceeds max uint16 limit")
+)
 
 // PKWARE ZIP 32-bit Header and Record Signatures (APPNOTE 4.2 & 4.3).
 const (
@@ -67,6 +89,41 @@ const (
 	VersionBlowfish          uint16 = 63 // 6.3 - File is encrypted using Blowfish
 	VersionTwofish           uint16 = 63 // 6.3 - File is encrypted using Twofish
 )
+
+// ComputeVersionNeeded returns the minimum specification version required to extract the entry (APPNOTE 4.4.1.1 & 4.4.3.2).
+//
+// Minimum Feature Versions:
+//   - 1.0 (10): Default value / Store / Shrink / Reduce
+//   - 2.0 (20): Deflate / Directory / ZipCrypto encryption
+//   - 2.1 (21): Deflate64
+//   - 2.5 (25): PKWARE DCL Implode
+//   - 4.5 (45): Zip64 format extensions (size or offset > 2^32-1)
+//   - 4.6 (46): BZIP2
+//   - 5.0 (50): PKWARE Strong Encryption
+//   - 5.1 (51): AES encryption / WinZip AES
+//   - 6.3 (63): LZMA / PPMd / Zstandard / XZ / Brotli
+func ComputeVersionNeeded(method codec.Method, isDir, isEncrypted, isZip64 bool) uint16 {
+	if isZip64 {
+		return VersionZip64 // 4.5
+	}
+	switch method {
+	case codec.LZMA, codec.LZMA2, codec.PPMd, codec.ZStandard, codec.XZ, codec.Brotli:
+		return VersionLZMA // 6.3
+	case codec.BZIP2:
+		return VersionBZIP2 // 4.6
+	case codec.PKWAREDCL:
+		return VersionDCLImplode // 2.5
+	case codec.Deflate64:
+		return VersionDeflate64 // 2.1
+	case codec.Deflate:
+		return VersionDeflate // 2.0
+	default:
+		if isDir || isEncrypted {
+			return VersionFolder // 2.0
+		}
+		return VersionDefault // 1.0
+	}
+}
 
 // General Purpose Bit Flags (APPNOTE 4.4.4).
 const (
