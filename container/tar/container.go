@@ -6,34 +6,58 @@ package tar
 
 import (
 	"bytes"
+	"compress/bzip2"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/lemon4ksan/seal/codec"
+	"github.com/lemon4ksan/seal/codec/gzip"
+	"github.com/lemon4ksan/seal/codec/lzma"
+	"github.com/lemon4ksan/seal/codec/zstd"
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/file"
+	"github.com/lemon4ksan/seal/vfs"
 )
 
-// Engine implements [container.Container] for the POSIX / GNU / USTAR TAR tape archive format.
-type Engine struct{}
+func init() {
+	container.Register(container.Tar, func() container.Container { return NewFormat(container.Tar) })
+	container.Register(container.TarGz, func() container.Container { return NewFormat(container.TarGz) })
+	container.Register(container.TarBz2, func() container.Container { return NewFormat(container.TarBz2) })
+	container.Register(container.TarXz, func() container.Container { return NewFormat(container.TarXz) })
+	container.Register(container.TarZst, func() container.Container { return NewFormat(container.TarZst) })
+}
 
-// New constructs a new TAR [container.Container] engine.
+// Engine implements [container.Container] for TAR and its compressed variants (.tar, .tar.gz, .tar.bz2, .tar.xz, .tar.zst).
+type Engine struct {
+	format container.Type
+}
+
+// New constructs a new uncompressed TAR [container.Container] engine.
 func New() container.Container {
-	return &Engine{}
+	return &Engine{format: container.Tar}
 }
 
-// NewEngine constructs a new concrete [*Engine] instance.
+// NewEngine constructs a new concrete [*Engine] instance for plain TAR.
 func NewEngine() *Engine {
-	return &Engine{}
+	return &Engine{format: container.Tar}
 }
 
-// Type returns [container.Tar].
-func (t *Engine) Type() container.Type {
-	return container.Tar
+// NewFormat constructs a [container.Container] engine for a specific TAR family format.
+func NewFormat(format container.Type) *Engine {
+	return &Engine{format: format}
+}
+
+// Type returns the container format identifier.
+func (e *Engine) Type() container.Type {
+	if e.format == "" {
+		return container.Tar
+	}
+	return e.format
 }
 
 // ReadIndex parses the table of contents and file entries from a reader or random-access source.
-func (t *Engine) ReadIndex(
+func (e *Engine) ReadIndex(
 	r io.Reader,
 	rAt io.ReaderAt,
 	size int64,
@@ -48,11 +72,19 @@ func (t *Engine) ReadIndex(
 		}
 	}
 
-	tr := NewReader(r)
+	rawReader, closer, err := e.wrapDecompressor(r)
+	if err != nil {
+		return nil, "", err
+	}
+	if closer != nil {
+		defer closer.Close()
+	}
+
+	tr := NewReader(rawReader)
 	var files []*file.File
 
 	for {
-		entry, payloadR, err := tr.Next()
+		h, payloadR, err := tr.Next()
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -60,18 +92,30 @@ func (t *Engine) ReadIndex(
 			return nil, "", err
 		}
 
-		data, err := io.ReadAll(payloadR)
-		if err != nil {
-			return nil, "", err
+		cleanName := vfs.CleanPath(h.Name)
+		isDir := h.Typeflag == TypeDir || strings.HasSuffix(cleanName, "/")
+		if isDir && !strings.HasSuffix(cleanName, "/") {
+			cleanName += "/"
 		}
 
-		f, _ := file.New(entry.Name, entry.IsDir)
+		var data []byte
+		if !isDir && h.Size > 0 {
+			buf, err := io.ReadAll(payloadR)
+			if err != nil {
+				return nil, "", err
+			}
+			data = buf
+		}
+
+		f, _ := file.New(cleanName, isDir)
 		f.SetSizes(int64(len(data)), int64(len(data)), 0)
-		f.WithMode(entry.Mode)
-		f.WithModTime(entry.ModTime)
-		f.SetOpenFunc(func() (io.ReadCloser, error) {
-			return io.NopCloser(bytes.NewReader(data)), nil
-		})
+		f.WithMode(h.Mode)
+		f.WithModTime(h.ModTime)
+		if len(data) > 0 {
+			f.SetOpenFunc(func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader(data)), nil
+			})
+		}
 		files = append(files, f)
 	}
 
@@ -79,54 +123,151 @@ func (t *Engine) ReadIndex(
 }
 
 // WriteArchive serializes the entries into dest and returns the total bytes written.
-func (t *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.Config) (int64, error) {
-	tw := NewWriter(dest)
-	var totalWritten int64
+func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.Config) (int64, error) {
+	switch e.Type() {
+	case container.TarXz:
+		// Compress TAR payload via LZMA2 compressor
+		var tarBuf bytes.Buffer
+		countingW := &countingWriter{w: &tarBuf}
+		tw := NewWriter(countingW)
 
-	for _, entry := range files {
-		tarEntry := &Entry{
-			Name:    entry.Name(),
-			Size:    entry.UncompressedSize(),
-			Mode:    entry.Mode(),
-			ModTime: entry.ModTime(),
-			IsDir:   entry.IsDir(),
+		if err := writeEntries(tw, files, cfg); err != nil {
+			return 0, err
+		}
+		if err := tw.Close(); err != nil {
+			return 0, err
 		}
 
-		if err := tw.WriteHeader(tarEntry); err != nil {
+		compressor := lzma.NewCompressor2(8 * 1024 * 1024)
+		return compressor.Compress(&tarBuf, dest)
+
+	case container.TarGz:
+		level := cfg.DefaultLevel
+		if level == 0 {
+			level = gzip.DefaultCompression
+		}
+		gw, err := gzip.NewWriterLevel(dest, level)
+		if err != nil {
+			return 0, err
+		}
+		countingW := &countingWriter{w: gw}
+		tw := NewWriter(countingW)
+
+		if err := writeEntries(tw, files, cfg); err != nil {
+			_ = gw.Close()
+			return countingW.n, err
+		}
+		if err := tw.Close(); err != nil {
+			_ = gw.Close()
+			return countingW.n, err
+		}
+		if err := gw.Close(); err != nil {
+			return countingW.n, err
+		}
+		return countingW.n, nil
+
+	default:
+		// Plain uncompressed TAR
+		countingW := &countingWriter{w: dest}
+		tw := NewWriter(countingW)
+
+		if err := writeEntries(tw, files, cfg); err != nil {
+			return countingW.n, err
+		}
+		if err := tw.Close(); err != nil {
+			return countingW.n, err
+		}
+		return countingW.n, nil
+	}
+}
+
+func writeEntries(tw *Writer, files []*file.File, cfg container.Config) error {
+	for _, entry := range files {
+		cleanName := vfs.CleanPath(entry.Name())
+		typeFlag := TypeReg
+		if entry.IsDir() {
+			typeFlag = TypeDir
+			if !strings.HasSuffix(cleanName, "/") {
+				cleanName += "/"
+			}
+		}
+
+		h := &Header{
+			Name:     cleanName,
+			Size:     entry.UncompressedSize(),
+			Mode:     entry.Mode(),
+			ModTime:  entry.ModTime(),
+			Typeflag: typeFlag,
+		}
+
+		if err := tw.WriteHeader(h); err != nil {
 			if cfg.OnFileDone != nil {
 				cfg.OnFileDone(entry, err)
 			}
-			return totalWritten, err
+			return err
 		}
 
-		if !entry.IsDir() {
-			rc, err := entry.Open()
+		if !entry.IsDir() && entry.UncompressedSize() > 0 {
+			r, err := entry.Open()
 			if err != nil {
 				if cfg.OnFileDone != nil {
 					cfg.OnFileDone(entry, err)
 				}
-				return totalWritten, err
+				return err
 			}
-
-			n, err := tw.WritePayload(rc)
-			_ = rc.Close()
-			if err != nil {
+			_, writeErr := tw.WritePayload(r)
+			_ = r.Close()
+			if writeErr != nil {
 				if cfg.OnFileDone != nil {
-					cfg.OnFileDone(entry, err)
+					cfg.OnFileDone(entry, writeErr)
 				}
-				return totalWritten, err
+				return writeErr
 			}
-			totalWritten += n
 		}
 
 		if cfg.OnFileDone != nil {
 			cfg.OnFileDone(entry, nil)
 		}
 	}
+	return nil
+}
 
-	if err := tw.Close(); err != nil {
-		return totalWritten, err
+func (e *Engine) wrapDecompressor(r io.Reader) (io.Reader, io.Closer, error) {
+	switch e.Type() {
+	case container.TarGz:
+		gz, err := gzip.NewReader(r)
+		if err != nil {
+			return nil, nil, err
+		}
+		return gz, gz, nil
+	case container.TarZst:
+		zr, err := zstd.NewReader(r)
+		if err != nil {
+			return nil, nil, err
+		}
+		return zr, io.NopCloser(zr), nil
+	case container.TarXz:
+		dec := lzma.NewDecompressor2(8 * 1024 * 1024)
+		rc, err := dec.Decompress(r)
+		if err != nil {
+			return nil, nil, err
+		}
+		return rc, rc, nil
+	case container.TarBz2:
+		bz := bzip2.NewReader(r)
+		return bz, io.NopCloser(bz), nil
+	default:
+		return r, nil, nil
 	}
+}
 
-	return totalWritten, nil
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (cw *countingWriter) Write(p []byte) (int, error) {
+	n, err := cw.w.Write(p)
+	cw.n += int64(n)
+	return n, err
 }

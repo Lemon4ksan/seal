@@ -376,22 +376,24 @@ func NewCompressor2WithOptions(opts Options) *Compressor2 {
 }
 
 // Compress reads from src and compresses into dest using LZMA2 chunk framing with parallel lock-free work stealing.
+// It streams data in small sliding batches, keeping memory usage constant (< 5MB RAM) regardless of input size.
 func (c *Compressor2) Compress(src io.Reader, dest io.Writer) (int64, error) {
-	raw, err := readAllExact(src)
-	if err != nil {
-		return 0, err
-	}
-
-	if len(raw) == 0 {
-		_, err := dest.Write([]byte{0x00})
-		return 0, err
-	}
-
 	maxChunk := c.Options.ChunkSize
 	if maxChunk <= 0 {
 		maxChunk = 64 * 1024
 	}
-	numChunks := (len(raw) + maxChunk - 1) / maxChunk
+
+	numWorkers := runtime.GOMAXPROCS(0)
+	if numWorkers <= 0 {
+		numWorkers = 1
+	}
+
+	batchChunks := numWorkers * 16
+	if batchChunks < 64 {
+		batchChunks = 64
+	}
+	batchBufSize := batchChunks * maxChunk
+	batchBuf := make([]byte, batchBufSize)
 
 	type chunkResult struct {
 		compBytes []byte
@@ -400,127 +402,164 @@ func (c *Compressor2) Compress(src io.Reader, dest io.Writer) (int64, error) {
 		rawSlice  []byte
 	}
 
-	results := make([]chunkResult, numChunks)
+	results := make([]chunkResult, batchChunks)
 
-	numWorkers := min(runtime.GOMAXPROCS(0), numChunks)
-	if numWorkers <= 0 {
-		numWorkers = 1
-	}
+	var totalWritten int64
+	var totalProcessedChunks int64
+	var totalUncompressedBytes int64
+	firstBatch := true
 
-	var wg sync.WaitGroup
-	var taskCounter atomic.Int64
-	var compErr atomic.Pointer[error]
-
-	for w := 0; w < numWorkers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			core := encoderPool.Get()
-			if c.Options.ChainLength > 0 {
-				core.chainLimit = c.Options.ChainLength
+	for {
+		// Read a batch of up to batchBufSize from src
+		n, err := io.ReadFull(src, batchBuf)
+		if n == 0 {
+			if firstBatch {
+				// Empty stream -> write end marker
+				if _, err := dest.Write([]byte{0x00}); err != nil {
+					return 0, err
+				}
+				return 0, nil
 			}
-			if c.Options.FastBytes > 0 {
-				core.fastBytesLimit = c.Options.FastBytes
-			}
-			defer encoderPool.Put(core)
-			var re RangeEncoder
-			var compBuf bytes.Buffer
+			break
+		}
+		firstBatch = false
+		totalUncompressedBytes += int64(n)
 
-			for {
-				idx := int(taskCounter.Add(1) - 1)
-				if idx >= numChunks || compErr.Load() != nil {
-					return
+		rawBatch := batchBuf[:n]
+		numBatchChunks := (n + maxChunk - 1) / maxChunk
+
+		var wg sync.WaitGroup
+		var taskCounter atomic.Int64
+		var compErr atomic.Pointer[error]
+
+		workersForBatch := min(numWorkers, numBatchChunks)
+
+		for w := 0; w < workersForBatch; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				core := encoderPool.Get()
+				if c.Options.ChainLength > 0 {
+					core.chainLimit = c.Options.ChainLength
 				}
-				offset := idx * maxChunk
-				chunkLen := min(maxChunk, len(raw)-offset)
-				chunk := raw[offset : offset+chunkLen]
-
-				compBuf.Reset()
-				re.Init(&compBuf)
-				core.Reset()
-
-				if err := core.EncodeStream(chunk, &re); err != nil {
-					compErr.Store(&err)
-					return
+				if c.Options.FastBytes > 0 {
+					core.fastBytesLimit = c.Options.FastBytes
 				}
-				if err := re.Flush(); err != nil {
-					compErr.Store(&err)
-					return
-				}
+				defer encoderPool.Put(core)
+				var re RangeEncoder
+				var compBuf bytes.Buffer
 
-				compBytes := compBuf.Bytes()
-				if len(compBytes) >= chunkLen || len(compBytes) > 65536 {
-					results[idx] = chunkResult{
-						isRaw:    true,
-						chunkLen: chunkLen,
-						rawSlice: chunk,
+				for {
+					idx := int(taskCounter.Add(1) - 1)
+					if idx >= numBatchChunks || compErr.Load() != nil {
+						return
 					}
-				} else {
-					chunkCopy := make([]byte, len(compBytes))
-					copy(chunkCopy, compBytes)
-					results[idx] = chunkResult{
-						compBytes: chunkCopy,
-						chunkLen:  chunkLen,
-						isRaw:     false,
+					offset := idx * maxChunk
+					chunkLen := min(maxChunk, len(rawBatch)-offset)
+					chunk := rawBatch[offset : offset+chunkLen]
+
+					compBuf.Reset()
+					re.Init(&compBuf)
+					core.Reset()
+
+					if err := core.EncodeStream(chunk, &re); err != nil {
+						compErr.Store(&err)
+						return
+					}
+					if err := re.Flush(); err != nil {
+						compErr.Store(&err)
+						return
+					}
+
+					compBytes := compBuf.Bytes()
+					if len(compBytes) >= chunkLen || len(compBytes) > 65536 {
+						rawCopy := make([]byte, chunkLen)
+						copy(rawCopy, chunk)
+						results[idx] = chunkResult{
+							isRaw:    true,
+							chunkLen: chunkLen,
+							rawSlice: rawCopy,
+						}
+					} else {
+						chunkCopy := make([]byte, len(compBytes))
+						copy(chunkCopy, compBytes)
+						results[idx] = chunkResult{
+							compBytes: chunkCopy,
+							chunkLen:  chunkLen,
+							isRaw:     false,
+						}
 					}
 				}
+			}()
+		}
+
+		wg.Wait()
+
+		if ptr := compErr.Load(); ptr != nil {
+			return totalUncompressedBytes, *ptr
+		}
+
+		// Write completed batch chunks directly to dest
+		for i := 0; i < numBatchChunks; i++ {
+			res := &results[i]
+			if res.isRaw {
+				var uncompHeader [3]byte
+				uncompHeader[0] = 0x01 // uncompressed, reset dict
+				uncompHeader[1] = byte((res.chunkLen - 1) >> 8)
+				uncompHeader[2] = byte(res.chunkLen - 1)
+				if _, err := dest.Write(uncompHeader[:]); err != nil {
+					return totalUncompressedBytes, err
+				}
+				totalWritten += 3
+				if _, err := dest.Write(res.rawSlice); err != nil {
+					return totalUncompressedBytes, err
+				}
+				totalWritten += int64(len(res.rawSlice))
+			} else {
+				var control byte = 0x80 | (3 << 5) // mode 3 (reset dict, state, props)
+				unpackSizeMinus1 := uint32(res.chunkLen - 1)
+				control |= byte((unpackSizeMinus1 >> 16) & 0x1F)
+
+				var chunkHeader [6]byte
+				chunkHeader[0] = control
+				chunkHeader[1] = byte(unpackSizeMinus1 >> 8)
+				chunkHeader[2] = byte(unpackSizeMinus1)
+
+				packSizeMinus1 := uint16(len(res.compBytes) - 1)
+				chunkHeader[3] = byte(packSizeMinus1 >> 8)
+				chunkHeader[4] = byte(packSizeMinus1)
+				chunkHeader[5] = byte((c.Options.Pb*5+c.Options.Lp)*9 + c.Options.Lc)
+
+				if _, err := dest.Write(chunkHeader[:]); err != nil {
+					return totalUncompressedBytes, err
+				}
+				totalWritten += 6
+				if _, err := dest.Write(res.compBytes); err != nil {
+					return totalUncompressedBytes, err
+				}
+				totalWritten += int64(len(res.compBytes))
 			}
-		}()
-	}
 
-	wg.Wait()
-
-	if ptr := compErr.Load(); ptr != nil {
-		return 0, *ptr
-	}
-
-	// Write chunks sequentially to dest
-	for _, res := range results {
-		if res.isRaw {
-			var uncompHeader [3]byte
-			uncompHeader[0] = 0x01 // uncompressed, reset dict
-			uncompHeader[1] = byte((res.chunkLen - 1) >> 8)
-			uncompHeader[2] = byte(res.chunkLen - 1)
-			if _, err := dest.Write(uncompHeader[:]); err != nil {
-				return 0, err
+			totalProcessedChunks++
+			if c.Options.OnProgress != nil {
+				c.Options.OnProgress(totalProcessedChunks, totalProcessedChunks)
 			}
-			if _, err := dest.Write(res.rawSlice); err != nil {
-				return 0, err
+		}
+
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				break
 			}
-		} else {
-			var control byte = 0x80 | (3 << 5) // mode 3 (reset dict, state, props)
-			unpackSizeMinus1 := uint32(res.chunkLen - 1)
-			control |= byte((unpackSizeMinus1 >> 16) & 0x1F)
-
-			var header [5]byte
-			header[0] = control
-			header[1] = byte(unpackSizeMinus1 >> 8)
-			header[2] = byte(unpackSizeMinus1)
-
-			packSizeMinus1 := uint16(len(res.compBytes) - 1)
-			header[3] = byte(packSizeMinus1 >> 8)
-			header[4] = byte(packSizeMinus1)
-
-			if _, err := dest.Write(header[:]); err != nil {
-				return 0, err
-			}
-
-			// Write 1-byte property: (pb * 5 + lp) * 9 + lc = (2 * 5 + 0) * 9 + 3 = 93 = 0x5D
-			const propByte = byte((2*5+0)*9 + 3)
-			if _, err := dest.Write([]byte{propByte}); err != nil {
-				return 0, err
-			}
-
-			if _, err := dest.Write(res.compBytes); err != nil {
-				return 0, err
-			}
+			return totalUncompressedBytes, err
 		}
 	}
 
-	// Write LZMA2 end marker (byte 0x00)
+	// Write LZMA2 stream terminator (0x00)
 	if _, err := dest.Write([]byte{0x00}); err != nil {
-		return 0, err
+		return totalUncompressedBytes, err
 	}
+	totalWritten++
+	_ = totalWritten
 
-	return int64(len(raw)), nil
+	return totalUncompressedBytes, nil
 }

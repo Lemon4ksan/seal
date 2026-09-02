@@ -6,9 +6,8 @@ package lzma
 
 import (
 	"encoding/binary"
+	"math/bits"
 	"unsafe"
-
-	"github.com/lemon4ksan/foundation/silicon/simd"
 )
 
 // EncoderCore implements LZMA1 / LZMA2 stream compression.
@@ -240,13 +239,40 @@ func getPosSlot(dist uint32) uint32 {
 
 func findMatchLength(a, b []byte) int {
 	maxLen := min(len(a), len(b))
-	if maxLen <= 0 {
-		return 0
-	}
 	if maxLen > kMatchMaxLen {
 		maxLen = kMatchMaxLen
 	}
-	return int(simd.FindMatchLengthVector(a[:maxLen], b[:maxLen], maxLen))
+	var i int
+	for i+32 <= maxLen {
+		diff0 := binary.LittleEndian.Uint64(a[i:]) ^ binary.LittleEndian.Uint64(b[i:])
+		if diff0 != 0 {
+			return i + (bits.TrailingZeros64(diff0) >> 3)
+		}
+		diff1 := binary.LittleEndian.Uint64(a[i+8:]) ^ binary.LittleEndian.Uint64(b[i+8:])
+		if diff1 != 0 {
+			return i + 8 + (bits.TrailingZeros64(diff1) >> 3)
+		}
+		diff2 := binary.LittleEndian.Uint64(a[i+16:]) ^ binary.LittleEndian.Uint64(b[i+16:])
+		if diff2 != 0 {
+			return i + 16 + (bits.TrailingZeros64(diff2) >> 3)
+		}
+		diff3 := binary.LittleEndian.Uint64(a[i+24:]) ^ binary.LittleEndian.Uint64(b[i+24:])
+		if diff3 != 0 {
+			return i + 24 + (bits.TrailingZeros64(diff3) >> 3)
+		}
+		i += 32
+	}
+	for i+8 <= maxLen {
+		diff := binary.LittleEndian.Uint64(a[i:]) ^ binary.LittleEndian.Uint64(b[i:])
+		if diff != 0 {
+			return i + (bits.TrailingZeros64(diff) >> 3)
+		}
+		i += 8
+	}
+	for i < maxLen && a[i] == b[i] {
+		i++
+	}
+	return i
 }
 
 // EncodeStream compresses src into re with local register pinning.
@@ -420,26 +446,29 @@ func (e *EncoderCore) EncodeStream(src []byte, re *RangeEncoder) error {
 
 		// 3. 4-Byte Hash Chain Dictionary Search:
 		// Uses multiplicative hashing and immediate 32-bit candidate rejection to avoid SIMD overhead on false positives.
+		dictMask := int(e.dictMask)
+		dictSize := int(e.dictSize)
+
 		if pos+4 <= srcLen {
 			u32 := binary.LittleEndian.Uint32(src[pos:])
 			h := (u32 * 0x1E35A7BD) >> 16
 			matchPos := e.head[h]
 			e.head[h] = pos
-			e.prev[e.prevIdx(pos)] = matchPos
+			e.prev[pos&dictMask] = matchPos
 
 			chainLen := 0
-			for matchPos >= 0 && pos-matchPos < int(e.dictSize) && chainLen < chainLimit {
+			for matchPos >= 0 && pos-matchPos < dictSize && chainLen < chainLimit {
 				d := pos - matchPos
 				// Quick rejection check: verify first and last expected match bytes before invoking SIMD
 				if bestLen >= 4 {
 					if src[pos+bestLen-1] != src[matchPos+bestLen-1] || src[pos] != src[matchPos] {
-						matchPos = e.prev[e.prevIdx(matchPos)]
+						matchPos = e.prev[matchPos&dictMask]
 						chainLen++
 						continue
 					}
 				} else {
 					if binary.LittleEndian.Uint32(src[pos:]) != binary.LittleEndian.Uint32(src[matchPos:]) {
-						matchPos = e.prev[e.prevIdx(matchPos)]
+						matchPos = e.prev[matchPos&dictMask]
 						chainLen++
 						continue
 					}
@@ -452,17 +481,17 @@ func (e *EncoderCore) EncodeStream(src []byte, re *RangeEncoder) error {
 						break
 					}
 				}
-				matchPos = e.prev[e.prevIdx(matchPos)]
+				matchPos = e.prev[matchPos&dictMask]
 				chainLen++
 			}
 		} else if pos+kMatchMinLen <= srcLen {
 			h := (int(src[pos]) | (int(src[pos+1]) << 8)) & 0xFFFF
 			matchPos := e.head[h]
 			e.head[h] = pos
-			e.prev[e.prevIdx(pos)] = matchPos
+			e.prev[pos&dictMask] = matchPos
 
 			chainLen := 0
-			for matchPos >= 0 && pos-matchPos < int(e.dictSize) && chainLen < chainLimit {
+			for matchPos >= 0 && pos-matchPos < dictSize && chainLen < chainLimit {
 				d := pos - matchPos
 				matchLen := findMatchLength(src[pos:], src[matchPos:])
 				if matchLen > bestLen {
@@ -472,7 +501,7 @@ func (e *EncoderCore) EncodeStream(src []byte, re *RangeEncoder) error {
 						break
 					}
 				}
-				matchPos = e.prev[e.prevIdx(matchPos)]
+				matchPos = e.prev[matchPos&dictMask]
 				chainLen++
 			}
 		}

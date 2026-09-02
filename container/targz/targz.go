@@ -6,9 +6,9 @@
 package targz
 
 import (
-	"compress/gzip"
 	"io"
 
+	"github.com/lemon4ksan/seal/codec/gzip"
 	"github.com/lemon4ksan/seal/container/tar"
 )
 
@@ -31,7 +31,7 @@ func NewReader(r io.Reader) (*Reader, error) {
 }
 
 // Next advances to the next entry in the compressed TAR archive.
-func (r *Reader) Next() (*tar.Entry, io.Reader, error) {
+func (r *Reader) Next() (*tar.Header, io.Reader, error) {
 	return r.tarReader.Next()
 }
 
@@ -62,7 +62,7 @@ func NewWriter(w io.Writer, level int) (*Writer, error) {
 }
 
 // WriteHeader writes an entry header to the TAR archive.
-func (w *Writer) WriteHeader(entry *tar.Entry) error {
+func (w *Writer) WriteHeader(entry *tar.Header) error {
 	return w.tarWriter.WriteHeader(entry)
 }
 

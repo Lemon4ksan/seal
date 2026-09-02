@@ -99,15 +99,24 @@ func (m *MemoryWriteSeeker) Bytes() []byte {
 
 // WriteArchive serializes the slice of files into dest and returns total bytes written.
 func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.Config) (int64, error) {
-	opts := lzma.DefaultOptions()
+	lzmaOpts := lzma.DefaultOptions()
 	if cfg.DefaultLevel > 0 {
-		opts = lzma.OptionsForLevel(lzma.Level(cfg.DefaultLevel))
+		lzmaOpts = lzma.OptionsForLevel(lzma.Level(cfg.DefaultLevel))
+	}
+
+	wOpts := WriterOptions{
+		LZMA:   lzmaOpts,
+		Method: MethodLZMA2Default,
+	}
+
+	if cfg.DefaultMethod == codec.PPMd {
+		wOpts.Method = MethodPPMDDefault
 	}
 
 	// If dest does not implement io.WriteSeeker, buffer into memory to permit StartHeader fixup
 	if _, ok := dest.(io.WriteSeeker); !ok {
 		var memSeeker MemoryWriteSeeker
-		w := NewWriter(&memSeeker, opts)
+		w := NewWriterWithOptions(&memSeeker, wOpts)
 		_, err := w.WriteArchive(files)
 		if err != nil {
 			return 0, err
@@ -120,6 +129,6 @@ func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 		return int64(len(memSeeker.Bytes())), nil
 	}
 
-	w := NewWriter(dest, opts)
+	w := NewWriterWithOptions(dest, wOpts)
 	return w.WriteArchive(files)
 }

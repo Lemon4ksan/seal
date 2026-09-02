@@ -6,6 +6,7 @@ package ppmd
 
 import (
 	"bytes"
+	"crypto/rand"
 	"io"
 	"testing"
 )
@@ -49,5 +50,38 @@ func TestPPMd_Properties(t *testing.T) {
 	}
 	if parsed.Order != props.Order || parsed.MemSize != props.MemSize {
 		t.Fatalf("Properties mismatch: %+v vs %+v", parsed, props)
+	}
+}
+
+func BenchmarkPPMd_Compress(b *testing.B) {
+	data := make([]byte, 1024*1024) // 1MB sample
+	_, _ = rand.Read(data)
+	comp := NewCompressor(DefaultOrder, DefaultMemSize)
+
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		_, _ = comp.Compress(bytes.NewReader(data), &buf)
+	}
+}
+
+func BenchmarkPPMd_Decompress(b *testing.B) {
+	data := make([]byte, 1024*1024) // 1MB sample
+	_, _ = rand.Read(data)
+	comp := NewCompressor(DefaultOrder, DefaultMemSize)
+	var compBuf bytes.Buffer
+	_, _ = comp.Compress(bytes.NewReader(data), &compBuf)
+	compBytes := compBuf.Bytes()
+
+	decomp := NewDecompressor(DefaultOrder, DefaultMemSize)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		rc, _ := decomp.Decompress(bytes.NewReader(compBytes), uint64(len(data)))
+		_, _ = io.Copy(io.Discard, rc)
+		_ = rc.Close()
 	}
 }

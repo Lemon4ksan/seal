@@ -31,9 +31,10 @@ type Options struct {
 	ChainLength int    // Match finder hash chain search depth (16..256)
 	FastBytes   int    // Match length threshold before early termination (32..273)
 	ChunkSize   int    // LZMA2 chunk partition size in bytes (default 64KB)
-	Lc          uint   // Literal context bits (0..8, default 3)
-	Lp          uint   // Literal position bits (0..4, default 0)
-	Pb          uint   // Position bits (0..4, default 2)
+	Lc          uint                           // Literal context bits (0..8, default 3)
+	Lp          uint                           // Literal position bits (0..4, default 0)
+	Pb          uint                           // Position bits (0..4, default 2)
+	OnProgress  func(processed, total int64)   // Optional progress reporting callback
 }
 
 // DefaultOptions returns the standard balanced LZMA2 options preset.
@@ -55,24 +56,24 @@ func OptionsForLevel(lvl Level) Options {
 	switch {
 	case lvl <= LevelFastest:
 		opts.Level = LevelFastest
-		opts.ChainLength = 16
-		opts.FastBytes = 32
+		opts.ChainLength = 4
+		opts.FastBytes = 16
 	case lvl <= LevelFast:
 		opts.Level = LevelFast
-		opts.ChainLength = 32
-		opts.FastBytes = 48
+		opts.ChainLength = 8
+		opts.FastBytes = 24
 	case lvl <= LevelNormal:
 		opts.Level = LevelNormal
-		opts.ChainLength = 64
-		opts.FastBytes = 64
+		opts.ChainLength = 16
+		opts.FastBytes = 32
 	case lvl <= LevelMaximum:
 		opts.Level = LevelMaximum
-		opts.ChainLength = 128
-		opts.FastBytes = 128
+		opts.ChainLength = 24
+		opts.FastBytes = 48
 	default:
 		opts.Level = LevelUltra
-		opts.ChainLength = 256
-		opts.FastBytes = 273
+		opts.ChainLength = 32
+		opts.FastBytes = 64
 		opts.DictSize = 16 * 1024 * 1024
 	}
 

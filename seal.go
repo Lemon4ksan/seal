@@ -18,7 +18,7 @@ import (
 )
 
 // Version represents the current release semver string of Seal.
-const Version = "1.0.0"
+const Version = "0.1.0"
 
 // DefaultEngine resolves standard built-in container engines by type without global state.
 func DefaultEngine(t ContainerType) (Container, error) {

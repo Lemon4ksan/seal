@@ -19,7 +19,7 @@ type RangeDecoder struct {
 	r      io.Reader
 	range_ uint32
 	code   uint32
-	buf    [4096]byte
+	buf    [65536]byte
 	pos    int
 	limit  int
 }
@@ -100,7 +100,7 @@ type RangeEncoder struct {
 	range_    uint32
 	cacheSize uint64
 	cache     byte
-	buf       [4096]byte
+	buf       [65536]byte
 	pos       int
 }
 

@@ -26,7 +26,9 @@ const (
 	Deflate64 Method = 9  // Enhanced Deflate (Deflate64)
 	BZIP2     Method = 12 // BZIP2 (Burrows-Wheeler)
 	LZMA      Method = 14 // LZMA
+	LZMA2     Method = 15 // LZMA2
 	ZStandard Method = 93 // Zstandard (RFC 8878)
+	PPMd      Method = 95 // PPMd (Prediction by Partial Matching)
 	Gzip      Method = 96 // GZIP container compression
 	Zlib      Method = 97 // ZLIB container compression
 	Brotli    Method = 98 // Brotli (RFC 7932)
@@ -46,6 +48,10 @@ func (m Method) String() string {
 		return "BZIP2"
 	case LZMA:
 		return "LZMA"
+	case LZMA2:
+		return "LZMA2"
+	case PPMd:
+		return "PPMd"
 	case ZStandard:
 		return "Zstandard"
 	case Gzip:
