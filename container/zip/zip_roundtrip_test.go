@@ -6,7 +6,6 @@ package zip
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"testing"
 	"time"
@@ -233,26 +232,20 @@ func TestZip_SFX_SelfExtractingArchive(t *testing.T) {
 }
 
 func TestZip_StrictCompliance_APPNOTE412_EmptyArchive(t *testing.T) {
-	// 1. Default strict behavior: creating empty archive MUST return ErrEmptyArchive (APPNOTE 4.1.2)
+	// Under RFC 2119 / APPNOTE 4.1.2 ("SHOULD contain at least one file"),
+	// an empty archive containing only the 22-byte EOCD record is valid and permitted.
 	buf := new(bytes.Buffer)
 	w := NewWriter(buf, codec.DefaultRegistry)
-	err := w.Close()
-	if !errors.Is(err, ErrEmptyArchive) {
-		t.Fatalf("expected ErrEmptyArchive on empty archive, got: %v", err)
+	if err := w.Close(); err != nil {
+		t.Fatalf("unexpected error on empty archive: %v", err)
 	}
 
-	// 2. Explicit AllowEmpty override
-	buf2 := new(bytes.Buffer)
-	w2 := NewWriterOptions(buf2, WriterOptions{
-		Registry:   codec.DefaultRegistry,
-		AllowEmpty: true,
-	})
-	if err := w2.Close(); err != nil {
-		t.Fatalf("unexpected error with AllowEmpty: true: %v", err)
+	if buf.Len() != 22 {
+		t.Fatalf("expected empty archive to be exactly 22 bytes (EOCD record), got %d bytes", buf.Len())
 	}
 
 	// Verify the resulting empty archive can be read
-	r, err := NewReader(bytes.NewReader(buf2.Bytes()), int64(buf2.Len()), "", codec.DefaultRegistry)
+	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "", codec.DefaultRegistry)
 	if err != nil {
 		t.Fatalf("NewReader on empty archive failed: %v", err)
 	}

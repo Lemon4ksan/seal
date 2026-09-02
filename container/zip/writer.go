@@ -384,9 +384,9 @@ func (w *Writer) Close() error {
 	defer w.mu.Unlock()
 
 	// APPNOTE 4.1.2: ZIP files SHOULD contain at least one file and MAY contain multiple files.
-	if w.entriesNum == 0 && !w.allowEmpty {
-		return ErrEmptyArchive
-	}
+	// In accordance with RFC 2119, "SHOULD" signifies a strong recommendation rather than a mandatory
+	// constraint ("MUST"). An empty archive containing only the 22-byte EOCD record is syntactically
+	// valid, fully specification-compliant, and permitted by default.
 
 	if len(w.comment) > int(MaxUint16) {
 		return fmt.Errorf(
