@@ -63,6 +63,9 @@ const (
 
 	// Iso represents the ISO 9660 / Joliet optical disc image container (.iso, .img).
 	Iso Type = "iso"
+
+	// Cpio represents the CPIO archive container (.cpio).
+	Cpio Type = "cpio"
 )
 
 // String returns the string representation of the container type.
@@ -172,6 +175,8 @@ func DetectExtension(filename string) Type {
 		return Cab
 	case strings.HasSuffix(lower, ".iso"), strings.HasSuffix(lower, ".img"):
 		return Iso
+	case strings.HasSuffix(lower, ".cpio"):
+		return Cpio
 	default:
 		ext := filepath.Ext(lower)
 		if ext != "" {
@@ -252,6 +257,17 @@ func SniffHeader(header []byte) Type {
 	// ISO 9660 container (CD001 at offset 32769)
 	if len(header) >= 32774 && string(header[32769:32774]) == "CD001" {
 		return Iso
+	}
+
+	// CPIO container (070701, 070702, 070707 or binary)
+	if len(header) >= 6 {
+		magic := string(header[:6])
+		if magic == "070701" || magic == "070702" || magic == "070707" {
+			return Cpio
+		}
+		if (header[0] == 0xC7 && header[1] == 0x71) || (header[0] == 0x71 && header[1] == 0xC7) {
+			return Cpio
+		}
 	}
 
 	return Unknown
