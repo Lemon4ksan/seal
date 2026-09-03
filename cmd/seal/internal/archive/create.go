@@ -20,7 +20,6 @@ import (
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container"
-	"github.com/lemon4ksan/seal/option"
 )
 
 // CreateCmd implements archive creation.
@@ -33,7 +32,7 @@ func (c *CreateCmd) Synopsis() string {
 }
 func (c *CreateCmd) Usage() string { return "seal create [flags] <files...> -o <archive-path>" }
 
-func (c *CreateCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) error {
+func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	outFile := fs.String("o", "archive.7z", "Output archive destination path")
 	pwd := fs.String("p", "", "Password for encryption")
@@ -83,7 +82,7 @@ func (c *CreateCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) e
 	}
 
 	opts := []seal.Option{
-		option.WithFormat(cType),
+		seal.WithContainer(cType),
 		seal.WithCompression(method, *level),
 		seal.WithPassword(*pwd),
 		seal.WithComment(*comment),
@@ -122,10 +121,28 @@ func (c *CreateCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) e
 	start := time.Now()
 
 	err = seal.UseSink(seal.ToFilePath(*outFile), func(w io.Writer) error {
-		_, err := archiveInstance.WriteTo(w)
+		writeOpts := []seal.Option{
+			seal.WithResumable(true),
+		}
+		if len(inputs) > 0 {
+			writeOpts = append(writeOpts, seal.WithSourceDir(inputs[0]))
+		}
+		_, err := archiveInstance.WriteTo(ctx, w, writeOpts...)
 		return err
 	})
 	if err != nil {
+		if errors.Is(err, seal.ErrArchiveFrozen) {
+			box := tuikit.NewBox("Archive Creation Frozen (Checkpoint Saved)", 60).
+				SetStyle(tuikit.BorderRounded).
+				SetIndent(0).
+				AddRow("Target Archive", tuikit.Bold(*outFile)).
+				AddRow("Interrupted", tuikit.Yellow("Ctrl+C / Cancel received")).
+				AddRow("Integrity", tuikit.Green("Archive is 100% valid & inspectable")).
+				AddRow("Resumption", tuikit.Cyan("Run create again to resume without data loss"))
+
+			fmt.Println()
+			return box.Render(stdout)
+		}
 		_ = os.Remove(*outFile)
 		return err
 	}

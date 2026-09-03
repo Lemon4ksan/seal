@@ -11,6 +11,7 @@ import (
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/extension"
 	"github.com/lemon4ksan/seal/option"
 )
 
@@ -18,21 +19,11 @@ import (
 
 // WithContainer sets the target archive container (ZIP, TAR, TAR.GZ, etc.).
 func WithContainer(containerType container.Type) Option {
-	eng, err := DefaultEngine(containerType)
+	eng, err := DefaultContainer(containerType)
 	if err == nil {
-		return archive.WithEngine(eng)
+		return archive.WithContainer(eng)
 	}
 	return option.WithContainer(containerType)
-}
-
-// WithEngine assigns an explicit serialization container engine instance.
-func WithEngine(c container.Container) Option {
-	return archive.WithEngine(c)
-}
-
-// WithFormat is an alias for [WithContainer].
-func WithFormat(fmtType container.Type) Option {
-	return WithContainer(fmtType)
 }
 
 // WithCompression configures the compression algorithm and level.
@@ -118,4 +109,29 @@ func WithSortStrategy(s FileSortStrategy) Option {
 // WithConflictHandler configures the name collision resolution policy.
 func WithConflictHandler(h ConflictHandler) Option {
 	return archive.WithConflictHandler(h)
+}
+
+// WithResumable enables graceful freeze on cancellation and stealth checkpoint persistence.
+func WithResumable(enable ...bool) Option {
+	return option.WithResumable(enable...)
+}
+
+// WithSessionID assigns a task or job session UUID for the archive operation.
+func WithSessionID(id string) Option {
+	return option.WithSessionID(id)
+}
+
+// WithSourceDir sets the base source directory path for resumption.
+func WithSourceDir(dir string) Option {
+	return option.WithSourceDir(dir)
+}
+
+// WithCheckpointData injects raw transient checkpoint bytes into container options.
+func WithCheckpointData(data []byte) Option {
+	return option.WithCheckpointData(data)
+}
+
+// WithExtension registers one or more metadata extensions with the archive operation.
+func WithExtension(exts ...extension.Extension) Option {
+	return option.WithExtension(exts...)
 }

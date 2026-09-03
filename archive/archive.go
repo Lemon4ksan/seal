@@ -7,6 +7,7 @@ package archive
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -20,8 +21,10 @@ import (
 
 	"github.com/lemon4ksan/foundation/pathkit"
 
+	"github.com/lemon4ksan/seal/checkpoint"
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/extension"
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/option"
 	"github.com/lemon4ksan/seal/vfs"
@@ -103,12 +106,17 @@ type archiverConfig struct {
 }
 
 type processConfig struct {
-	workers    int
-	password   string
-	filters    []option.Filter
-	security   option.SecuritySettings
-	onProgress option.ProgressFunc
-	onDone     func(string, error)
+	workers        int
+	password       string
+	filters        []option.Filter
+	security       option.SecuritySettings
+	onProgress     option.ProgressFunc
+	onDone         func(string, error)
+	checkpointData []byte
+	resumable      bool
+	sessionID      string
+	sourceDir      string
+	extensions     []extension.Extension
 }
 
 // New constructs a new universal [Archive] instance with the specified options.
@@ -125,7 +133,7 @@ func New(opts ...option.Option) *Archive {
 
 	for _, opt := range opts {
 		switch opt.Kind {
-		case option.OptContainer, option.OptFormat:
+		case option.OptContainer:
 			cfg.format = opt.Container
 		case option.OptCompression:
 			cfg.method = opt.Method
@@ -178,8 +186,8 @@ func (a *Archive) SetEngine(c container.Container) {
 	a.container = c
 }
 
-// Format returns the format type of the active engine, or Unknown if none is configured.
-func (a *Archive) Format() container.Type {
+// Container returns the container type of the active engine, or Unknown if none is configured.
+func (a *Archive) Container() container.Type {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	if a.container != nil {
@@ -311,7 +319,7 @@ func (a *Archive) addDirEntry(
 	modTime time.Time,
 	opts ...option.Option,
 ) (*file.File, error) {
-	entry, err := file.New(name, true)
+	entry, err := file.NewDir(name)
 	if err != nil {
 		return nil, err
 	}
@@ -331,11 +339,6 @@ func (a *Archive) Add(files ...*file.File) {
 	for _, f := range files {
 		a.attachEntry(f)
 	}
-}
-
-// AddEntry attaches a pre-configured [file.File] entry to the archive.
-func (a *Archive) AddEntry(f *file.File) {
-	a.attachEntry(f)
 }
 
 // AddBytes attaches an in-memory byte slice as an archive entry.
@@ -603,7 +606,7 @@ func (a *Archive) Load(rAt io.ReaderAt, size int64, engines ...container.Contain
 
 	a.container = c
 	if comment != "" {
-		a.comment = comment
+		a.comment = checkpoint.StripCheckpoint(comment)
 	}
 
 	for _, f := range files {
@@ -653,7 +656,7 @@ func (a *Archive) LoadFromReader(r io.Reader, engines ...container.Container) ([
 }
 
 // WriteTo serializes all entries in the archive into dest using the active container engine.
-func (a *Archive) WriteTo(dest io.Writer, opts ...option.Option) (int64, error) {
+func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Option) (int64, error) {
 	procCfg := processConfig{workers: 1}
 	for _, opt := range opts {
 		switch opt.Kind {
@@ -669,6 +672,16 @@ func (a *Archive) WriteTo(dest io.Writer, opts ...option.Option) (int64, error) 
 			procCfg.onProgress = opt.Progress
 		case option.OptFileDone:
 			procCfg.onDone = opt.OnDone
+		case option.OptResumable:
+			procCfg.resumable = opt.Resumable
+		case option.OptSessionID:
+			procCfg.sessionID = opt.SessionID
+		case option.OptSourceDir:
+			procCfg.sourceDir = opt.SourceDir
+		case option.OptCheckpoint:
+			procCfg.checkpointData = opt.Bytes
+		case option.OptExtension:
+			procCfg.extensions = append(procCfg.extensions, opt.Extensions...)
 		case option.OptCustom:
 			if opt.Custom != nil {
 				opt.Custom(&procCfg)
@@ -741,13 +754,51 @@ func (a *Archive) WriteTo(dest io.Writer, opts ...option.Option) (int64, error) 
 		}
 	}
 
+	var extEntries map[extension.ID][]byte
+	if len(procCfg.extensions) > 0 {
+		info := extension.ArchiveInfo{
+			Format:     c.Type(),
+			SourceDir:  procCfg.sourceDir,
+			TotalFiles: len(filesCopy),
+			Comment:    comment,
+		}
+		for _, ext := range procCfg.extensions {
+			payload, err := ext.OnWrite(ctx, info)
+			if err != nil {
+				return 0, fmt.Errorf("archive: extension %q write failed: %w", ext.ID(), err)
+			}
+			if len(payload) > 0 {
+				if extEntries == nil {
+					extEntries = make(map[extension.ID][]byte)
+				}
+				extEntries[ext.ID()] = payload
+			}
+		}
+	}
+	if len(procCfg.checkpointData) > 0 {
+		if extEntries == nil {
+			extEntries = make(map[extension.ID][]byte)
+		}
+		extEntries["seal.checkpoint"] = procCfg.checkpointData
+	}
+	var extBundle []byte
+	if len(extEntries) > 0 {
+		extBundle = extension.EncodeBundle(extEntries)
+	}
+
 	containerCfg := container.Config{
-		Comment:       comment,
-		Password:      password,
-		DefaultMethod: method,
-		DefaultLevel:  level,
-		Registry:      reg,
-		OnFileDone:    onDoneWrapper,
+		Comment:        comment,
+		Password:       password,
+		DefaultMethod:  method,
+		DefaultLevel:   level,
+		Registry:       reg,
+		CheckpointData: procCfg.checkpointData,
+		ExtensionData:  extBundle,
+		Context:        ctx,
+		Resumable:      procCfg.resumable,
+		SessionID:      procCfg.sessionID,
+		SourceDir:      procCfg.sourceDir,
+		OnFileDone:     onDoneWrapper,
 	}
 
 	return c.WriteArchive(dest, filesCopy, containerCfg)
@@ -809,8 +860,8 @@ func applyOption(entry *file.File, opt option.Option) {
 	}
 }
 
-// WithEngine assigns an explicit serialization [container.Container] engine to the archive.
-func WithEngine(c container.Container) option.Option {
+// WithContainer assigns an explicit serialization [container.Container] engine to the archive.
+func WithContainer(c container.Container) option.Option {
 	return option.Option{
 		Kind: option.OptCustom,
 		Custom: func(target any) {
@@ -822,11 +873,6 @@ func WithEngine(c container.Container) option.Option {
 			}
 		},
 	}
-}
-
-// WithContainer sets the target container engine.
-func WithContainer(c container.Container) option.Option {
-	return WithEngine(c)
 }
 
 // WithSortStrategy configures the entry sorting strategy during archive writing.

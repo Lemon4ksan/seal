@@ -6,6 +6,7 @@
 package container
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -73,14 +74,24 @@ func (t Type) IsTarFamily() bool {
 	}
 }
 
+// ErrArchiveFrozen indicates that archive creation was gracefully frozen on context cancellation,
+// producing a valid partial archive with an embedded stealth checkpoint.
+var ErrArchiveFrozen = errors.New("container: archive creation frozen; stealth checkpoint persisted")
+
 // Config encapsulates parameterization options for container serialization.
 type Config struct {
-	Comment       string
-	Password      string
-	DefaultMethod codec.Method
-	DefaultLevel  int
-	Registry      *codec.Registry
-	OnFileDone    func(*file.File, error)
+	Comment        string
+	Password       string
+	DefaultMethod  codec.Method
+	DefaultLevel   int
+	Registry       *codec.Registry
+	CheckpointData []byte
+	ExtensionData  []byte
+	Context        context.Context
+	Resumable      bool
+	SessionID      string
+	SourceDir      string
+	OnFileDone     func(*file.File, error)
 }
 
 // Container defines the bidirectional serialization interface for archive containers.
@@ -210,9 +221,12 @@ func SniffHeader(header []byte) Type {
 		return TarXz
 	}
 
-	// RAR container
-	if len(header) >= 7 && string(header[:7]) == "Rar!\x1A\x07\x00" {
-		return Rar
+	// RAR container (RAR 1.5 - 4.x: "Rar!\x1A\x07\x00", RAR 5.0+: "Rar!\x1A\x07\x01\x00")
+	if len(header) >= 7 && header[0] == 'R' && header[1] == 'a' && header[2] == 'r' && header[3] == '!' &&
+		header[4] == 0x1A && header[5] == 0x07 {
+		if header[6] == 0x00 || (len(header) >= 8 && header[6] == 0x01 && header[7] == 0x00) {
+			return Rar
+		}
 	}
 
 	// TAR container (check "ustar" at offset 257)

@@ -183,6 +183,9 @@ func decodeSingleCoder(coder CoderInfo, in io.Reader, unpackSizes []uint64, pass
 		return io.NopCloser(decR), nil
 
 	default:
+		if custom, ok := LookupCoder(coder.MethodID); ok {
+			return custom.Decode(coder, in, unpackSizes, password)
+		}
 		return nil, fmt.Errorf("%w: ID=0x%X", ErrUnsupportedMethod, coder.MethodID)
 	}
 }

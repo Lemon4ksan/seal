@@ -6,6 +6,7 @@ package sevenzip
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"hash"
 	"hash/crc32"
@@ -13,12 +14,15 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"unicode/utf16"
 
+	"github.com/lemon4ksan/seal/checkpoint"
 	"github.com/lemon4ksan/seal/codec/bcj"
 	"github.com/lemon4ksan/seal/codec/bcj2"
 	"github.com/lemon4ksan/seal/codec/lzma"
 	"github.com/lemon4ksan/seal/codec/ppmd"
+	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/internal/pool"
 )
@@ -50,8 +54,17 @@ type WriterOptions struct {
 	PPMdMem        uint32
 	Password       string
 	EncryptHeaders bool
+	CheckpointData []byte
+	Context        context.Context
+	Resumable      bool
+	SessionID      string
+	SourceDir      string
 	OnProgress     func(phase string, current, total int64)
+	OnFileDone     func(*file.File, error)
 }
+
+// ErrArchiveFrozen indicates that archive creation was gracefully frozen on context cancellation.
+var ErrArchiveFrozen = container.ErrArchiveFrozen
 
 // Writer implements 7-Zip archive serialization.
 type Writer struct {
@@ -104,6 +117,9 @@ type asyncPrefetchPipe struct {
 	filter          FilterType
 	bcjIP           uint32
 	onProgress      func(phase string, current, total int64)
+	onFileDone      func(*file.File, error)
+	ctx             context.Context
+	stoppedAtIndex  int
 
 	blockChan chan prefetchBlock
 	currBlock prefetchBlock
@@ -115,6 +131,8 @@ func newAsyncPrefetchPipe(
 	files []*file.File,
 	filter FilterType,
 	onProgress func(phase string, current, total int64),
+	onFileDone func(*file.File, error),
+	ctx context.Context,
 ) *asyncPrefetchPipe {
 	pipe := &asyncPrefetchPipe{
 		files:           files,
@@ -123,6 +141,8 @@ func newAsyncPrefetchPipe(
 		totalFilesCount: int64(len(files)),
 		filter:          filter,
 		onProgress:      onProgress,
+		onFileDone:      onFileDone,
+		ctx:             ctx,
 		blockChan:       make(chan prefetchBlock, 256), // 16MB async prefetch buffer queue
 		doneChan:        make(chan struct{}),
 	}
@@ -170,6 +190,11 @@ func (p *asyncPrefetchPipe) prefetchLoop() {
 	var readDone int64
 
 	for i, f := range p.files {
+		if p.ctx != nil && p.ctx.Err() != nil && i > 0 {
+			p.stoppedAtIndex = i
+			break
+		}
+
 		if f.IsDir() {
 			p.fileEntries[i].IsEmptyStream = true
 			p.fileEntries[i].IsEmptyFile = true
@@ -280,8 +305,11 @@ func (p *asyncPrefetchPipe) prefetchLoop() {
 		}
 
 		readDone++
-		if p.onProgress != nil && (readDone%100 == 0 || readDone == p.totalFilesCount) {
+		if p.onProgress != nil {
 			p.onProgress("Reading", readDone, p.totalFilesCount)
+		}
+		if p.onFileDone != nil {
+			p.onFileDone(f, nil)
 		}
 	}
 }
@@ -357,20 +385,51 @@ func extensionGroup(ext string) int {
 
 // WriteArchive serializes files into a standard 7-Zip archive with streaming constant memory.
 func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
-	var totalWritten int64
+	initWritten, err := writeSignatureSlot(zw.w)
+	if err != nil {
+		return 0, err
+	}
 
-	// Emit 7z magic signature and allocate 32-byte StartHeader slot for deferred CRC patch
+	sortedFiles := sortFilesForSolid(files)
+
+	payload, err := zw.compressSolidPayload(sortedFiles)
+	if err != nil {
+		return initWritten, err
+	}
+
+	headerBytes := buildArchiveHeader(payload, zw.options)
+
+	hdrWritten, nextOffset, nextSize, nextCRC, err := writeHeaderData(
+		zw.w, headerBytes, uint64(payload.packedBytes), zw.options,
+	)
+	if err != nil {
+		return initWritten + payload.packedBytes + hdrWritten, err
+	}
+
+	totalWritten := initWritten + payload.packedBytes + hdrWritten
+
+	if err := patchStartHeader(zw.w, nextOffset, nextSize, nextCRC); err != nil {
+		return totalWritten, err
+	}
+
+	if payload.wasFrozen {
+		return totalWritten, ErrArchiveFrozen
+	}
+
+	return totalWritten, nil
+}
+
+func writeSignatureSlot(w io.Writer) (int64, error) {
 	var sigAndStart [StartHeaderSize]byte
 	copy(sigAndStart[:SignatureSize], Signature[:])
 	sigAndStart[6] = 0 // Major 0
 	sigAndStart[7] = 4 // Minor 4
 
-	if _, err := zw.w.Write(sigAndStart[:]); err != nil {
-		return 0, err
-	}
-	totalWritten += int64(StartHeaderSize)
+	n, err := w.Write(sigAndStart[:])
+	return int64(n), err
+}
 
-	// Smart Solid File Sorting: group files by structural redundancy category, extension, and path
+func sortFilesForSolid(files []*file.File) []*file.File {
 	sortedFiles := make([]*file.File, len(files))
 	copy(sortedFiles, files)
 	slices.SortStableFunc(sortedFiles, func(a, b *file.File) int {
@@ -394,7 +453,26 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		}
 		return strings.Compare(a.Name(), b.Name())
 	})
+	return sortedFiles
+}
 
+type solidPayload struct {
+	packSizes         []uint64
+	totalUnpackSize   uint64
+	unpackCRC         uint32
+	fileEntries       []FileEntry
+	unpackSizes       []uint64
+	compSizeBeforeAES uint64
+	bcj2UnpackSizes   [3]uint64
+	customCoder       CustomCoder
+	customProps       []byte
+	hasEncryption     bool
+	aesProps          []byte
+	packedBytes       int64
+	wasFrozen         bool
+}
+
+func (zw *Writer) compressSolidPayload(sortedFiles []*file.File) (*solidPayload, error) {
 	filter := zw.options.Filter
 	method := zw.options.Method
 	if method == 0 {
@@ -406,7 +484,7 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		onProg = zw.options.OnProgress
 	}
 
-	solidReader := newAsyncPrefetchPipe(sortedFiles, filter, onProg)
+	solidReader := newAsyncPrefetchPipe(sortedFiles, filter, onProg, zw.options.OnFileDone, zw.options.Context)
 
 	var totalUnpackEstimate int64
 	for _, f := range sortedFiles {
@@ -420,7 +498,6 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	}
 
 	cw := &countingWriter{w: zw.w}
-
 	var encW io.WriteCloser
 	var aesProps []byte
 	targetW := io.Writer(cw)
@@ -430,237 +507,322 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		var err error
 		encW, aesProps, err = EncryptStream(cw, zw.options.Password, 19)
 		if err != nil {
-			return totalWritten, err
+			return nil, err
 		}
 		compCounter = countingWriter{w: encW}
 		targetW = &compCounter
 	}
 
-	var bcj2PackSizes []uint64
-	var bcj2UnpackSizes [3]uint64
+	payload := &solidPayload{
+		hasEncryption: len(aesProps) > 0,
+		aesProps:      aesProps,
+	}
+
+	if c, ok := LookupCoder(uint64(method)); ok {
+		payload.customCoder = c
+	}
 
 	switch {
 	case filter == FilterBCJ2:
-		var allUncomp bytes.Buffer
-		if _, err := io.Copy(&allUncomp, solidReader); err != nil {
-			return totalWritten, err
+		packSizes, unpackSizes, err := compressBCJ2Parallel(solidReader, targetW, zw.options.LZMA)
+		if err != nil {
+			return nil, err
 		}
+		payload.packSizes = packSizes
+		payload.bcj2UnpackSizes = unpackSizes
 
-		var mainBuf, callBuf, jumpBuf, rcBuf bytes.Buffer
-		if err := bcj2.EncodeStreams(&allUncomp, &mainBuf, &callBuf, &jumpBuf, &rcBuf); err != nil {
-			return totalWritten, err
+	case payload.customCoder != nil:
+		var err error
+		_, payload.customProps, err = payload.customCoder.Encode(solidReader, targetW, zw.options)
+		if err != nil {
+			return nil, err
 		}
-
-		bcj2UnpackSizes[0] = uint64(mainBuf.Len())
-		bcj2UnpackSizes[1] = uint64(callBuf.Len())
-		bcj2UnpackSizes[2] = uint64(jumpBuf.Len())
-
-		opts := zw.options.LZMA
-		if opts.Level == 0 && opts.DictSize == 0 && opts.ChainLength == 0 {
-			opts = lzma.DefaultOptions()
-		}
-
-		// Stream 0 (Main) -> LZMA2
-		st0 := cw.n
-		comp0 := lzma.NewCompressor2WithOptions(opts)
-		if _, err := comp0.Compress(&mainBuf, targetW); err != nil {
-			return totalWritten, err
-		}
-		bcj2PackSizes = append(bcj2PackSizes, uint64(cw.n-st0))
-
-		// Stream 1 (Call) -> LZMA2
-		st1 := cw.n
-		comp1 := lzma.NewCompressor2WithOptions(opts)
-		if _, err := comp1.Compress(&callBuf, targetW); err != nil {
-			return totalWritten, err
-		}
-		bcj2PackSizes = append(bcj2PackSizes, uint64(cw.n-st1))
-
-		// Stream 2 (Jump) -> LZMA2
-		st2 := cw.n
-		comp2 := lzma.NewCompressor2WithOptions(opts)
-		if _, err := comp2.Compress(&jumpBuf, targetW); err != nil {
-			return totalWritten, err
-		}
-		bcj2PackSizes = append(bcj2PackSizes, uint64(cw.n-st2))
-
-		// Stream 3 (RC) -> Raw
-		st3 := cw.n
-		if _, err := targetW.Write(rcBuf.Bytes()); err != nil {
-			return totalWritten, err
-		}
-		bcj2PackSizes = append(bcj2PackSizes, uint64(cw.n-st3))
+		payload.packSizes = []uint64{uint64(cw.n)}
 
 	case method == MethodPPMDDefault:
-		// PPMd Compression
-		order := zw.options.PPMdOrder
-		if order < 2 {
-			order = ppmd.DefaultOrder
+		if err := compressPPMd(solidReader, targetW, zw.options); err != nil {
+			return nil, err
 		}
-		mem := zw.options.PPMdMem
-		if mem < 1024*1024 {
-			mem = ppmd.DefaultMemSize
-		}
-		comp := ppmd.NewCompressor(order, mem)
-		if _, err := comp.Compress(solidReader, targetW); err != nil {
-			return totalWritten, err
-		}
+		payload.packSizes = []uint64{uint64(cw.n)}
 
 	default:
-		// LZMA2 Compression
-		opts := zw.options.LZMA
-		if opts.Level == 0 && opts.DictSize == 0 && opts.ChainLength == 0 {
-			opts = lzma.DefaultOptions()
+		if err := compressLZMA2(solidReader, targetW, zw.options, onProg, totalEstimatedChunks); err != nil {
+			return nil, err
 		}
-		if onProg != nil {
-			opts.OnProgress = func(processed, _ int64) {
-				onProg("Compressing", processed, totalEstimatedChunks)
-			}
-		}
-		comp2 := lzma.NewCompressor2WithOptions(opts)
-		if _, err := comp2.Compress(solidReader, targetW); err != nil {
-			return totalWritten, err
-		}
+		payload.packSizes = []uint64{uint64(cw.n)}
 	}
 
 	if encW != nil {
 		if err := encW.Close(); err != nil {
-			return totalWritten, err
+			return nil, err
 		}
 	}
 
-	totalWritten += cw.n
+	payload.packedBytes = cw.n
+	payload.totalUnpackSize = solidReader.totalUnpackSize
+	payload.unpackCRC = solidReader.totalCRC.Sum32()
+	payload.fileEntries = solidReader.fileEntries
+	payload.unpackSizes = solidReader.unpackSizes
 
-	packSize := uint64(cw.n)
-	totalUnpackSize := solidReader.totalUnpackSize
-	unpackCRC := solidReader.totalCRC.Sum32()
-	fileEntries := solidReader.fileEntries
-	unpackSizes := solidReader.unpackSizes
+	if solidReader.stoppedAtIndex > 0 {
+		payload.wasFrozen = true
+		payload.fileEntries = solidReader.fileEntries[:solidReader.stoppedAtIndex]
+		payload.unpackSizes = solidReader.unpackSizes[:solidReader.stoppedAtIndex]
 
-	compSizeBeforeAES := uint64(cw.n)
+		if zw.options.Resumable {
+			remFiles := sortedFiles[solidReader.stoppedAtIndex:]
+			remNames := make([]string, len(remFiles))
+			for j, rem := range remFiles {
+				remNames[j] = rem.Name()
+			}
+			st := checkpoint.NewState(
+				zw.options.SessionID,
+				zw.options.SourceDir,
+				"sevenzip",
+				len(sortedFiles),
+				solidReader.stoppedAtIndex,
+				remNames,
+			)
+			if cpBytes, err := st.Encode(); err == nil {
+				zw.options.CheckpointData = cpBytes
+			}
+		}
+	}
+
+	payload.compSizeBeforeAES = uint64(cw.n)
 	if encW != nil {
-		compSizeBeforeAES = uint64(compCounter.n)
+		payload.compSizeBeforeAES = uint64(compCounter.n)
 	}
 
 	if onProg != nil {
 		onProg("Finalizing", 1, 1)
 	}
 
-	// Construct 7z binary metadata structures (PackInfo, UnpackInfo, SubStreamsInfo, FilesInfo)
-	var headerBuf bytes.Buffer
+	return payload, nil
+}
 
-	// NIDHeader
+func compressBCJ2Parallel(
+	solidReader io.Reader,
+	targetW io.Writer,
+	lzmaOpts lzma.Options,
+) ([]uint64, [3]uint64, error) {
+	var allUncomp bytes.Buffer
+	if _, err := io.Copy(&allUncomp, solidReader); err != nil {
+		return nil, [3]uint64{}, err
+	}
+
+	var mainBuf, callBuf, jumpBuf, rcBuf bytes.Buffer
+	if err := bcj2.EncodeStreams(&allUncomp, &mainBuf, &callBuf, &jumpBuf, &rcBuf); err != nil {
+		return nil, [3]uint64{}, err
+	}
+
+	var bcj2UnpackSizes [3]uint64
+	bcj2UnpackSizes[0] = uint64(mainBuf.Len())
+	bcj2UnpackSizes[1] = uint64(callBuf.Len())
+	bcj2UnpackSizes[2] = uint64(jumpBuf.Len())
+
+	opts := lzmaOpts
+	if opts.Level == 0 && opts.DictSize == 0 && opts.ChainLength == 0 {
+		opts = lzma.DefaultOptions()
+	}
+
+	var packBufs [3]bytes.Buffer
+	var wg sync.WaitGroup
+	var errOnce sync.Once
+	var compErr error
+
+	compressBranch := func(idx int, in *bytes.Buffer) {
+		defer wg.Done()
+		comp := lzma.NewCompressor2WithOptions(opts)
+		if _, err := comp.Compress(in, &packBufs[idx]); err != nil {
+			errOnce.Do(func() { compErr = err })
+		}
+	}
+
+	wg.Add(3)
+	go compressBranch(0, &mainBuf)
+	go compressBranch(1, &callBuf)
+	go compressBranch(2, &jumpBuf)
+	wg.Wait()
+
+	if compErr != nil {
+		return nil, bcj2UnpackSizes, compErr
+	}
+
+	var packSizes []uint64
+	for i := 0; i < 3; i++ {
+		b := packBufs[i].Bytes()
+		if _, err := targetW.Write(b); err != nil {
+			return nil, bcj2UnpackSizes, err
+		}
+		packSizes = append(packSizes, uint64(len(b)))
+	}
+
+	rcBytes := rcBuf.Bytes()
+	if _, err := targetW.Write(rcBytes); err != nil {
+		return nil, bcj2UnpackSizes, err
+	}
+	packSizes = append(packSizes, uint64(len(rcBytes)))
+
+	return packSizes, bcj2UnpackSizes, nil
+}
+
+func compressPPMd(src io.Reader, dst io.Writer, opts WriterOptions) error {
+	order := opts.PPMdOrder
+	if order < 2 {
+		order = ppmd.DefaultOrder
+	}
+	mem := opts.PPMdMem
+	if mem < 1024*1024 {
+		mem = ppmd.DefaultMemSize
+	}
+	comp := ppmd.NewCompressor(order, mem)
+	_, err := comp.Compress(src, dst)
+	return err
+}
+
+func compressLZMA2(
+	src io.Reader,
+	dst io.Writer,
+	opts WriterOptions,
+	onProg func(string, int64, int64),
+	estChunks int64,
+) error {
+	lzOpts := opts.LZMA
+	if lzOpts.Level == 0 && lzOpts.DictSize == 0 && lzOpts.ChainLength == 0 {
+		lzOpts = lzma.DefaultOptions()
+	}
+	if onProg != nil {
+		lzOpts.OnProgress = func(processed, _ int64) {
+			onProg("Compressing", processed, estChunks)
+		}
+	}
+	comp2 := lzma.NewCompressor2WithOptions(lzOpts)
+	_, err := comp2.Compress(src, dst)
+	return err
+}
+
+func buildArchiveHeader(payload *solidPayload, opts WriterOptions) []byte {
+	var headerBuf bytes.Buffer
 	headerBuf.WriteByte(NIDHeader)
 
-	// MainStreamsInfo
+	if len(opts.CheckpointData) > 0 {
+		writeArchiveProperties(&headerBuf, opts.CheckpointData)
+	}
+
 	headerBuf.WriteByte(NIDMainStreamsInfo)
 
-	// PackInfo
-	headerBuf.WriteByte(NIDPackInfo)
-	_ = WriteNumber(&headerBuf, 0) // PackPos = 0
-	if filter == FilterBCJ2 {
-		_ = WriteNumber(&headerBuf, uint64(len(bcj2PackSizes)))
-		headerBuf.WriteByte(NIDSize)
-		for _, sz := range bcj2PackSizes {
-			_ = WriteNumber(&headerBuf, sz)
-		}
-	} else {
-		_ = WriteNumber(&headerBuf, 1) // NumPackStreams = 1
-		headerBuf.WriteByte(NIDSize)
-		_ = WriteNumber(&headerBuf, packSize)
+	writePackInfo(&headerBuf, payload)
+	writeUnpackInfo(&headerBuf, payload, opts)
+	writeSubStreamsInfo(&headerBuf, payload)
+
+	headerBuf.WriteByte(NIDEnd) // End MainStreamsInfo
+
+	writeFilesInfo(&headerBuf, payload.fileEntries)
+
+	headerBuf.WriteByte(NIDEnd) // End Header
+	return headerBuf.Bytes()
+}
+
+func writeArchiveProperties(buf *bytes.Buffer, data []byte) {
+	buf.WriteByte(NIDArchiveProperties) // 0x02
+	buf.WriteByte(0x53)                 // PropertyType: 0x53 ('S' for Seal)
+	_ = WriteNumber(buf, uint64(len(data)))
+	buf.Write(data)
+	buf.WriteByte(NIDEnd) // 0x00 end of properties
+}
+
+func writePackInfo(buf *bytes.Buffer, p *solidPayload) {
+	buf.WriteByte(NIDPackInfo)
+	_ = WriteNumber(buf, 0) // PackPos = 0
+	_ = WriteNumber(buf, uint64(len(p.packSizes)))
+	buf.WriteByte(NIDSize)
+	for _, sz := range p.packSizes {
+		_ = WriteNumber(buf, sz)
 	}
-	headerBuf.WriteByte(NIDEnd)
+	buf.WriteByte(NIDEnd)
+}
 
-	// UnpackInfo
-	headerBuf.WriteByte(NIDUnpackInfo)
-	headerBuf.WriteByte(NIDFolder)
-	_ = WriteNumber(&headerBuf, 1) // 1 Folder
-	headerBuf.WriteByte(0)         // External = 0
+func writeUnpackInfo(buf *bytes.Buffer, p *solidPayload, opts WriterOptions) {
+	buf.WriteByte(NIDUnpackInfo)
+	buf.WriteByte(NIDFolder)
+	_ = WriteNumber(buf, 1) // 1 Folder
+	buf.WriteByte(0)        // External = 0
 
-	hasEncryption := len(aesProps) > 0
-	lzmaDictProp := lzma.PropFromDictSize(zw.options.LZMA.DictSize)
+	lzmaDictProp := lzma.PropFromDictSize(opts.LZMA.DictSize)
 	if lzmaDictProp == 0 {
 		lzmaDictProp = 0x18
 	}
 	lzmaPropBytes := []byte{lzmaDictProp}
 
 	switch {
-	case filter == FilterBCJ2:
-		_ = WriteNumber(&headerBuf, 4) // NumCoders = 4
-		writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
-		writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
-		writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
-		writeComplexCoder(&headerBuf, MethodBCJ2, 4, 1, nil)
+	case opts.Filter == FilterBCJ2:
+		_ = WriteNumber(buf, 4) // NumCoders = 4
+		writeCoder(buf, MethodLZMA2, lzmaPropBytes)
+		writeCoder(buf, MethodLZMA2, lzmaPropBytes)
+		writeCoder(buf, MethodLZMA2, lzmaPropBytes)
+		writeComplexCoder(buf, MethodBCJ2, 4, 1, nil)
 
-		// BindPairs (count is not written, exactly 3 pairs):
-		// InStream 3 (BCJ2 In 0, Main) <- OutStream 0 (Coder 0 Out)
-		_ = WriteNumber(&headerBuf, 3)
-		_ = WriteNumber(&headerBuf, 0)
-		// InStream 4 (BCJ2 In 1, Call) <- OutStream 1 (Coder 1 Out)
-		_ = WriteNumber(&headerBuf, 4)
-		_ = WriteNumber(&headerBuf, 1)
-		// InStream 5 (BCJ2 In 2, Jump) <- OutStream 2 (Coder 2 Out)
-		_ = WriteNumber(&headerBuf, 5)
-		_ = WriteNumber(&headerBuf, 2)
+		// 3 BindPairs
+		_ = WriteNumber(buf, 3)
+		_ = WriteNumber(buf, 0)
+		_ = WriteNumber(buf, 4)
+		_ = WriteNumber(buf, 1)
+		_ = WriteNumber(buf, 5)
+		_ = WriteNumber(buf, 2)
 
-		// PackedIndices for 4 unbound streams:
-		_ = WriteNumber(&headerBuf, 0) // Coder 0 In (Main)
-		_ = WriteNumber(&headerBuf, 1) // Coder 1 In (Call)
-		_ = WriteNumber(&headerBuf, 2) // Coder 2 In (Jump)
-		_ = WriteNumber(&headerBuf, 6) // Coder 3 In 3 (RC)
+		// 4 PackedIndices
+		_ = WriteNumber(buf, 0)
+		_ = WriteNumber(buf, 1)
+		_ = WriteNumber(buf, 2)
+		_ = WriteNumber(buf, 6)
 
-		headerBuf.WriteByte(NIDCodersUnpackSize)
-		_ = WriteNumber(&headerBuf, bcj2UnpackSizes[0]) // Coder 0 Out (Main)
-		_ = WriteNumber(&headerBuf, bcj2UnpackSizes[1]) // Coder 1 Out (Call)
-		_ = WriteNumber(&headerBuf, bcj2UnpackSizes[2]) // Coder 2 Out (Jump)
-		_ = WriteNumber(&headerBuf, totalUnpackSize)    // Coder 3 Out (BCJ2 Final)
+		buf.WriteByte(NIDCodersUnpackSize)
+		_ = WriteNumber(buf, p.bcj2UnpackSizes[0])
+		_ = WriteNumber(buf, p.bcj2UnpackSizes[1])
+		_ = WriteNumber(buf, p.bcj2UnpackSizes[2])
+		_ = WriteNumber(buf, p.totalUnpackSize)
 
-	case filter == FilterBCJ || filter == FilterARM:
+	case opts.Filter == FilterBCJ || opts.Filter == FilterARM:
 		filterMethod := uint64(MethodBCJ)
-		if filter == FilterARM {
+		if opts.Filter == FilterARM {
 			filterMethod = uint64(MethodARM)
 		}
 
-		if hasEncryption {
-			_ = WriteNumber(&headerBuf, 3) // NumCoders = 3
-			writeCoder(&headerBuf, filterMethod, nil)
-			writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
-			writeCoder(&headerBuf, MethodAES, aesProps)
+		if p.hasEncryption {
+			_ = WriteNumber(buf, 3)
+			writeCoder(buf, filterMethod, nil)
+			writeCoder(buf, MethodLZMA2, lzmaPropBytes)
+			writeCoder(buf, MethodAES, p.aesProps)
 
-			// NumBindPairs = 2:
-			// Coder 0 in <- Coder 1 out
-			_ = WriteNumber(&headerBuf, 0)
-			_ = WriteNumber(&headerBuf, 1)
-			// Coder 1 in <- Coder 2 out
-			_ = WriteNumber(&headerBuf, 1)
-			_ = WriteNumber(&headerBuf, 2)
+			_ = WriteNumber(buf, 0)
+			_ = WriteNumber(buf, 1)
+			_ = WriteNumber(buf, 1)
+			_ = WriteNumber(buf, 2)
 
-			headerBuf.WriteByte(NIDCodersUnpackSize)
-			_ = WriteNumber(&headerBuf, totalUnpackSize)
-			_ = WriteNumber(&headerBuf, totalUnpackSize)
-			_ = WriteNumber(&headerBuf, compSizeBeforeAES)
+			buf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(buf, p.totalUnpackSize)
+			_ = WriteNumber(buf, p.totalUnpackSize)
+			_ = WriteNumber(buf, p.compSizeBeforeAES)
 		} else {
-			// 2 Coders: Coder 0 = BCJ/ARM filter, Coder 1 = LZMA2
-			_ = WriteNumber(&headerBuf, 2) // NumCoders = 2
-			writeCoder(&headerBuf, filterMethod, nil)
-			writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
+			_ = WriteNumber(buf, 2)
+			writeCoder(buf, filterMethod, nil)
+			writeCoder(buf, MethodLZMA2, lzmaPropBytes)
 
-			// BindPairs (NumBindPairs = 1: Coder 0 in <- Coder 1 out)
-			_ = WriteNumber(&headerBuf, 0) // InIndex = 0
-			_ = WriteNumber(&headerBuf, 1) // OutIndex = 1
+			_ = WriteNumber(buf, 0)
+			_ = WriteNumber(buf, 1)
 
-			// CodersUnpackSize (both coders output totalUnpackSize)
-			headerBuf.WriteByte(NIDCodersUnpackSize)
-			_ = WriteNumber(&headerBuf, totalUnpackSize)
-			_ = WriteNumber(&headerBuf, totalUnpackSize)
+			buf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(buf, p.totalUnpackSize)
+			_ = WriteNumber(buf, p.totalUnpackSize)
 		}
 
-	case method == MethodPPMDDefault:
-		order := byte(zw.options.PPMdOrder)
+	case opts.Method == MethodPPMDDefault:
+		order := byte(opts.PPMdOrder)
 		if order < 2 {
 			order = byte(ppmd.DefaultOrder)
 		}
-		mem := zw.options.PPMdMem
+		mem := opts.PPMdMem
 		if mem < 1024*1024 {
 			mem = uint32(ppmd.DefaultMemSize)
 		}
@@ -668,85 +830,93 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		propB[0] = order
 		binary.LittleEndian.PutUint32(propB[1:5], mem)
 
-		if hasEncryption {
-			_ = WriteNumber(&headerBuf, 2)
-			writeCoder(&headerBuf, MethodPPMD, propB[:])
-			writeCoder(&headerBuf, MethodAES, aesProps)
+		if p.hasEncryption {
+			_ = WriteNumber(buf, 2)
+			writeCoder(buf, MethodPPMD, propB[:])
+			writeCoder(buf, MethodAES, p.aesProps)
 
-			_ = WriteNumber(&headerBuf, 0)
-			_ = WriteNumber(&headerBuf, 1)
+			_ = WriteNumber(buf, 0)
+			_ = WriteNumber(buf, 1)
 
-			headerBuf.WriteByte(NIDCodersUnpackSize)
-			_ = WriteNumber(&headerBuf, totalUnpackSize)
-			_ = WriteNumber(&headerBuf, compSizeBeforeAES)
+			buf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(buf, p.totalUnpackSize)
+			_ = WriteNumber(buf, p.compSizeBeforeAES)
 		} else {
-			_ = WriteNumber(&headerBuf, 1) // NumCoders = 1
-			writeCoder(&headerBuf, MethodPPMD, propB[:])
+			_ = WriteNumber(buf, 1)
+			writeCoder(buf, MethodPPMD, propB[:])
 
-			headerBuf.WriteByte(NIDCodersUnpackSize)
-			_ = WriteNumber(&headerBuf, totalUnpackSize)
+			buf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(buf, p.totalUnpackSize)
 		}
 
 	default:
-		if hasEncryption {
-			_ = WriteNumber(&headerBuf, 2)
-			writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
-			writeCoder(&headerBuf, MethodAES, aesProps)
+		actualMethod := uint64(MethodLZMA2)
+		actualProps := lzmaPropBytes
+		if p.customCoder != nil {
+			actualMethod = p.customCoder.MethodID()
+			actualProps = p.customProps
+		}
 
-			_ = WriteNumber(&headerBuf, 0)
-			_ = WriteNumber(&headerBuf, 1)
+		if p.hasEncryption {
+			_ = WriteNumber(buf, 2)
+			writeCoder(buf, actualMethod, actualProps)
+			writeCoder(buf, MethodAES, p.aesProps)
 
-			headerBuf.WriteByte(NIDCodersUnpackSize)
-			_ = WriteNumber(&headerBuf, totalUnpackSize)
-			_ = WriteNumber(&headerBuf, compSizeBeforeAES)
+			_ = WriteNumber(buf, 0)
+			_ = WriteNumber(buf, 1)
+
+			buf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(buf, p.totalUnpackSize)
+			_ = WriteNumber(buf, p.compSizeBeforeAES)
 		} else {
-			// 1 Coder (LZMA2)
-			_ = WriteNumber(&headerBuf, 1) // NumCoders = 1
-			writeCoder(&headerBuf, MethodLZMA2, lzmaPropBytes)
+			_ = WriteNumber(buf, 1)
+			writeCoder(buf, actualMethod, actualProps)
 
-			// CodersUnpackSize
-			headerBuf.WriteByte(NIDCodersUnpackSize)
-			_ = WriteNumber(&headerBuf, totalUnpackSize)
+			buf.WriteByte(NIDCodersUnpackSize)
+			_ = WriteNumber(buf, p.totalUnpackSize)
 		}
 	}
 
-	// CRC
-	headerBuf.WriteByte(NIDCRC)
-	headerBuf.WriteByte(1) // AllDefined = 1
+	// Folder CRC
+	buf.WriteByte(NIDCRC)
+	buf.WriteByte(1) // AllDefined = 1
 	var crcB [4]byte
-	binary.LittleEndian.PutUint32(crcB[:], unpackCRC)
-	headerBuf.Write(crcB[:])
+	binary.LittleEndian.PutUint32(crcB[:], p.unpackCRC)
+	buf.Write(crcB[:])
 
-	headerBuf.WriteByte(NIDEnd) // End UnpackInfo
+	buf.WriteByte(NIDEnd) // End UnpackInfo
+}
 
-	// SubStreamsInfo
-	if len(unpackSizes) > 1 {
-		headerBuf.WriteByte(NIDSubStreamsInfo)
-		headerBuf.WriteByte(NIDNumUnpackStream)
-		_ = WriteNumber(&headerBuf, uint64(len(unpackSizes)))
-
-		headerBuf.WriteByte(NIDSize)
-		for _, sz := range unpackSizes[:len(unpackSizes)-1] {
-			_ = WriteNumber(&headerBuf, sz)
-		}
-
-		headerBuf.WriteByte(NIDCRC)
-		headerBuf.WriteByte(1) // AllDefined
-		for _, fe := range fileEntries {
-			if !fe.IsDir && fe.Size > 0 {
-				binary.LittleEndian.PutUint32(crcB[:], fe.CRC)
-				headerBuf.Write(crcB[:])
-			}
-		}
-
-		headerBuf.WriteByte(NIDEnd)
+func writeSubStreamsInfo(buf *bytes.Buffer, p *solidPayload) {
+	if len(p.unpackSizes) <= 1 {
+		return
 	}
 
-	headerBuf.WriteByte(NIDEnd) // End MainStreamsInfo
+	buf.WriteByte(NIDSubStreamsInfo)
+	buf.WriteByte(NIDNumUnpackStream)
+	_ = WriteNumber(buf, uint64(len(p.unpackSizes)))
 
-	// FilesInfo
-	headerBuf.WriteByte(NIDFilesInfo)
-	_ = WriteNumber(&headerBuf, uint64(len(fileEntries)))
+	buf.WriteByte(NIDSize)
+	for _, sz := range p.unpackSizes[:len(p.unpackSizes)-1] {
+		_ = WriteNumber(buf, sz)
+	}
+
+	buf.WriteByte(NIDCRC)
+	buf.WriteByte(1) // AllDefined
+	var crcB [4]byte
+	for _, fe := range p.fileEntries {
+		if !fe.IsDir && fe.Size > 0 {
+			binary.LittleEndian.PutUint32(crcB[:], fe.CRC)
+			buf.Write(crcB[:])
+		}
+	}
+
+	buf.WriteByte(NIDEnd)
+}
+
+func writeFilesInfo(buf *bytes.Buffer, fileEntries []FileEntry) {
+	buf.WriteByte(NIDFilesInfo)
+	_ = WriteNumber(buf, uint64(len(fileEntries)))
 
 	// Check EmptyStreams
 	var emptyCount int
@@ -756,9 +926,9 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		}
 	}
 	if emptyCount > 0 {
-		headerBuf.WriteByte(NIDEmptyStream)
+		buf.WriteByte(NIDEmptyStream)
 		numBytes := (len(fileEntries) + 7) / 8
-		_ = WriteNumber(&headerBuf, uint64(numBytes))
+		_ = WriteNumber(buf, uint64(numBytes))
 		bitmask := make([]byte, numBytes)
 		for i, fe := range fileEntries {
 			if fe.IsEmptyStream {
@@ -767,11 +937,11 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 				bitmask[byteIdx] |= (1 << bitIdx)
 			}
 		}
-		headerBuf.Write(bitmask)
+		buf.Write(bitmask)
 	}
 
 	// Names (UTF-16LE + 2 zero bytes)
-	headerBuf.WriteByte(NIDName)
+	buf.WriteByte(NIDName)
 	var namesBuf bytes.Buffer
 	namesBuf.WriteByte(0) // External = 0
 	for _, fe := range fileEntries {
@@ -783,11 +953,11 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		}
 		namesBuf.Write([]byte{0, 0}) // Zero terminator
 	}
-	_ = WriteNumber(&headerBuf, uint64(namesBuf.Len()))
-	headerBuf.Write(namesBuf.Bytes())
+	_ = WriteNumber(buf, uint64(namesBuf.Len()))
+	buf.Write(namesBuf.Bytes())
 
 	// WinAttrib
-	headerBuf.WriteByte(NIDWinAttrib)
+	buf.WriteByte(NIDWinAttrib)
 	var attrBuf bytes.Buffer
 	attrBuf.WriteByte(1) // AllDefined = 1
 	attrBuf.WriteByte(0) // External = 0
@@ -796,112 +966,110 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		binary.LittleEndian.PutUint32(b[:], fe.Attrib)
 		attrBuf.Write(b[:])
 	}
-	_ = WriteNumber(&headerBuf, uint64(attrBuf.Len()))
-	headerBuf.Write(attrBuf.Bytes())
+	_ = WriteNumber(buf, uint64(attrBuf.Len()))
+	buf.Write(attrBuf.Bytes())
 
-	headerBuf.WriteByte(NIDEnd) // End FilesInfo
-	headerBuf.WriteByte(NIDEnd) // End Header
+	buf.WriteByte(NIDEnd) // End FilesInfo
+}
 
-	headerBytes := headerBuf.Bytes()
-
-	var nextHeaderOffset uint64
-	var nextHeaderSize uint64
-	var nextHeaderCRC uint32
-
-	if zw.options.EncryptHeaders && zw.options.Password != "" {
-		// Encrypt the header catalog into an EncodedHeader folder
-		var compHeaderBuf bytes.Buffer
-		encHeaderW, headerAESProps, err := EncryptStream(&compHeaderBuf, zw.options.Password, 19)
-		if err != nil {
-			return totalWritten, err
-		}
-		headerCompCounter := countingWriter{w: encHeaderW}
-		compH := lzma.NewCompressor2WithOptions(lzma.DefaultOptions())
-		if _, err := compH.Compress(bytes.NewReader(headerBytes), &headerCompCounter); err != nil {
-			return totalWritten, err
-		}
-		if err := encHeaderW.Close(); err != nil {
-			return totalWritten, err
-		}
-
-		headerPackSize := uint64(compHeaderBuf.Len())
-		headerUnpackSize := uint64(len(headerBytes))
-		headerCRC := crc32.ChecksumIEEE(headerBytes)
-
-		// Emit the packed header stream
-		if _, err := zw.w.Write(compHeaderBuf.Bytes()); err != nil {
-			return totalWritten, err
-		}
-		totalWritten += int64(headerPackSize)
-
-		// Build outer EncodedHeader metadata
-		var outerBuf bytes.Buffer
-		outerBuf.WriteByte(NIDEncodedHeader)
-		outerBuf.WriteByte(NIDMainStreamsInfo)
-
-		// PackInfo
-		outerBuf.WriteByte(NIDPackInfo)
-		_ = WriteNumber(&outerBuf, packSize) // PackPos: starts after file pack stream!
-		_ = WriteNumber(&outerBuf, 1)        // 1 pack stream
-		outerBuf.WriteByte(NIDSize)
-		_ = WriteNumber(&outerBuf, headerPackSize)
-		outerBuf.WriteByte(NIDEnd)
-
-		// UnpackInfo
-		outerBuf.WriteByte(NIDUnpackInfo)
-		outerBuf.WriteByte(NIDFolder)
-		_ = WriteNumber(&outerBuf, 1) // 1 folder
-		outerBuf.WriteByte(0)         // External = 0
-
-		// 2 Coders: LZMA2 + AES
-		_ = WriteNumber(&outerBuf, 2)
-		writeCoder(&outerBuf, MethodLZMA2, []byte{0x18})
-		writeCoder(&outerBuf, MethodAES, headerAESProps)
-		_ = WriteNumber(&outerBuf, 0)
-		_ = WriteNumber(&outerBuf, 1)
-
-		outerBuf.WriteByte(NIDCodersUnpackSize)
-		_ = WriteNumber(&outerBuf, headerUnpackSize)
-		_ = WriteNumber(&outerBuf, uint64(headerCompCounter.n))
-
-		// CRC
-		outerBuf.WriteByte(NIDCRC)
-		outerBuf.WriteByte(1) // AllDefined = 1
-		var hCrcB [4]byte
-		binary.LittleEndian.PutUint32(hCrcB[:], headerCRC)
-		outerBuf.Write(hCrcB[:])
-
-		outerBuf.WriteByte(NIDEnd) // End UnpackInfo
-		outerBuf.WriteByte(NIDEnd) // End MainStreamsInfo
-		outerBuf.WriteByte(NIDEnd) // End EncodedHeader
-
-		finalHeaderBytes := outerBuf.Bytes()
-		finalHeaderSize := uint64(len(finalHeaderBytes))
-		finalHeaderCRC := crc32.ChecksumIEEE(finalHeaderBytes)
-
-		if _, err := zw.w.Write(finalHeaderBytes); err != nil {
-			return totalWritten, err
-		}
-		totalWritten += int64(finalHeaderSize)
-
-		nextHeaderOffset = packSize + headerPackSize
-		nextHeaderSize = finalHeaderSize
-		nextHeaderCRC = finalHeaderCRC
-	} else {
-		headerSize := uint64(len(headerBytes))
-		headerCRC := crc32.ChecksumIEEE(headerBytes)
-
-		if _, err := zw.w.Write(headerBytes); err != nil {
-			return totalWritten, err
-		}
-		totalWritten += int64(len(headerBytes))
-
-		nextHeaderOffset = packSize
-		nextHeaderSize = headerSize
-		nextHeaderCRC = headerCRC
+func writeHeaderData(
+	w io.Writer,
+	headerBytes []byte,
+	packSize uint64,
+	opts WriterOptions,
+) (int64, uint64, uint64, uint32, error) {
+	if opts.EncryptHeaders && opts.Password != "" {
+		return writeEncryptedHeader(w, headerBytes, packSize, opts.Password)
 	}
 
-	// Re-patch the 32-byte StartHeader
+	headerSize := uint64(len(headerBytes))
+	headerCRC := crc32.ChecksumIEEE(headerBytes)
+
+	if _, err := w.Write(headerBytes); err != nil {
+		return 0, 0, 0, 0, err
+	}
+
+	return int64(headerSize), packSize, headerSize, headerCRC, nil
+}
+
+func writeEncryptedHeader(
+	w io.Writer,
+	headerBytes []byte,
+	packSize uint64,
+	password string,
+) (int64, uint64, uint64, uint32, error) {
+	var compHeaderBuf bytes.Buffer
+	encHeaderW, headerAESProps, err := EncryptStream(&compHeaderBuf, password, 19)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	headerCompCounter := countingWriter{w: encHeaderW}
+	compH := lzma.NewCompressor2WithOptions(lzma.DefaultOptions())
+	if _, err := compH.Compress(bytes.NewReader(headerBytes), &headerCompCounter); err != nil {
+		return 0, 0, 0, 0, err
+	}
+	if err := encHeaderW.Close(); err != nil {
+		return 0, 0, 0, 0, err
+	}
+
+	headerPackSize := uint64(compHeaderBuf.Len())
+	headerUnpackSize := uint64(len(headerBytes))
+	headerCRC := crc32.ChecksumIEEE(headerBytes)
+
+	if _, err := w.Write(compHeaderBuf.Bytes()); err != nil {
+		return 0, 0, 0, 0, err
+	}
+
+	var outerBuf bytes.Buffer
+	outerBuf.WriteByte(NIDEncodedHeader)
+	outerBuf.WriteByte(NIDMainStreamsInfo)
+
+	outerBuf.WriteByte(NIDPackInfo)
+	_ = WriteNumber(&outerBuf, packSize)
+	_ = WriteNumber(&outerBuf, 1)
+	outerBuf.WriteByte(NIDSize)
+	_ = WriteNumber(&outerBuf, headerPackSize)
+	outerBuf.WriteByte(NIDEnd)
+
+	outerBuf.WriteByte(NIDUnpackInfo)
+	outerBuf.WriteByte(NIDFolder)
+	_ = WriteNumber(&outerBuf, 1)
+	outerBuf.WriteByte(0)
+
+	_ = WriteNumber(&outerBuf, 2)
+	writeCoder(&outerBuf, MethodLZMA2, []byte{0x18})
+	writeCoder(&outerBuf, MethodAES, headerAESProps)
+	_ = WriteNumber(&outerBuf, 0)
+	_ = WriteNumber(&outerBuf, 1)
+
+	outerBuf.WriteByte(NIDCodersUnpackSize)
+	_ = WriteNumber(&outerBuf, headerUnpackSize)
+	_ = WriteNumber(&outerBuf, uint64(headerCompCounter.n))
+
+	outerBuf.WriteByte(NIDCRC)
+	outerBuf.WriteByte(1)
+	var hCrcB [4]byte
+	binary.LittleEndian.PutUint32(hCrcB[:], headerCRC)
+	outerBuf.Write(hCrcB[:])
+
+	outerBuf.WriteByte(NIDEnd)
+	outerBuf.WriteByte(NIDEnd)
+	outerBuf.WriteByte(NIDEnd)
+
+	finalHeaderBytes := outerBuf.Bytes()
+	finalHeaderSize := uint64(len(finalHeaderBytes))
+	finalHeaderCRC := crc32.ChecksumIEEE(finalHeaderBytes)
+
+	if _, err := w.Write(finalHeaderBytes); err != nil {
+		return int64(headerPackSize), 0, 0, 0, err
+	}
+
+	written := int64(headerPackSize) + int64(finalHeaderSize)
+	nextHeaderOffset := packSize + headerPackSize
+	return written, nextHeaderOffset, finalHeaderSize, finalHeaderCRC, nil
+}
+
+func patchStartHeader(w io.Writer, nextHeaderOffset, nextHeaderSize uint64, nextHeaderCRC uint32) error {
 	var startHeader [20]byte
 	binary.LittleEndian.PutUint64(startHeader[0:8], nextHeaderOffset)
 	binary.LittleEndian.PutUint64(startHeader[8:16], nextHeaderSize)
@@ -913,20 +1081,19 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	binary.LittleEndian.PutUint32(fullStartHeader[0:4], startCRC)
 	copy(fullStartHeader[4:24], startHeader[:])
 
-	if ws, ok := zw.w.(io.WriteSeeker); ok {
+	if ws, ok := w.(io.WriteSeeker); ok {
 		currentPos, _ := ws.Seek(0, io.SeekCurrent)
 		if _, err := ws.Seek(8, io.SeekStart); err == nil {
 			_, _ = ws.Write(fullStartHeader[:])
 			_, _ = ws.Seek(currentPos, io.SeekStart)
 		}
-	} else if bb, ok := zw.w.(*bytes.Buffer); ok {
+	} else if bb, ok := w.(*bytes.Buffer); ok {
 		b := bb.Bytes()
 		if len(b) >= 32 {
 			copy(b[8:32], fullStartHeader[:])
 		}
 	}
-
-	return totalWritten, nil
+	return nil
 }
 
 type countingWriter struct {

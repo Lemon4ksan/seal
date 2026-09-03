@@ -15,7 +15,10 @@ import (
 )
 
 func TestValidation_InvalidEntries(t *testing.T) {
+	t.Parallel()
+
 	t.Run("EmptyFilename", func(t *testing.T) {
+		t.Parallel()
 		_, err := file.New("", false)
 		if err == nil {
 			t.Fatalf("expected error on empty filename, got nil")
@@ -23,6 +26,7 @@ func TestValidation_InvalidEntries(t *testing.T) {
 	})
 
 	t.Run("FilenameTooLong", func(t *testing.T) {
+		t.Parallel()
 		hugeName := strings.Repeat("a", 70000)
 		f, err := file.New("short.txt", false)
 		if err != nil {
@@ -35,15 +39,16 @@ func TestValidation_InvalidEntries(t *testing.T) {
 		}
 
 		arc := seal.NewArchive()
-		arc.AddEntry(f)
+		arc.Add(f)
 		var buf bytes.Buffer
-		_, err = arc.WriteTo(&buf)
+		_, err = arc.WriteTo(t.Context(), &buf)
 		if err == nil {
 			t.Fatalf("expected error writing archive with too long filename, got nil")
 		}
 	})
 
 	t.Run("NullByteInPath", func(t *testing.T) {
+		t.Parallel()
 		f, err := file.New("test.txt", false)
 		if err != nil {
 			t.Fatalf("file.New failed: %v", err)
@@ -55,15 +60,16 @@ func TestValidation_InvalidEntries(t *testing.T) {
 		}
 
 		arc := seal.NewArchive()
-		arc.AddEntry(f)
+		arc.Add(f)
 		var buf bytes.Buffer
-		_, err = arc.WriteTo(&buf)
+		_, err = arc.WriteTo(t.Context(), &buf)
 		if err == nil {
 			t.Fatalf("expected error writing archive with null byte, got nil")
 		}
 	})
 
 	t.Run("NegativeFileSize", func(t *testing.T) {
+		t.Parallel()
 		f, err := file.New("test.txt", false)
 		if err != nil {
 			t.Fatalf("file.New failed: %v", err)
@@ -75,9 +81,9 @@ func TestValidation_InvalidEntries(t *testing.T) {
 		}
 
 		arc := seal.NewArchive()
-		arc.AddEntry(f)
+		arc.Add(f)
 		var buf bytes.Buffer
-		_, err = arc.WriteTo(&buf)
+		_, err = arc.WriteTo(t.Context(), &buf)
 		if err == nil {
 			t.Fatalf("expected error writing archive with negative size, got nil")
 		}

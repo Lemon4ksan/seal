@@ -27,7 +27,7 @@ func (c *BenchCmd) Aliases() []string { return nil }
 func (c *BenchCmd) Synopsis() string  { return "Run compression speed benchmark" }
 func (c *BenchCmd) Usage() string     { return "seal bench [-size <MB>] [-files <count>] [-j <workers>]" }
 
-func (c *BenchCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) error {
+func (c *BenchCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	fs := flag.NewFlagSet("bench", flag.ContinueOnError)
 	sizeMB := fs.Int("size", 50, "Total payload size in MB")
 	filesCount := fs.Int("files", 100, "Number of generated entries")
@@ -54,7 +54,7 @@ func (c *BenchCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) er
 		}
 
 		start := time.Now()
-		_, err := archiveInstance.WriteTo(io.Discard)
+		_, err := archiveInstance.WriteTo(ctx, io.Discard)
 		if err != nil {
 			panic(err)
 		}

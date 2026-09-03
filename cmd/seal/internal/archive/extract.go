@@ -52,7 +52,7 @@ func (c *ExtractCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer
 			}
 		}),
 	)
-	err = archiver.UnarchiveWithContext(ctx, seal.FromFilePath(archivePath), *destDir, seal.WithPassword(*pwd))
+	err = archiver.Unarchive(ctx, seal.FromFilePath(archivePath), *destDir, seal.WithPassword(*pwd))
 	if err != nil {
 		return err
 	}

@@ -7,7 +7,9 @@ package seal
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,7 +19,14 @@ import (
 	"sync/atomic"
 
 	"github.com/lemon4ksan/seal/archive"
+	"github.com/lemon4ksan/seal/checkpoint"
 	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/container/sevenzip"
+	"github.com/lemon4ksan/seal/container/zip"
+	"github.com/lemon4ksan/seal/extension"
+	"github.com/lemon4ksan/seal/extension/provenance"
+	"github.com/lemon4ksan/seal/extension/signature"
+	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/internal/pool"
 	"github.com/lemon4ksan/seal/option"
 	"github.com/lemon4ksan/seal/vfs"
@@ -40,20 +49,20 @@ type processConfig struct {
 // security boundary validation, resource limits, and progress telemetry while delegating in-memory mutations
 // and serialization to [archive.Archive] and [container.Container]. It never manipulates raw byte headers directly.
 type Archiver struct {
-	engineOptions []Option
+	containerOptions []Option
 }
 
 // NewArchiver constructs a reusable [Archiver] engine configured with the specified options.
 func NewArchiver(opts ...Option) *Archiver {
-	return &Archiver{engineOptions: opts}
+	return &Archiver{containerOptions: opts}
 }
 
-func resolveSourceEngine(r io.Reader, rAt io.ReaderAt) (container.Container, io.Reader) {
+func resolveSourceContainer(r io.Reader, rAt io.ReaderAt) (container.Container, io.Reader) {
 	var header [512]byte
 	if rAt != nil {
 		n, _ := rAt.ReadAt(header[:], 0)
 		t := container.SniffHeader(header[:n])
-		if eng, err := DefaultEngine(t); err == nil {
+		if eng, err := DefaultContainer(t); err == nil {
 			return eng, r
 		}
 	} else if r != nil {
@@ -64,22 +73,18 @@ func resolveSourceEngine(r io.Reader, rAt io.ReaderAt) (container.Container, io.
 		}
 		peeked, _ := br.Peek(512)
 		t := container.SniffHeader(peeked)
-		if eng, err := DefaultEngine(t); err == nil {
+		if eng, err := DefaultContainer(t); err == nil {
 			return eng, r
 		}
 	}
-	eng, _ := DefaultEngine(container.Zip)
+	eng, _ := DefaultContainer(container.Zip)
 	return eng, r
 }
 
-// ArchiveDir creates an archive containing the specified directory tree and writes it to dest.
-func (a *Archiver) ArchiveDir(dirPath string, dest Sink, opts ...Option) error {
-	return a.ArchiveDirWithContext(context.Background(), dirPath, dest, opts...)
-}
-
-// ArchiveDirWithContext creates an archive containing the directory tree with cancellation support.
-func (a *Archiver) ArchiveDirWithContext(ctx context.Context, dirPath string, dest Sink, opts ...Option) error {
-	allOpts := slices.Concat(a.engineOptions, opts)
+// ArchiveDir creates an archive containing the specified directory tree and writes it to dest with cancellation support.
+func (a *Archiver) ArchiveDir(ctx context.Context, dirPath string, dest Sink, opts ...Option) error {
+	allOpts := slices.Concat(a.containerOptions, opts)
+	allOpts = append(allOpts, WithSourceDir(dirPath))
 	arc := NewArchive(allOpts...)
 	if _, err := arc.AddDir(dirPath); err != nil {
 		return err
@@ -89,19 +94,15 @@ func (a *Archiver) ArchiveDirWithContext(ctx context.Context, dirPath string, de
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		_, err := arc.WriteTo(w, opts...)
+		writeOpts := append(slices.Clone(allOpts), WithSourceDir(dirPath))
+		_, err := arc.WriteTo(ctx, w, writeOpts...)
 		return err
 	})
 }
 
-// Unarchive extracts an archive from src into destDir.
-func (a *Archiver) Unarchive(src Source, destDir string, opts ...Option) error {
-	return a.UnarchiveWithContext(context.Background(), src, destDir, opts...)
-}
-
-// UnarchiveWithContext extracts an archive with context awareness, format auto-detection, and resource limit enforcement.
-func (a *Archiver) UnarchiveWithContext(ctx context.Context, src Source, destDir string, opts ...Option) error {
-	allOpts := slices.Concat(a.engineOptions, opts)
+// Unarchive extracts an archive from src into destDir with context awareness, format auto-detection, and resource limit enforcement.
+func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, opts ...Option) error {
+	allOpts := slices.Concat(a.containerOptions, opts)
 	procCfg := processConfig{workers: 1}
 	for _, opt := range allOpts {
 		switch opt.Kind {
@@ -129,14 +130,14 @@ func (a *Archiver) UnarchiveWithContext(ctx context.Context, src Source, destDir
 			return err
 		}
 
-		engine, r := resolveSourceEngine(r, rAt)
-		arc := NewArchive(append([]Option{archive.WithEngine(engine)}, allOpts...)...)
+		container, r := resolveSourceContainer(r, rAt)
+		arc := NewArchive(append([]Option{archive.WithContainer(container)}, allOpts...)...)
 		var files []*File
 		var err error
 		if rAt != nil && size > 0 {
-			files, err = arc.Load(rAt, size, engine)
+			files, err = arc.Load(rAt, size, container)
 		} else {
-			files, err = arc.LoadFromReader(r, engine)
+			files, err = arc.LoadFromReader(r, container)
 		}
 		if err != nil {
 			return err
@@ -306,23 +307,29 @@ func (a *Archiver) UnarchiveWithContext(ctx context.Context, src Source, destDir
 }
 
 // Extract extracts an archive from src into destDir using automatic format detection.
-func Extract(src Source, destDir string, opts ...Option) error {
-	return NewArchiver().Unarchive(src, destDir, opts...)
+func Extract(ctx context.Context, src Source, destDir string, opts ...Option) error {
+	return NewArchiver().Unarchive(ctx, src, destDir, opts...)
 }
 
 // ExtractFile extracts an individual named file from an archive into destPath.
-func ExtractFile(src Source, targetFile, destPath string, opts ...Option) error {
+func ExtractFile(ctx context.Context, src Source, targetFile, destPath string, opts ...Option) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	cleanTarget := vfs.CleanPath(targetFile)
 
 	return UseSource(src, func(r io.Reader, rAt io.ReaderAt, size int64) error {
-		engine, r := resolveSourceEngine(r, rAt)
-		arc := NewArchive(append([]Option{archive.WithEngine(engine)}, opts...)...)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		container, r := resolveSourceContainer(r, rAt)
+		arc := NewArchive(append([]Option{archive.WithContainer(container)}, opts...)...)
 		if rAt != nil && size > 0 {
-			if _, err := arc.Load(rAt, size, engine); err != nil {
+			if _, err := arc.Load(rAt, size, container); err != nil {
 				return err
 			}
 		} else {
-			if _, err := arc.LoadFromReader(r, engine); err != nil {
+			if _, err := arc.LoadFromReader(r, container); err != nil {
 				return err
 			}
 		}
@@ -336,19 +343,25 @@ func ExtractFile(src Source, targetFile, destPath string, opts ...Option) error 
 }
 
 // ReadFile reads an individual named file from an archive into memory.
-func ReadFile(src Source, targetFile string, opts ...Option) ([]byte, error) {
+func ReadFile(ctx context.Context, src Source, targetFile string, opts ...Option) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	cleanTarget := vfs.CleanPath(targetFile)
 
 	var data []byte
 	err := UseSource(src, func(r io.Reader, rAt io.ReaderAt, size int64) error {
-		engine, r := resolveSourceEngine(r, rAt)
-		arc := NewArchive(append([]Option{archive.WithEngine(engine)}, opts...)...)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		container, r := resolveSourceContainer(r, rAt)
+		arc := NewArchive(append([]Option{archive.WithContainer(container)}, opts...)...)
 		if rAt != nil && size > 0 {
-			if _, err := arc.Load(rAt, size, engine); err != nil {
+			if _, err := arc.Load(rAt, size, container); err != nil {
 				return err
 			}
 		} else {
-			if _, err := arc.LoadFromReader(r, engine); err != nil {
+			if _, err := arc.LoadFromReader(r, container); err != nil {
 				return err
 			}
 		}
@@ -367,28 +380,31 @@ func ReadFile(src Source, targetFile string, opts ...Option) ([]byte, error) {
 }
 
 // ReadFile reads an individual named file from an archive into memory.
-func (a *Archiver) ReadFile(src Source, targetFile string, opts ...Option) ([]byte, error) {
-	allOpts := slices.Concat(a.engineOptions, opts)
-	return ReadFile(src, targetFile, allOpts...)
+func (a *Archiver) ReadFile(ctx context.Context, src Source, targetFile string, opts ...Option) ([]byte, error) {
+	allOpts := slices.Concat(a.containerOptions, opts)
+	return ReadFile(ctx, src, targetFile, allOpts...)
 }
 
 // Verify checks the integrity of all file entries and checksums within an archive.
-func (a *Archiver) Verify(src Source, opts ...Option) error {
-	allOpts := slices.Concat(a.engineOptions, opts)
-	return Verify(src, allOpts...)
+func (a *Archiver) Verify(ctx context.Context, src Source, opts ...Option) error {
+	allOpts := slices.Concat(a.containerOptions, opts)
+	return Verify(ctx, src, allOpts...)
 }
 
 // GetEntries returns a metadata snapshot of all file entries in the archive.
-func (a *Archiver) GetEntries(src Source) ([]*File, error) {
+func (a *Archiver) GetEntries(ctx context.Context, src Source) ([]*File, error) {
 	var files []*File
 	err := UseSource(src, func(r io.Reader, rAt io.ReaderAt, size int64) error {
-		engine, r := resolveSourceEngine(r, rAt)
-		arc := NewArchive(append([]Option{archive.WithEngine(engine)}, a.engineOptions...)...)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		container, r := resolveSourceContainer(r, rAt)
+		arc := NewArchive(append([]Option{archive.WithContainer(container)}, a.containerOptions...)...)
 		var err error
 		if rAt != nil && size > 0 {
-			files, err = arc.Load(rAt, size, engine)
+			files, err = arc.Load(rAt, size, container)
 		} else {
-			files, err = arc.LoadFromReader(r, engine)
+			files, err = arc.LoadFromReader(r, container)
 		}
 		return err
 	})
@@ -397,21 +413,24 @@ func (a *Archiver) GetEntries(src Source) ([]*File, error) {
 }
 
 // List returns a list of archive entries from src.
-func List(src Source, opts ...Option) ([]*File, error) {
-	return NewArchiver(opts...).GetEntries(src)
+func List(ctx context.Context, src Source, opts ...Option) ([]*File, error) {
+	return NewArchiver(opts...).GetEntries(ctx, src)
 }
 
 // Verify checks the integrity of all file entries and checksums within an archive.
-func Verify(src Source, opts ...Option) error {
+func Verify(ctx context.Context, src Source, opts ...Option) error {
 	return UseSource(src, func(r io.Reader, rAt io.ReaderAt, size int64) error {
-		engine, r := resolveSourceEngine(r, rAt)
-		arc := NewArchive(append([]Option{archive.WithEngine(engine)}, opts...)...)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		container, r := resolveSourceContainer(r, rAt)
+		arc := NewArchive(append([]Option{archive.WithContainer(container)}, opts...)...)
 		var files []*File
 		var err error
 		if rAt != nil && size > 0 {
-			files, err = arc.Load(rAt, size, engine)
+			files, err = arc.Load(rAt, size, container)
 		} else {
-			files, err = arc.LoadFromReader(r, engine)
+			files, err = arc.LoadFromReader(r, container)
 		}
 		if err != nil {
 			return err
@@ -419,6 +438,9 @@ func Verify(src Source, opts ...Option) error {
 
 		var errs []error
 		for _, f := range files {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if f.IsDir() {
 				continue
 			}
@@ -443,18 +465,18 @@ func Verify(src Source, opts ...Option) error {
 // Top-level 1-line zero-config convenience helpers.
 
 // ArchiveDir compresses a physical directory into a destination Sink.
-func ArchiveDir(dirPath string, dest Sink, opts ...Option) error {
-	return NewArchiver(opts...).ArchiveDir(dirPath, dest)
+func ArchiveDir(ctx context.Context, dirPath string, dest Sink, opts ...Option) error {
+	return NewArchiver(opts...).ArchiveDir(ctx, dirPath, dest)
 }
 
 // Unarchive extracts an archive from Source into destDir.
-func Unarchive(src Source, destDir string, opts ...Option) error {
-	return NewArchiver().Unarchive(src, destDir, opts...)
+func Unarchive(ctx context.Context, src Source, destDir string, opts ...Option) error {
+	return NewArchiver().Unarchive(ctx, src, destDir, opts...)
 }
 
 // FileCount returns the number of entries in the archive.
-func FileCount(src Source) (int, error) {
-	entries, err := List(src)
+func FileCount(ctx context.Context, src Source) (int, error) {
+	entries, err := List(ctx, src)
 	if err != nil {
 		return 0, err
 	}
@@ -462,9 +484,9 @@ func FileCount(src Source) (int, error) {
 }
 
 // ExistsIn reports whether targetFile exists inside the archive.
-func ExistsIn(src Source, targetFile string) (bool, error) {
+func ExistsIn(ctx context.Context, src Source, targetFile string) (bool, error) {
 	clean := vfs.CleanPath(targetFile)
-	entries, err := List(src)
+	entries, err := List(ctx, src)
 	if err != nil {
 		return false, err
 	}
@@ -474,8 +496,8 @@ func ExistsIn(src Source, targetFile string) (bool, error) {
 }
 
 // Tree returns an ASCII visual hierarchy string from an archive source.
-func Tree(src Source) (string, error) {
-	entries, err := List(src)
+func Tree(ctx context.Context, src Source) (string, error) {
+	entries, err := List(ctx, src)
 	if err != nil {
 		return "", err
 	}
@@ -493,3 +515,262 @@ func Tree(src Source) (string, error) {
 	root := vfs.BuildTree(treeEntries)
 	return vfs.RenderTree(root), nil
 }
+
+// ReadExtensionBundle extracts all embedded stealth extensions from an archive file.
+func ReadExtensionBundle(ctx context.Context, archivePath string) (map[extension.ID][]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	size := fi.Size()
+	if size < 22 {
+		return nil, nil
+	}
+
+	var header [512]byte
+	n, _ := f.ReadAt(header[:], 0)
+	cType := container.SniffHeader(header[:n])
+
+	var rawData []byte
+	switch cType {
+	case container.SevenZip:
+		zr, err := sevenzip.NewReader(f, size, "")
+		if err != nil {
+			return nil, err
+		}
+		if data, ok := zr.ExtensionData(); ok {
+			rawData = data
+		}
+	case container.Zip:
+		zr, err := zip.NewReader(f, size, "", nil)
+		if err != nil {
+			return nil, err
+		}
+		if data, ok := zr.ExtensionData(); ok {
+			rawData = data
+		}
+	default:
+		// Fallback to checking comment or pax records via DefaultContainer
+		if eng, err := DefaultContainer(cType); err == nil {
+			_, comment, err := eng.OpenCatalog(f, size, "", nil)
+			if err == nil && comment != "" {
+				rawData = []byte(comment)
+			}
+		}
+	}
+
+	if len(rawData) == 0 {
+		return nil, nil
+	}
+
+	return extension.DecodeBundle(rawData)
+}
+
+// InspectExtensions populates the provided extension instances with metadata found in the archive.
+func InspectExtensions(ctx context.Context, archivePath string, exts ...extension.Extension) error {
+	bundle, err := ReadExtensionBundle(ctx, archivePath)
+	if err != nil {
+		return err
+	}
+	if len(bundle) == 0 {
+		return nil
+	}
+	for _, ext := range exts {
+		if data, ok := bundle[ext.ID()]; ok {
+			info := extension.ArchiveInfo{}
+			if err := ext.OnRead(ctx, data, info); err != nil {
+				return fmt.Errorf("seal: extension %q read error: %w", ext.ID(), err)
+			}
+		}
+	}
+	return nil
+}
+
+// GetExtension extracts a single extension payload from the archive by its ID.
+func GetExtension(ctx context.Context, archivePath string, id extension.ID) ([]byte, error) {
+	bundle, err := ReadExtensionBundle(ctx, archivePath)
+	if err != nil {
+		return nil, err
+	}
+	if data, ok := bundle[id]; ok {
+		return data, nil
+	}
+	return nil, extension.ErrExtensionNotFound
+}
+
+// CanResume inspects an archive file and returns whether an embedded stealth checkpoint is present.
+func CanResume(ctx context.Context, archivePath string) (*checkpoint.State, bool, error) {
+	data, err := GetExtension(ctx, archivePath, "seal.checkpoint")
+	if err != nil {
+		if errors.Is(err, extension.ErrExtensionNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	st, err := checkpoint.Decode(data)
+	if err != nil {
+		return nil, false, err
+	}
+	return st, true, nil
+}
+
+// ResumeArchive resumes an interrupted archive operation from its stealth checkpoint with cancellation support.
+func ResumeArchive(ctx context.Context, archivePath string, opts ...Option) error {
+	st, can, err := CanResume(ctx, archivePath)
+	if err != nil {
+		return fmt.Errorf("seal: inspect resume checkpoint: %w", err)
+	}
+	if !can || st == nil {
+		return errors.New("seal: no valid resume checkpoint found in archive")
+	}
+
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+	size := fi.Size()
+
+	var header [512]byte
+	n, _ := f.ReadAt(header[:], 0)
+	cType := container.SniffHeader(header[:n])
+	cnt, err := DefaultContainer(cType)
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+
+	arc := NewArchive(append([]Option{archive.WithContainer(cnt)}, opts...)...)
+	_, err = arc.Load(f, size, cnt)
+	if err != nil {
+		_ = f.Close()
+		return fmt.Errorf("seal: load existing files: %w", err)
+	}
+
+	// Add remaining files from sourceDir
+	for _, relPath := range st.RemainingFiles {
+		if err := ctx.Err(); err != nil {
+			_ = f.Close()
+			return err
+		}
+		fullPath := filepath.Join(st.SourceDir, relPath)
+		fileInfo, statErr := os.Stat(fullPath)
+		if statErr != nil {
+			continue
+		}
+		if fileInfo.IsDir() {
+			continue
+		}
+		entry, newErr := file.New(relPath, false)
+		if newErr != nil {
+			continue
+		}
+		entry.WithMode(fileInfo.Mode()).WithModTime(fileInfo.ModTime()).WithSize(fileInfo.Size())
+		currPath := fullPath
+		entry.SetOpenFunc(func() (io.ReadCloser, error) {
+			return os.Open(currPath)
+		})
+		arc.Add(entry)
+	}
+
+	tmpOut := archivePath + ".tmp.seal"
+	outF, err := os.Create(tmpOut)
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+
+	writeOpts := append(slices.Clone(opts),
+		WithResumable(true),
+		WithSessionID(st.SessionID),
+		WithSourceDir(st.SourceDir),
+	)
+
+	_, writeErr := arc.WriteTo(ctx, outF, writeOpts...)
+	_ = outF.Close()
+	_ = f.Close() // Close source handle so Windows allows replacing archivePath
+
+	if writeErr != nil {
+		if errors.Is(writeErr, ErrArchiveFrozen) {
+			_ = os.Remove(archivePath)
+			_ = os.Rename(tmpOut, archivePath)
+			return ErrArchiveFrozen
+		}
+		_ = os.Remove(tmpOut)
+		return writeErr
+	}
+
+	_ = os.Remove(archivePath)
+	return os.Rename(tmpOut, archivePath)
+}
+
+// VerifySignature inspects an archive file, extracts its embedded Ed25519 signature,
+// and cryptographically verifies its authenticity.
+func VerifySignature(ctx context.Context, archivePath string, pubKey ed25519.PublicKey) (*signature.State, error) {
+	data, err := GetExtension(ctx, archivePath, signature.ExtensionID)
+	if err != nil {
+		if errors.Is(err, extension.ErrExtensionNotFound) {
+			return nil, ErrSignatureNotFound
+		}
+		return nil, err
+	}
+
+	st, err := signature.DecodeState(data)
+	if err != nil {
+		return nil, fmt.Errorf("seal: corrupted signature metadata: %w", err)
+	}
+
+	// Verify against archive entry metadata
+	entries, err := List(ctx, FromFilePath(archivePath))
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var header [512]byte
+	n, _ := f.ReadAt(header[:], 0)
+	cType := container.SniffHeader(header[:n])
+
+	info := extension.ArchiveInfo{
+		Format:     cType,
+		TotalFiles: len(entries),
+	}
+
+	if err := st.Verify(pubKey, info); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrSignatureInvalid, err)
+	}
+
+	return st, nil
+}
+
+// InspectProvenance extracts embedded build passport and VCS supply-chain metadata from an archive.
+func InspectProvenance(ctx context.Context, archivePath string) (*provenance.Info, error) {
+	data, err := GetExtension(ctx, archivePath, provenance.ExtensionID)
+	if err != nil {
+		if errors.Is(err, extension.ErrExtensionNotFound) {
+			return nil, ErrProvenanceNotFound
+		}
+		return nil, err
+	}
+
+	return provenance.DecodeInfo(data)
+}
+

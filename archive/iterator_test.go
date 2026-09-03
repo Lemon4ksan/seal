@@ -14,6 +14,7 @@ import (
 )
 
 func TestArchive_All_Iterator(t *testing.T) {
+	t.Parallel()
 	arc := archive.New()
 	f1, _ := file.New("a.txt")
 	f1.WithData([]byte("hello A"))
@@ -47,6 +48,7 @@ func TestArchive_All_Iterator(t *testing.T) {
 }
 
 func TestArchive_AllWithIndex_Iterator(t *testing.T) {
+	t.Parallel()
 	arc := archive.New()
 	f1, _ := file.New("x.txt")
 	f2, _ := file.New("y.txt")
@@ -68,6 +70,7 @@ func TestArchive_AllWithIndex_Iterator(t *testing.T) {
 }
 
 func TestArchive_StatefulIterator(t *testing.T) {
+	t.Parallel()
 	arc := archive.New()
 	f1, _ := file.New("file1.txt")
 	f1.WithData([]byte("content-1"))

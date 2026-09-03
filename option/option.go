@@ -11,6 +11,7 @@ import (
 
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/extension"
 )
 
 // OptionKind identifies the discrete mutation payload of an [Option] value.
@@ -19,7 +20,6 @@ type OptionKind uint8
 const (
 	OptNone OptionKind = iota
 	OptContainer
-	OptFormat
 	OptCompression
 	OptPassword
 	OptComment
@@ -35,6 +35,11 @@ const (
 	OptMode
 	OptModTime
 	OptCustom
+	OptResumable
+	OptSessionID
+	OptSourceDir
+	OptCheckpoint
+	OptExtension
 )
 
 // ProgressStats delivers real-time throughput and status telemetry during archive operations.
@@ -56,20 +61,24 @@ type ProgressFunc func(stats ProgressStats)
 
 // Option represents a zero-allocation, value-based modifier payload residing on the stack.
 type Option struct {
-	Kind      OptionKind
-	Container container.Type
-	Format    container.Type
-	Method    codec.Method
-	Level     int
-	Workers   int
-	Text      string
-	Mode      fs.FileMode
-	ModTime   time.Time
-	Security  SecuritySettings
-	Filter    Filter
-	Progress  ProgressFunc
-	Custom    func(any)
-	OnDone    func(entryName string, err error)
+	Kind       OptionKind
+	Container  container.Type
+	Method     codec.Method
+	Level      int
+	Workers    int
+	Text       string
+	Mode       fs.FileMode
+	ModTime    time.Time
+	Security   SecuritySettings
+	Filter     Filter
+	Progress   ProgressFunc
+	Custom     func(any)
+	OnDone     func(entryName string, err error)
+	Resumable  bool
+	SourceDir  string
+	SessionID  string
+	Bytes      []byte
+	Extensions []extension.Extension
 }
 
 // IsZero reports whether the option is an uninitialized zero value.
@@ -81,12 +90,7 @@ func (o Option) IsZero() bool {
 
 // WithContainer sets the target archive container (ZIP, TAR, TAR.GZ, etc.).
 func WithContainer(containerType container.Type) Option {
-	return Option{Kind: OptContainer, Container: containerType, Format: containerType}
-}
-
-// WithFormat is an alias for [WithContainer].
-func WithFormat(fmtType container.Type) Option {
-	return WithContainer(fmtType)
+	return Option{Kind: OptContainer, Container: containerType}
 }
 
 // WithCompression configures the compression algorithm and level.
@@ -176,3 +180,33 @@ func WithModTime(t time.Time) Option {
 func Custom(fn func(any)) Option {
 	return Option{Kind: OptCustom, Custom: fn}
 }
+
+// WithResumable enables graceful freeze on cancellation and stealth checkpoint persistence.
+func WithResumable(enable ...bool) Option {
+	val := true
+	if len(enable) > 0 {
+		val = enable[0]
+	}
+	return Option{Kind: OptResumable, Resumable: val}
+}
+
+// WithSessionID assigns a task or job session UUID for the archive operation.
+func WithSessionID(id string) Option {
+	return Option{Kind: OptSessionID, Text: id, SessionID: id}
+}
+
+// WithSourceDir sets the base source directory path for resumption.
+func WithSourceDir(dir string) Option {
+	return Option{Kind: OptSourceDir, Text: dir, SourceDir: dir}
+}
+
+// WithCheckpointData injects raw transient checkpoint bytes into container options.
+func WithCheckpointData(data []byte) Option {
+	return Option{Kind: OptCheckpoint, Bytes: data}
+}
+
+// WithExtension registers one or more metadata extensions with the archive operation.
+func WithExtension(exts ...extension.Extension) Option {
+	return Option{Kind: OptExtension, Extensions: exts}
+}
+

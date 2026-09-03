@@ -9,6 +9,7 @@ import (
 
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/container/rar"
 	"github.com/lemon4ksan/seal/container/sevenzip"
 	"github.com/lemon4ksan/seal/container/tar"
 	"github.com/lemon4ksan/seal/container/targz"
@@ -21,8 +22,12 @@ import (
 // Version represents the current release semver string of Seal.
 const Version = "0.1.0"
 
-// DefaultEngine resolves standard built-in container engines by type without global state.
-func DefaultEngine(t ContainerType) (Container, error) {
+// ErrArchiveFrozen indicates that archive creation was gracefully frozen on context cancellation,
+// producing a valid partial archive with an embedded stealth checkpoint.
+var ErrArchiveFrozen = container.ErrArchiveFrozen
+
+// DefaultContainer resolves standard built-in container engines by type without global state.
+func DefaultContainer(t ContainerType) (Container, error) {
 	switch t {
 	case container.Zip:
 		return zip.New(), nil
@@ -40,6 +45,8 @@ func DefaultEngine(t ContainerType) (Container, error) {
 		return sevenzip.New(), nil
 	case container.Wim:
 		return wim.New(), nil
+	case container.Rar:
+		return rar.New(), nil
 	default:
 		return nil, fmt.Errorf("seal: unsupported container type %q", t)
 	}
@@ -50,8 +57,8 @@ func DefaultEngine(t ContainerType) (Container, error) {
 func NewArchive(opts ...Option) *Archive {
 	var explicitEngine container.Container
 	for _, opt := range opts {
-		if opt.Kind == option.OptContainer || opt.Kind == option.OptFormat {
-			if eng, err := DefaultEngine(opt.Container); err == nil {
+		if opt.Kind == option.OptContainer {
+			if eng, err := DefaultContainer(opt.Container); err == nil {
 				explicitEngine = eng
 			}
 		}
@@ -61,48 +68,43 @@ func NewArchive(opts ...Option) *Archive {
 		explicitEngine = zip.New()
 	}
 
-	opts = append([]Option{archive.WithEngine(explicitEngine)}, opts...)
+	opts = append([]Option{archive.WithContainer(explicitEngine)}, opts...)
 	return archive.New(opts...)
 }
 
 // NewZip constructs a new [Archive] configured specifically for the ZIP container.
 func NewZip(opts ...Option) *Archive {
-	return NewArchive(append([]Option{archive.WithEngine(zip.New())}, opts...)...)
+	return NewArchive(append([]Option{archive.WithContainer(zip.New())}, opts...)...)
 }
 
 // NewTar constructs a new [Archive] configured specifically for the TAR container.
 func NewTar(opts ...Option) *Archive {
-	return NewArchive(append([]Option{archive.WithEngine(tar.New())}, opts...)...)
+	return NewArchive(append([]Option{archive.WithContainer(tar.New())}, opts...)...)
 }
 
 // NewTarGz constructs a new [Archive] configured specifically for the TAR.GZ container.
 func NewTarGz(opts ...Option) *Archive {
-	return NewArchive(append([]Option{archive.WithEngine(targz.New())}, opts...)...)
+	return NewArchive(append([]Option{archive.WithContainer(targz.New())}, opts...)...)
 }
 
 // NewTarBz2 constructs a new [Archive] configured specifically for the TAR.BZ2 container.
 func NewTarBz2(opts ...Option) *Archive {
-	return NewArchive(append([]Option{archive.WithEngine(tar.NewFormat(container.TarBz2))}, opts...)...)
+	return NewArchive(append([]Option{archive.WithContainer(tar.NewFormat(container.TarBz2))}, opts...)...)
 }
 
 // NewTarXz constructs a new [Archive] configured specifically for the TAR.XZ container.
 func NewTarXz(opts ...Option) *Archive {
-	return NewArchive(append([]Option{archive.WithEngine(tar.NewFormat(container.TarXz))}, opts...)...)
+	return NewArchive(append([]Option{archive.WithContainer(tar.NewFormat(container.TarXz))}, opts...)...)
 }
 
 // NewTarZst constructs a new [Archive] configured specifically for the TAR.ZST container.
 func NewTarZst(opts ...Option) *Archive {
-	return NewArchive(append([]Option{archive.WithEngine(tar.NewFormat(container.TarZst))}, opts...)...)
+	return NewArchive(append([]Option{archive.WithContainer(tar.NewFormat(container.TarZst))}, opts...)...)
 }
 
-// NewSevenZip constructs a new [Archive] configured specifically for the 7-Zip container.
-func NewSevenZip(opts ...Option) *Archive {
-	return NewArchive(append([]Option{archive.WithEngine(sevenzip.New())}, opts...)...)
-}
-
-// New7z is an alias for [NewSevenZip].
+// New7z constructs a new [Archive] configured specifically for the 7-Zip container.
 func New7z(opts ...Option) *Archive {
-	return NewSevenZip(opts...)
+	return NewArchive(append([]Option{archive.WithContainer(sevenzip.New())}, opts...)...)
 }
 
 // NewFile constructs a standalone [File] entry.
@@ -117,5 +119,5 @@ func RegisterContainer(containerType ContainerType, factory container.Factory) {
 
 // GetContainer returns a new [Container] instance for the requested container type.
 func GetContainer(containerType ContainerType) (Container, error) {
-	return DefaultEngine(containerType)
+	return DefaultContainer(containerType)
 }

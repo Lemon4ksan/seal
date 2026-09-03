@@ -17,6 +17,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/silicon/endian"
 
+	"github.com/lemon4ksan/seal/checkpoint"
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/internal/sys"
@@ -202,6 +203,31 @@ func (zr *Reader) Entry(name string) (*file.File, bool) {
 // Comment returns the archive comment.
 func (zr *Reader) Comment() string {
 	return zr.comment
+}
+
+// Checkpoint returns the embedded checkpoint payload if present in the archive comment.
+func (zr *Reader) Checkpoint() ([]byte, bool) {
+	if strings.Contains(zr.comment, checkpoint.Magic) {
+		start := strings.Index(zr.comment, "{")
+		end := strings.LastIndex(zr.comment, "}")
+		if start >= 0 && end > start {
+			return []byte(zr.comment[start : end+1]), true
+		}
+		return []byte(zr.comment), true
+	}
+	return nil, false
+}
+
+// ExtensionData returns the embedded extension bundle bytes if present in the archive comment.
+func (zr *Reader) ExtensionData() ([]byte, bool) {
+	if strings.Contains(zr.comment, "SEXT") {
+		idx := strings.Index(zr.comment, "SEXT")
+		return []byte(zr.comment[idx:]), true
+	}
+	if strings.Contains(zr.comment, checkpoint.Magic) {
+		return zr.Checkpoint()
+	}
+	return nil, false
 }
 
 // ExtractEntry opens and returns the decompressed data payload for a single entry.

@@ -11,9 +11,11 @@ import (
 	"testing/fstest"
 
 	"github.com/lemon4ksan/seal"
+	"github.com/lemon4ksan/seal/container"
 )
 
 func TestArchive_BasicOperations(t *testing.T) {
+	t.Parallel()
 	archive := seal.NewArchive()
 
 	// Add string, bytes, and fs
@@ -55,7 +57,7 @@ func TestArchive_BasicOperations(t *testing.T) {
 
 	// Serialization roundtrip
 	buf := new(bytes.Buffer)
-	written, err := archive.WriteTo(buf)
+	written, err := archive.WriteTo(t.Context(), buf)
 	if err != nil {
 		t.Fatalf("WriteTo failed: %v", err)
 	}
@@ -76,6 +78,7 @@ func TestArchive_BasicOperations(t *testing.T) {
 }
 
 func TestArchive_AddFS(t *testing.T) {
+	t.Parallel()
 	memFS := fstest.MapFS{
 		"a.txt":     {Data: []byte("file A")},
 		"sub/b.txt": {Data: []byte("file B")},
@@ -91,7 +94,7 @@ func TestArchive_AddFS(t *testing.T) {
 	}
 
 	buf := new(bytes.Buffer)
-	if _, err := archive.WriteTo(buf); err != nil {
+	if _, err := archive.WriteTo(t.Context(), buf); err != nil {
 		t.Fatalf("WriteTo failed: %v", err)
 	}
 
@@ -121,17 +124,18 @@ func TestArchive_AddFS(t *testing.T) {
 }
 
 func TestArchive_SevenZip_BasicOperations(t *testing.T) {
-	arc := seal.NewSevenZip()
+	t.Parallel()
+	arc := seal.NewArchive(seal.WithContainer(container.SevenZip))
 
 	arc.AddString("7z Content test string", "data.txt")
 	arc.AddBytes([]byte("Binary Payload 123456"), "sub/binary.bin")
 
-	if arc.Format() != seal.FormatSevenZip {
-		t.Fatalf("expected format %v, got %v", seal.FormatSevenZip, arc.Format())
+	if arc.Container() != container.SevenZip {
+		t.Fatalf("expected container %v, got %v", container.SevenZip, arc.Container())
 	}
 
 	buf := new(bytes.Buffer)
-	written, err := arc.WriteTo(buf)
+	written, err := arc.WriteTo(t.Context(), buf)
 	if err != nil {
 		t.Fatalf("7z WriteTo failed: %v", err)
 	}
@@ -140,7 +144,7 @@ func TestArchive_SevenZip_BasicOperations(t *testing.T) {
 	}
 
 	raw := buf.Bytes()
-	fresh := seal.NewSevenZip()
+	fresh := seal.New7z()
 	loaded, err := fresh.Load(bytes.NewReader(raw), int64(len(raw)))
 	if err != nil {
 		t.Fatalf("7z Load failed: %v", err)

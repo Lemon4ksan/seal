@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 
 	"github.com/lemon4ksan/foundation/generic"
@@ -39,6 +40,7 @@ type Writer struct {
 	centralDir     *bytes.Buffer
 	registry       *codec.Registry
 	comment        string
+	checkpointData []byte
 	defaultMethod  codec.Method
 	defaultLevel   int
 	globalPassword string
@@ -91,6 +93,13 @@ func (w *Writer) SetPassword(pwd string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.globalPassword = pwd
+}
+
+// SetCheckpointData sets the transient checkpoint payload to be stored in the archive metadata.
+func (w *Writer) SetCheckpointData(data []byte) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.checkpointData = slices.Clone(data)
 }
 
 // WriteEntry processes and writes an individual file entry to the archive.
@@ -387,6 +396,14 @@ func (w *Writer) Close() error {
 	// In accordance with RFC 2119, "SHOULD" signifies a strong recommendation rather than a mandatory
 	// constraint ("MUST"). An empty archive containing only the 22-byte EOCD record is syntactically
 	// valid, fully specification-compliant, and permitted by default.
+
+	if len(w.checkpointData) > 0 {
+		if w.comment == "" {
+			w.comment = string(w.checkpointData)
+		} else {
+			w.comment += "\n" + string(w.checkpointData)
+		}
+	}
 
 	if len(w.comment) > int(MaxUint16) {
 		return fmt.Errorf(

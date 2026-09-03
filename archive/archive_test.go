@@ -17,7 +17,8 @@ import (
 )
 
 func TestArchive_BasicOperations(t *testing.T) {
-	a := archive.New(archive.WithEngine(zip.New()))
+	t.Parallel()
+	a := archive.New(archive.WithContainer(zip.New()))
 
 	a.AddBytes([]byte("Hello world"), "test.txt")
 	a.AddString("JSON content", "config.json")
@@ -56,12 +57,13 @@ func TestArchive_BasicOperations(t *testing.T) {
 }
 
 func TestArchive_AddFS(t *testing.T) {
+	t.Parallel()
 	mockFS := fstest.MapFS{
 		"file1.txt":      &fstest.MapFile{Data: []byte("file1")},
 		"subdir/doc.txt": &fstest.MapFile{Data: []byte("doc")},
 	}
 
-	a := archive.New(archive.WithEngine(zip.New()), option.WithCompression(codec.Store, 0))
+	a := archive.New(archive.WithContainer(zip.New()), option.WithCompression(codec.Store, 0))
 	added, err := a.AddFS(mockFS)
 	if err != nil {
 		t.Fatalf("AddFS failed: %v", err)
@@ -72,7 +74,7 @@ func TestArchive_AddFS(t *testing.T) {
 	}
 
 	buf := new(bytes.Buffer)
-	written, err := a.WriteTo(buf)
+	written, err := a.WriteTo(t.Context(), buf)
 	if err != nil {
 		t.Fatalf("WriteTo failed: %v", err)
 	}

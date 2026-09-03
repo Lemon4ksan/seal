@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 
+	"github.com/lemon4ksan/seal/checkpoint"
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/file"
@@ -98,10 +99,31 @@ func (z *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 	if cfg.Password != "" {
 		w.SetPassword(cfg.Password)
 	}
+	if len(cfg.ExtensionData) > 0 {
+		w.SetCheckpointData(cfg.ExtensionData)
+	} else if len(cfg.CheckpointData) > 0 {
+		w.SetCheckpointData(cfg.CheckpointData)
+	}
 
 	var totalWritten int64
 
-	for _, entry := range files {
+	for i, entry := range files {
+		if cfg.Context != nil && cfg.Context.Err() != nil {
+			if cfg.Resumable {
+				remNames := make([]string, len(files)-i)
+				for j, rem := range files[i:] {
+					remNames[j] = rem.Name()
+				}
+				st := checkpoint.NewState(cfg.SessionID, cfg.SourceDir, string(z.Type()), len(files), i, remNames)
+				if cpBytes, err := st.Encode(); err == nil {
+					w.SetCheckpointData(cpBytes)
+				}
+				_ = w.Close()
+				return totalWritten, container.ErrArchiveFrozen
+			}
+			return totalWritten, cfg.Context.Err()
+		}
+
 		if entry.Method() == 0 && !entry.IsDir() {
 			entry.SetMethod(cfg.DefaultMethod)
 		}

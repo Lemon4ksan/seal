@@ -10,6 +10,7 @@ import (
 	"errors"
 	"hash/crc32"
 	"io"
+	"slices"
 	"sync"
 	"time"
 	"unicode/utf16"
@@ -40,8 +41,26 @@ type Reader struct {
 
 	entries []*file.File
 
+	checkpointData []byte
+
 	folderCacheMu sync.Mutex
 	folderCache   map[int][]byte
+}
+
+// Checkpoint returns the embedded checkpoint payload if present in the archive.
+func (zr *Reader) Checkpoint() ([]byte, bool) {
+	if len(zr.checkpointData) == 0 {
+		return nil, false
+	}
+	return slices.Clone(zr.checkpointData), true
+}
+
+// ExtensionData returns the embedded extension bundle bytes if present in the archive.
+func (zr *Reader) ExtensionData() ([]byte, bool) {
+	if len(zr.checkpointData) == 0 {
+		return nil, false
+	}
+	return slices.Clone(zr.checkpointData), true
 }
 
 // NewReader constructs a 7z archive reader.
@@ -137,6 +156,11 @@ func (zr *Reader) parseHeader(r io.Reader) error {
 			}
 			return zr.buildEntries()
 
+		case NIDArchiveProperties:
+			if err := zr.readArchiveProperties(r); err != nil {
+				return err
+			}
+
 		case NIDMainStreamsInfo:
 			if err := zr.readMainStreamsInfo(r); err != nil {
 				return err
@@ -153,6 +177,30 @@ func (zr *Reader) parseHeader(r io.Reader) error {
 	}
 
 	return zr.buildEntries()
+}
+
+func (zr *Reader) readArchiveProperties(r io.Reader) error {
+	for {
+		var propID [1]byte
+		if _, err := io.ReadFull(r, propID[:]); err != nil {
+			return err
+		}
+		if propID[0] == NIDEnd {
+			break
+		}
+		size, err := ReadNumber(r)
+		if err != nil {
+			return err
+		}
+		propData := make([]byte, size)
+		if _, err := io.ReadFull(r, propData); err != nil {
+			return err
+		}
+		if propID[0] == 0x53 { // 'S' for Seal checkpoint
+			zr.checkpointData = propData
+		}
+	}
+	return nil
 }
 
 func (zr *Reader) readEncodedHeader(r io.Reader) error {

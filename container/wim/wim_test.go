@@ -19,6 +19,7 @@ import (
 )
 
 func TestWim_Roundtrip(t *testing.T) {
+	t.Parallel()
 	f0, _ := file.New("docs/readme.txt", false)
 	f1, _ := file.New("docs/license.md", false)
 	f2, _ := file.New("src/main.go", false)
@@ -102,6 +103,7 @@ func TestWim_Roundtrip(t *testing.T) {
 }
 
 func TestWim_Deduplication(t *testing.T) {
+	t.Parallel()
 	identicalContent := []byte("Duplicated payload across multiple files in the archive")
 	f0, _ := file.New("copy1.txt", false)
 	f1, _ := file.New("dir/copy2.txt", false)
@@ -144,6 +146,7 @@ func TestWim_Deduplication(t *testing.T) {
 }
 
 func TestWim_7Zip_CrossValidation(t *testing.T) {
+	t.Parallel()
 	sevenZipPath := `C:\Program Files\7-Zip\7z.exe`
 	if _, err := os.Stat(sevenZipPath); err != nil {
 		t.Skip("7-Zip not installed on host, skipping cross-validation")
@@ -177,7 +180,7 @@ func TestWim_7Zip_CrossValidation(t *testing.T) {
 	_ = fOut.Close()
 
 	// 1. Verify with 7-Zip test command
-	cmdTest := exec.Command(sevenZipPath, "t", wimPath)
+	cmdTest := exec.CommandContext(t.Context(), sevenZipPath, "t", wimPath)
 	out, err := cmdTest.CombinedOutput()
 	if err != nil {
 		t.Fatalf("7-Zip test command failed on Seal WIM:\n%s", string(out))
@@ -185,7 +188,7 @@ func TestWim_7Zip_CrossValidation(t *testing.T) {
 
 	// 2. Extract with 7-Zip
 	extractDir := filepath.Join(tempDir, "7z_extracted")
-	cmdExtract := exec.Command(sevenZipPath, "x", wimPath, "-o"+extractDir, "-y")
+	cmdExtract := exec.CommandContext(t.Context(), sevenZipPath, "x", wimPath, "-o"+extractDir, "-y")
 	out, err = cmdExtract.CombinedOutput()
 	if err != nil {
 		t.Fatalf("7-Zip extract failed on Seal WIM:\n%s", string(out))

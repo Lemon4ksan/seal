@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"fmt"
 	"os"
@@ -110,7 +111,7 @@ func runBench(modeName string, level, threads int, datasetDir, tempDir string, t
 	)
 
 	startSealCompress := time.Now()
-	if err := archiver.ArchiveDir(datasetDir, seal.ToFilePath(sealArchive)); err != nil {
+	if err := archiver.ArchiveDir(context.Background(), datasetDir, seal.ToFilePath(sealArchive)); err != nil {
 		panic(fmt.Sprintf("Seal ArchiveDir failed: %v", err))
 	}
 	sealCompressDuration := time.Since(startSealCompress)
@@ -151,7 +152,7 @@ func runBench(modeName string, level, threads int, datasetDir, tempDir string, t
 	// Execute Seal 7z extraction
 	sealExtractDir := filepath.Join(tempDir, fmt.Sprintf("seal_extract_lvl%d_%d", level, threads))
 	startSealDecompress := time.Now()
-	if err := seal.Unarchive(seal.FromFilePath(sealArchive), sealExtractDir); err != nil {
+	if err := seal.Unarchive(context.Background(), seal.FromFilePath(sealArchive), sealExtractDir); err != nil {
 		panic(fmt.Sprintf("Seal Unarchive failed: %v", err))
 	}
 	sealDecompressDuration := time.Since(startSealDecompress)

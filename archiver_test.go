@@ -15,6 +15,9 @@ import (
 )
 
 func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
 	tempDir := t.TempDir()
 	srcDir := filepath.Join(tempDir, "src")
 	destZip := filepath.Join(tempDir, "bundle.zip")
@@ -23,7 +26,6 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(srcDir, "nested"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-
 	if err := os.WriteFile(filepath.Join(srcDir, "hello.txt"), []byte("Hello Seal!"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -36,12 +38,12 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 	}
 
 	// Create initial archive
-	if err := seal.ArchiveDir(srcDir, seal.ToFilePath(destZip)); err != nil {
+	if err := seal.ArchiveDir(ctx, srcDir, seal.ToFilePath(destZip)); err != nil {
 		t.Fatalf("ArchiveDir failed: %v", err)
 	}
 
 	// Verify catalog metadata
-	count, err := seal.FileCount(seal.FromFilePath(destZip))
+	count, err := seal.FileCount(ctx, seal.FromFilePath(destZip))
 	if err != nil {
 		t.Fatalf("FileCount failed: %v", err)
 	}
@@ -49,13 +51,13 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 		t.Fatalf("expected at least 2 files, got %d", count)
 	}
 
-	exists, err := seal.ExistsIn(seal.FromFilePath(destZip), "hello.txt")
+	exists, err := seal.ExistsIn(ctx, seal.FromFilePath(destZip), "hello.txt")
 	if err != nil || !exists {
 		t.Fatalf("ExistsIn hello.txt failed: exists=%v, err=%v", exists, err)
 	}
 
 	// Stream payload without unpacking container
-	data, err := seal.ReadFile(seal.FromFilePath(destZip), "hello.txt")
+	data, err := seal.ReadFile(ctx, seal.FromFilePath(destZip), "hello.txt")
 	if err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
@@ -65,7 +67,7 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 
 	// Extract individual file entry
 	extractedSingle := filepath.Join(tempDir, "single_hello.txt")
-	if err := seal.ExtractFile(seal.FromFilePath(destZip), "hello.txt", extractedSingle); err != nil {
+	if err := seal.ExtractFile(ctx, seal.FromFilePath(destZip), "hello.txt", extractedSingle); err != nil {
 		t.Fatalf("ExtractFile failed: %v", err)
 	}
 	singleData, err := os.ReadFile(extractedSingle)
@@ -74,7 +76,7 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 	}
 
 	// Extract complete filesystem tree
-	if err := seal.Unarchive(seal.FromFilePath(destZip), outDir); err != nil {
+	if err := seal.Unarchive(ctx, seal.FromFilePath(destZip), outDir); err != nil {
 		t.Fatalf("Unarchive failed: %v", err)
 	}
 
@@ -87,18 +89,21 @@ func TestArchiver_ArchiveDirAndUnarchive_ZIP(t *testing.T) {
 	}
 
 	// Validate container checksums and structural integrity
-	if err := seal.Verify(seal.FromFilePath(destZip)); err != nil {
+	if err := seal.Verify(ctx, seal.FromFilePath(destZip)); err != nil {
 		t.Fatalf("Verify failed: %v", err)
 	}
 
 	// Generate ASCII directory visualization
-	tree, err := seal.Tree(seal.FromFilePath(destZip))
+	tree, err := seal.Tree(ctx, seal.FromFilePath(destZip))
 	if err != nil || tree == "" {
 		t.Fatalf("Tree failed: %v", err)
 	}
 }
 
 func TestArchiver_ArchiveDirAndUnarchive_TAR(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
 	tempDir := t.TempDir()
 	srcDir := filepath.Join(tempDir, "src_tar")
 	destTar := filepath.Join(tempDir, "bundle.tar")
@@ -112,11 +117,11 @@ func TestArchiver_ArchiveDirAndUnarchive_TAR(t *testing.T) {
 	}
 
 	archiver := seal.NewArchiver(option.WithContainer(container.Tar))
-	if err := archiver.ArchiveDir(srcDir, seal.ToFilePath(destTar)); err != nil {
+	if err := archiver.ArchiveDir(ctx, srcDir, seal.ToFilePath(destTar)); err != nil {
 		t.Fatalf("ArchiveDir (tar) failed: %v", err)
 	}
 
-	data, err := seal.ReadFile(seal.FromFilePath(destTar), "data.bin")
+	data, err := seal.ReadFile(ctx, seal.FromFilePath(destTar), "data.bin")
 	if err != nil {
 		t.Fatalf("ReadFile (tar) failed: %v", err)
 	}
@@ -124,7 +129,7 @@ func TestArchiver_ArchiveDirAndUnarchive_TAR(t *testing.T) {
 		t.Errorf("Tar content mismatch: got %q", string(data))
 	}
 
-	if err := seal.Unarchive(seal.FromFilePath(destTar), outDir); err != nil {
+	if err := seal.Unarchive(ctx, seal.FromFilePath(destTar), outDir); err != nil {
 		t.Fatalf("Unarchive (tar) failed: %v", err)
 	}
 
@@ -135,6 +140,9 @@ func TestArchiver_ArchiveDirAndUnarchive_TAR(t *testing.T) {
 }
 
 func TestArchiver_ArchiveDirAndUnarchive_TarGz(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
 	tempDir := t.TempDir()
 	srcDir := filepath.Join(tempDir, "src_tgz")
 	destTgz := filepath.Join(tempDir, "bundle.tar.gz")
@@ -152,11 +160,11 @@ func TestArchiver_ArchiveDirAndUnarchive_TarGz(t *testing.T) {
 	}
 
 	archiver := seal.NewArchiver(option.WithContainer(container.TarGz))
-	if err := archiver.ArchiveDir(srcDir, seal.ToFilePath(destTgz)); err != nil {
+	if err := archiver.ArchiveDir(ctx, srcDir, seal.ToFilePath(destTgz)); err != nil {
 		t.Fatalf("ArchiveDir (tar.gz) failed: %v", err)
 	}
 
-	data, err := seal.ReadFile(seal.FromFilePath(destTgz), "config.yaml")
+	data, err := seal.ReadFile(ctx, seal.FromFilePath(destTgz), "config.yaml")
 	if err != nil {
 		t.Fatalf("ReadFile (tar.gz) failed: %v", err)
 	}
@@ -164,7 +172,7 @@ func TestArchiver_ArchiveDirAndUnarchive_TarGz(t *testing.T) {
 		t.Errorf("Tar.gz content mismatch: got %q", string(data))
 	}
 
-	if err := seal.Unarchive(seal.FromFilePath(destTgz), outDir); err != nil {
+	if err := seal.Unarchive(ctx, seal.FromFilePath(destTgz), outDir); err != nil {
 		t.Fatalf("Unarchive (tar.gz) failed: %v", err)
 	}
 
@@ -175,6 +183,9 @@ func TestArchiver_ArchiveDirAndUnarchive_TarGz(t *testing.T) {
 }
 
 func TestArchiver_ArchiveDirAndUnarchive_SevenZip(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
 	tempDir := t.TempDir()
 	srcDir := filepath.Join(tempDir, "src_7z")
 	dest7z := filepath.Join(tempDir, "bundle.7z")
@@ -195,12 +206,12 @@ func TestArchiver_ArchiveDirAndUnarchive_SevenZip(t *testing.T) {
 	}
 
 	archiver := seal.NewArchiver(option.WithContainer(container.SevenZip))
-	if err := archiver.ArchiveDir(srcDir, seal.ToFilePath(dest7z)); err != nil {
+	if err := archiver.ArchiveDir(ctx, srcDir, seal.ToFilePath(dest7z)); err != nil {
 		t.Fatalf("ArchiveDir (7z) failed: %v", err)
 	}
 
 	// Verify direct file payload extraction using container format auto-detection
-	data, err := seal.ReadFile(seal.FromFilePath(dest7z), "hello.txt")
+	data, err := seal.ReadFile(ctx, seal.FromFilePath(dest7z), "hello.txt")
 	if err != nil {
 		t.Fatalf("ReadFile (7z) failed: %v", err)
 	}
@@ -209,7 +220,7 @@ func TestArchiver_ArchiveDirAndUnarchive_SevenZip(t *testing.T) {
 	}
 
 	// Verify recursive extraction of entire 7z directory hierarchy
-	if err := seal.Unarchive(seal.FromFilePath(dest7z), outDir); err != nil {
+	if err := seal.Unarchive(ctx, seal.FromFilePath(dest7z), outDir); err != nil {
 		t.Fatalf("Unarchive (7z) failed: %v", err)
 	}
 

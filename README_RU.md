@@ -42,19 +42,22 @@ go get github.com/lemon4ksan/seal
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/lemon4ksan/seal"
 )
 
 func main() {
+	ctx := context.Background()
+
 	// Упаковать директорию в оптимизированный ZIP (или .tar.gz)
-	if err := seal.ArchiveDir("./dist", seal.ToFilePath("release.zip")); err != nil {
+	if err := seal.ArchiveDir(ctx, "./dist", seal.ToFilePath("release.zip")); err != nil {
 		log.Fatal(err)
 	}
 
 	// Распаковать безопасно (защита Zip Slip активна по умолчанию)
-	if err := seal.Unarchive(seal.FromFilePath("release.zip"), "./output"); err != nil {
+	if err := seal.Unarchive(ctx, seal.FromFilePath("release.zip"), "./output"); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -63,17 +66,19 @@ func main() {
 ### 2. Повседневные операции
 
 ```go
+ctx := context.Background()
+
 // Автоматическое определение формата (.zip, .tar, .tar.gz) и распаковка
-_ = seal.Unarchive(seal.FromFilePath("bundle.tar.gz"), "./extracted")
+_ = seal.Unarchive(ctx, seal.FromFilePath("bundle.tar.gz"), "./extracted")
 
 // Чтение одного файла напрямую в память без распаковки всего архива
-data, err := seal.ReadFile(seal.FromFilePath("bundle.zip"), "configs/app.json")
+data, err := seal.ReadFile(ctx, seal.FromFilePath("bundle.zip"), "configs/app.json")
 
 // Проверка целостности CRC-32 по всем записям
-err = seal.Verify(seal.FromFilePath("bundle.zip"))
+err = seal.Verify(ctx, seal.FromFilePath("bundle.zip"))
 
 // Отрисовка дерева иерархии архива в виде ASCII
-tree, _ := seal.Tree(seal.FromFilePath("bundle.zip"))
+tree, _ := seal.Tree(ctx, seal.FromFilePath("bundle.zip"))
 fmt.Println(tree)
 ```
 
@@ -84,7 +89,7 @@ fmt.Println(tree)
 ```go
 // Создать виртуальный архив с шифрованием WinZip AES-256
 archive := seal.NewArchive(
-	seal.WithContainer(seal.FormatZip),
+	seal.WithContainer(container.Zip),
 	seal.WithCompression(seal.Deflate, 9),
 	seal.WithPassword("passphrase123"),
 	seal.WithSortStrategy(seal.SortNameAsc),
@@ -107,7 +112,7 @@ archive.Rename("meta/health.json", "status.json")
 file, err := archive.Open("status.json")
 
 // Стриминг сжатых данных напрямую в HTTP response или на диск
-_, err = archive.WriteTo(w)
+_, err = archive.WriteTo(ctx, w)
 ```
 
 ## ⚡ Производительность и бенчмарки

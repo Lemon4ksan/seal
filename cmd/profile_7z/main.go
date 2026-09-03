@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"fmt"
 	"os"
@@ -119,7 +120,7 @@ func main() {
 	// Run compression iterations to get deep profiling data
 	for iter := 0; iter < 5; iter++ {
 		_ = os.Remove(sealArchive)
-		if err := archiver.ArchiveDir(datasetDir, seal.ToFilePath(sealArchive)); err != nil {
+		if err := archiver.ArchiveDir(context.Background(), datasetDir, seal.ToFilePath(sealArchive)); err != nil {
 			panic(err)
 		}
 	}
@@ -141,7 +142,7 @@ func main() {
 	extractDir := filepath.Join(tempDir, "extracted")
 	for range 10 {
 		_ = os.RemoveAll(extractDir)
-		if err := seal.Unarchive(seal.FromFilePath(sealArchive), extractDir); err != nil {
+		if err := seal.Unarchive(context.Background(), seal.FromFilePath(sealArchive), extractDir); err != nil {
 			panic(err)
 		}
 	}

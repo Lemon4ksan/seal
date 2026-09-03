@@ -42,19 +42,22 @@ go get github.com/lemon4ksan/seal
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/lemon4ksan/seal"
 )
 
 func main() {
+	ctx := context.Background()
+
 	// Pack a directory into an optimized ZIP (or .tar.gz)
-	if err := seal.ArchiveDir("./dist", seal.ToFilePath("release.zip")); err != nil {
+	if err := seal.ArchiveDir(ctx, "./dist", seal.ToFilePath("release.zip")); err != nil {
 		log.Fatal(err)
 	}
 
 	// Extract safely (Zip Slip protection is active by default)
-	if err := seal.Unarchive(seal.FromFilePath("release.zip"), "./output"); err != nil {
+	if err := seal.Unarchive(ctx, seal.FromFilePath("release.zip"), "./output"); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -63,17 +66,19 @@ func main() {
 ### 2. Common Everyday Operations
 
 ```go
+ctx := context.Background()
+
 // Auto-detect format (.zip, .tar, .tar.gz) and extract
-_ = seal.Unarchive(seal.FromFilePath("bundle.tar.gz"), "./extracted")
+_ = seal.Unarchive(ctx, seal.FromFilePath("bundle.tar.gz"), "./extracted")
 
 // Read a single file directly into memory without unpacking the entire archive
-data, err := seal.ReadFile(seal.FromFilePath("bundle.zip"), "configs/app.json")
+data, err := seal.ReadFile(ctx, seal.FromFilePath("bundle.zip"), "configs/app.json")
 
 // Verify payload CRC-32 integrity across all entries
-err = seal.Verify(seal.FromFilePath("bundle.zip"))
+err = seal.Verify(ctx, seal.FromFilePath("bundle.zip"))
 
 // Render an ASCII hierarchy tree of the archive
-tree, _ := seal.Tree(seal.FromFilePath("bundle.zip"))
+tree, _ := seal.Tree(ctx, seal.FromFilePath("bundle.zip"))
 fmt.Println(tree)
 ```
 
@@ -84,7 +89,7 @@ Construct, mutate, encrypt, and stream archives in RAM without touching the disk
 ```go
 // Create a virtual archive with WinZip AES-256 encryption
 archive := seal.NewArchive(
-	seal.WithContainer(seal.FormatZip),
+	seal.WithContainer(container.Zip),
 	seal.WithCompression(seal.Deflate, 9),
 	seal.WithPassword("passphrase123"),
 	seal.WithSortStrategy(seal.SortNameAsc),
@@ -107,7 +112,7 @@ archive.Rename("meta/health.json", "status.json")
 file, err := archive.Open("status.json")
 
 // Stream compressed output directly to HTTP response or disk
-_, err = archive.WriteTo(w)
+_, err = archive.WriteTo(ctx, w)
 ```
 
 ## ⚡ Performance & Benchmarks

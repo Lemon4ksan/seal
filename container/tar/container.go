@@ -7,6 +7,7 @@ package tar
 import (
 	"bytes"
 	"compress/bzip2"
+	"encoding/base64"
 	"errors"
 	"io"
 	"strings"
@@ -88,6 +89,7 @@ func (e *Engine) ScanStream(
 
 	tr := NewReader(rawReader)
 	var files []*file.File
+	var extData string
 
 	for {
 		h, payloadR, err := tr.Next()
@@ -96,6 +98,12 @@ func (e *Engine) ScanStream(
 		}
 		if err != nil {
 			return nil, "", err
+		}
+
+		if ext, ok := h.PAXRecords["SEAL.EXT"]; ok && extData == "" {
+			if raw, err := base64.StdEncoding.DecodeString(ext); err == nil {
+				extData = string(raw)
+			}
 		}
 
 		cleanName := vfs.CleanPath(h.Name)
@@ -123,7 +131,7 @@ func (e *Engine) ScanStream(
 		files = append(files, f)
 	}
 
-	return files, "", nil
+	return files, extData, nil
 }
 
 // WriteArchive serializes the entries into dest and returns the total bytes written.
@@ -207,7 +215,7 @@ func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 }
 
 func writeEntries(tw *Writer, files []*file.File, cfg container.Config) error {
-	for _, entry := range files {
+	for i, entry := range files {
 		cleanName := vfs.CleanPath(entry.Name())
 		typeFlag := TypeReg
 		if entry.IsDir() {
@@ -223,6 +231,13 @@ func writeEntries(tw *Writer, files []*file.File, cfg container.Config) error {
 			Mode:     entry.Mode(),
 			ModTime:  entry.ModTime(),
 			Typeflag: typeFlag,
+		}
+
+		if i == 0 && len(cfg.ExtensionData) > 0 {
+			if h.PAXRecords == nil {
+				h.PAXRecords = make(map[string]string)
+			}
+			h.PAXRecords["SEAL.EXT"] = base64.StdEncoding.EncodeToString(cfg.ExtensionData)
 		}
 
 		if err := tw.WriteHeader(h); err != nil {

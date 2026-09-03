@@ -25,7 +25,7 @@ func (c *ListCmd) Aliases() []string { return []string{"l", "ls"} }
 func (c *ListCmd) Synopsis() string  { return "List all entries and metadata in an archive" }
 func (c *ListCmd) Usage() string     { return "seal list [flags] <archive-path>" }
 
-func (c *ListCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) error {
+func (c *ListCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	pwd := fs.String("p", "", "Decryption password")
 
@@ -39,7 +39,7 @@ func (c *ListCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) err
 	archivePath := posArgs[0]
 
 	archiver := seal.NewArchiver(seal.WithPassword(*pwd))
-	entries, err := archiver.GetEntries(seal.FromFilePath(archivePath))
+	entries, err := archiver.GetEntries(ctx, seal.FromFilePath(archivePath))
 	if err != nil {
 		return err
 	}

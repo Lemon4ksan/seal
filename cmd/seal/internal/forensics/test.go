@@ -25,7 +25,7 @@ func (c *TestCmd) Aliases() []string { return []string{"t"} }
 func (c *TestCmd) Synopsis() string  { return "Verify checksum and decompression integrity" }
 func (c *TestCmd) Usage() string     { return "seal test [flags] <archive-path>" }
 
-func (c *TestCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) error {
+func (c *TestCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	pwd := fs.String("p", "", "Decryption password")
 
@@ -42,7 +42,7 @@ func (c *TestCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) err
 	start := time.Now()
 
 	archiver := seal.NewArchiver(seal.WithPassword(*pwd))
-	err = archiver.Verify(seal.FromFilePath(archivePath), seal.WithPassword(*pwd))
+	err = archiver.Verify(ctx, seal.FromFilePath(archivePath), seal.WithPassword(*pwd))
 	if err != nil {
 		return fmt.Errorf("integrity verification failed: %w", err)
 	}

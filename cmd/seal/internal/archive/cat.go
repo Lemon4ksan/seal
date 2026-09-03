@@ -23,7 +23,7 @@ func (c *CatCmd) Aliases() []string { return nil }
 func (c *CatCmd) Synopsis() string  { return "Stream a specific file entry directly to stdout" }
 func (c *CatCmd) Usage() string     { return "seal cat [flags] <archive-path> <entry-path>" }
 
-func (c *CatCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) error {
+func (c *CatCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	fs := flag.NewFlagSet("cat", flag.ContinueOnError)
 	pwd := fs.String("p", "", "Decryption password")
 
@@ -38,7 +38,7 @@ func (c *CatCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) erro
 	targetEntry := posArgs[1]
 
 	archiver := seal.NewArchiver(seal.WithPassword(*pwd))
-	data, err := archiver.ReadFile(seal.FromFilePath(archivePath), targetEntry)
+	data, err := archiver.ReadFile(ctx, seal.FromFilePath(archivePath), targetEntry)
 	if err != nil {
 		return err
 	}

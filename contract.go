@@ -5,6 +5,7 @@
 package seal
 
 import (
+	"errors"
 	"io"
 
 	"github.com/lemon4ksan/seal/archive"
@@ -22,9 +23,6 @@ import (
 type (
 	// Archive represents an in-memory mutable archive builder and manager.
 	Archive = archive.Archive
-
-	// Zip is an alias for [Archive] providing a seamless transition for zip-focused workflows.
-	Zip = Archive
 
 	// File represents a single canonical, lock-free file or directory record across all containers.
 	File = file.File
@@ -56,23 +54,17 @@ type (
 	// Option represents a composable configuration option.
 	Option = option.Option
 
-	// ArchiveOption aliases [Option] for configuring archive managers and Archiver engines.
-	ArchiveOption = option.Option
-
 	// Iterator provides cursor-based traversal over archive files.
 	Iterator = archive.Iterator
-
-	// FileOption aliases [Option] for configuring individual file entries.
-	FileOption = option.Option
-
-	// ZipOption aliases [Option] for configuring archive serialization, extraction, and filtering.
-	ZipOption = option.Option
 
 	// Filter evaluates inclusion or exclusion of archive entries.
 	Filter = option.Filter
 
 	// ProgressFunc reports real-time transfer progress for archive I/O.
 	ProgressFunc = option.ProgressFunc
+
+	// ProgressStats delivers real-time throughput telemetry during archive operations.
+	ProgressStats = option.ProgressStats
 
 	// SecuritySettings configures decompression bomb defenses and traversal guards.
 	SecuritySettings = option.SecuritySettings
@@ -91,15 +83,6 @@ type (
 		Create() (io.Writer, error)
 		Close() error
 	}
-)
-
-// Container format constants.
-const (
-	FormatZip      = container.Zip
-	FormatTar      = container.Tar
-	FormatTarGz    = container.TarGz
-	FormatSevenZip = container.SevenZip
-	Format7z       = container.SevenZip
 )
 
 // Encryption algorithm constants.
@@ -137,3 +120,13 @@ const (
 	SortSizeAsc  = archive.SortSizeAsc
 	SortSizeDesc = archive.SortSizeDesc
 )
+
+// Exported sentinel domain errors.
+var (
+	ErrSignatureInvalid   = errors.New("seal: cryptographic signature verification failed")
+	ErrSignatureNotFound  = errors.New("seal: no embedded signature found in archive")
+	ErrProvenanceNotFound = errors.New("seal: no build provenance found in archive")
+	ErrInvalidPassword    = errors.New("seal: incorrect or missing archive password")
+	ErrEntryNotFound      = errors.New("seal: file entry not found in archive")
+)
+

@@ -109,11 +109,22 @@ func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 		lzmaOpts = lzma.OptionsForLevel(lzma.Level(cfg.DefaultLevel))
 	}
 
+	cpData := cfg.CheckpointData
+	if len(cfg.ExtensionData) > 0 {
+		cpData = cfg.ExtensionData
+	}
+
 	wOpts := WriterOptions{
 		LZMA:           lzmaOpts,
 		Method:         MethodLZMA2Default,
 		Password:       cfg.Password,
 		EncryptHeaders: cfg.Password != "",
+		CheckpointData: cpData,
+		Context:        cfg.Context,
+		Resumable:      cfg.Resumable,
+		SessionID:      cfg.SessionID,
+		SourceDir:      cfg.SourceDir,
+		OnFileDone:     cfg.OnFileDone,
 	}
 
 	if cfg.DefaultMethod == codec.PPMd {
