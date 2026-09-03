@@ -66,6 +66,9 @@ const (
 
 	// Cpio represents the CPIO archive container (.cpio).
 	Cpio Type = "cpio"
+
+	// Ar represents the Unix AR archive and Debian package container (.ar, .deb, .a).
+	Ar Type = "ar"
 )
 
 // String returns the string representation of the container type.
@@ -177,6 +180,8 @@ func DetectExtension(filename string) Type {
 		return Iso
 	case strings.HasSuffix(lower, ".cpio"):
 		return Cpio
+	case strings.HasSuffix(lower, ".ar"), strings.HasSuffix(lower, ".deb"), strings.HasSuffix(lower, ".a"):
+		return Ar
 	default:
 		ext := filepath.Ext(lower)
 		if ext != "" {
@@ -268,6 +273,11 @@ func SniffHeader(header []byte) Type {
 		if (header[0] == 0xC7 && header[1] == 0x71) || (header[0] == 0x71 && header[1] == 0xC7) {
 			return Cpio
 		}
+	}
+
+	// AR container (!<arch>\n)
+	if len(header) >= 8 && string(header[:8]) == "!<arch>\n" {
+		return Ar
 	}
 
 	return Unknown
