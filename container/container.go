@@ -60,6 +60,9 @@ const (
 
 	// Cab represents the Microsoft Cabinet archive container (.cab).
 	Cab Type = "cab"
+
+	// Iso represents the ISO 9660 / Joliet optical disc image container (.iso, .img).
+	Iso Type = "iso"
 )
 
 // String returns the string representation of the container type.
@@ -167,6 +170,8 @@ func DetectExtension(filename string) Type {
 		return Rar
 	case strings.HasSuffix(lower, ".cab"):
 		return Cab
+	case strings.HasSuffix(lower, ".iso"), strings.HasSuffix(lower, ".img"):
+		return Iso
 	default:
 		ext := filepath.Ext(lower)
 		if ext != "" {
@@ -242,6 +247,11 @@ func SniffHeader(header []byte) Type {
 	// CAB container (MSCF)
 	if len(header) >= 4 && header[0] == 'M' && header[1] == 'S' && header[2] == 'C' && header[3] == 'F' {
 		return Cab
+	}
+
+	// ISO 9660 container (CD001 at offset 32769)
+	if len(header) >= 32774 && string(header[32769:32774]) == "CD001" {
+		return Iso
 	}
 
 	return Unknown
