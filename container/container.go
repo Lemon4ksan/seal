@@ -57,6 +57,9 @@ const (
 
 	// Rar represents the RAR archive container (.rar).
 	Rar Type = "rar"
+
+	// Cab represents the Microsoft Cabinet archive container (.cab).
+	Cab Type = "cab"
 )
 
 // String returns the string representation of the container type.
@@ -162,6 +165,8 @@ func DetectExtension(filename string) Type {
 		return Wim
 	case strings.HasSuffix(lower, ".rar"):
 		return Rar
+	case strings.HasSuffix(lower, ".cab"):
+		return Cab
 	default:
 		ext := filepath.Ext(lower)
 		if ext != "" {
@@ -232,6 +237,11 @@ func SniffHeader(header []byte) Type {
 	// TAR container (check "ustar" at offset 257)
 	if len(header) >= 262 && string(header[257:262]) == "ustar" {
 		return Tar
+	}
+
+	// CAB container (MSCF)
+	if len(header) >= 4 && header[0] == 'M' && header[1] == 'S' && header[2] == 'C' && header[3] == 'F' {
+		return Cab
 	}
 
 	return Unknown
