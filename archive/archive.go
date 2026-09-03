@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lemon4ksan/foundation/fskit"
 	"github.com/lemon4ksan/foundation/pathkit"
 
 	"github.com/lemon4ksan/seal/checkpoint"
@@ -258,7 +259,7 @@ func (a *Archive) AddDir(dirPath string, opts ...option.Option) ([]*file.File, e
 	var added []*file.File
 	cleanRoot := pathkit.FromFilePath(dirPath).FilePath()
 
-	err := filepath.WalkDir(cleanRoot, func(currentPath string, d fs.DirEntry, err error) error {
+	err := fskit.FastWalk(cleanRoot, func(currentPath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
