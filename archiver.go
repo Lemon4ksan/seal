@@ -755,7 +755,7 @@ func VerifySignature(ctx context.Context, archivePath string, pubKey ed25519.Pub
 	}
 
 	if err := st.Verify(pubKey, info); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrSignatureInvalid, err)
+		return nil, fmt.Errorf("%w: %w", ErrSignatureInvalid, err)
 	}
 
 	return st, nil
@@ -773,4 +773,3 @@ func InspectProvenance(ctx context.Context, archivePath string) (*provenance.Inf
 
 	return provenance.DecodeInfo(data)
 }
-

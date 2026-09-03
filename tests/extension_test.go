@@ -182,4 +182,3 @@ func TestExtension_FirstParty_SignatureAndProvenance(t *testing.T) {
 		t.Fatalf("Provenance mismatch: got %+v", provInfo)
 	}
 }
-

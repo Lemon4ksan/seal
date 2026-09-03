@@ -8,10 +8,10 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/lemon4ksan/seal/codec/bcj"
-	"github.com/lemon4ksan/seal/codec/brotli"
-	"github.com/lemon4ksan/seal/codec/gzip"
-	"github.com/lemon4ksan/seal/codec/lzma"
+	"github.com/lemon4ksan/foundation/codec/compress/brotli"
+	"github.com/lemon4ksan/foundation/codec/compress/gzip"
+	"github.com/lemon4ksan/foundation/codec/compress/lzma"
+	"github.com/lemon4ksan/foundation/codec/filter/bcj"
 	"github.com/lemon4ksan/seal/codec/ppmd"
 )
 

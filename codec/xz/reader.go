@@ -12,8 +12,8 @@ import (
 	"hash/crc32"
 	"io"
 
-	"github.com/lemon4ksan/seal/codec/bcj"
-	"github.com/lemon4ksan/seal/codec/lzma"
+	"github.com/lemon4ksan/foundation/codec/compress/lzma"
+	"github.com/lemon4ksan/foundation/codec/filter/bcj"
 )
 
 // Reader implements an XZ stream decompressor.

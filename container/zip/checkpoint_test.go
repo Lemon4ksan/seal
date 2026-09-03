@@ -17,7 +17,9 @@ import (
 
 func TestZip_StealthCheckpoint_Roundtrip(t *testing.T) {
 	t.Parallel()
-	checkpointPayload := []byte(`{"magic":"SEAL_CHECKPOINT_V1","session_id":"zip-sess-777","done_files":1,"total_files":2}`)
+	checkpointPayload := []byte(
+		`{"magic":"SEAL_CHECKPOINT_V1","session_id":"zip-sess-777","done_files":1,"total_files":2}`,
+	)
 
 	f1, err := file.New("notes.txt", false)
 	if err != nil {

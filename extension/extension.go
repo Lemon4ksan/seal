@@ -33,7 +33,7 @@ const (
 
 // Common errors.
 var (
-	ErrCorruptedBundle = errors.New("extension: corrupted extension bundle payload")
+	ErrCorruptedBundle   = errors.New("extension: corrupted extension bundle payload")
 	ErrExtensionNotFound = errors.New("extension: requested extension not found in archive")
 )
 

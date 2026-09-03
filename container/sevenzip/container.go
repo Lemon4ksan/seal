@@ -9,8 +9,8 @@ import (
 	"errors"
 	"io"
 
+	"github.com/lemon4ksan/foundation/codec/compress/lzma"
 	"github.com/lemon4ksan/seal/codec"
-	"github.com/lemon4ksan/seal/codec/lzma"
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/file"
 )

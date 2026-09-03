@@ -69,6 +69,9 @@ const (
 
 	// Ar represents the Unix AR archive and Debian package container (.ar, .deb, .a).
 	Ar Type = "ar"
+
+	// Eon represents the EON container format (.eon).
+	Eon Type = "eon"
 )
 
 // String returns the string representation of the container type.
@@ -182,6 +185,8 @@ func DetectExtension(filename string) Type {
 		return Cpio
 	case strings.HasSuffix(lower, ".ar"), strings.HasSuffix(lower, ".deb"), strings.HasSuffix(lower, ".a"):
 		return Ar
+	case strings.HasSuffix(lower, ".eon"):
+		return Eon
 	default:
 		ext := filepath.Ext(lower)
 		if ext != "" {
@@ -195,6 +200,11 @@ func DetectExtension(filename string) Type {
 func SniffHeader(header []byte) Type {
 	if len(header) < 2 {
 		return Unknown
+	}
+
+	// EON container (EON!)
+	if len(header) >= 4 && header[0] == 'E' && header[1] == 'O' && header[2] == 'N' && header[3] == '!' {
+		return Eon
 	}
 
 	// GZIP container (.tar.gz, .tgz, .gz)

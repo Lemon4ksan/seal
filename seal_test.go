@@ -177,3 +177,55 @@ func TestArchive_SevenZip_BasicOperations(t *testing.T) {
 		t.Errorf("f2 content mismatch: got %q", string(b))
 	}
 }
+
+func TestArchive_EONRoundtrip(t *testing.T) {
+	t.Parallel()
+	arc := seal.NewEon()
+
+	arc.AddString("Hello from EON container!", "hello.txt")
+	arc.AddBytes([]byte("EON Universal Extent Payload 42"), "nested/test.bin")
+
+	buf := new(bytes.Buffer)
+	written, err := arc.WriteTo(t.Context(), buf)
+	if err != nil {
+		t.Fatalf("EON WriteTo failed: %v", err)
+	}
+	if written <= 0 {
+		t.Fatalf("expected positive written bytes, got %d", written)
+	}
+
+	raw := buf.Bytes()
+	fresh := seal.NewEon()
+	loaded, err := fresh.Load(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		t.Fatalf("EON Load failed: %v", err)
+	}
+	if len(loaded) != 2 {
+		t.Fatalf("expected 2 loaded entries, got %d", len(loaded))
+	}
+
+	f1, ok := fresh.File("hello.txt")
+	if !ok {
+		t.Fatal("hello.txt not found in loaded EON")
+	}
+	s, err := f1.String()
+	if err != nil {
+		t.Fatalf("f1.String failed: %v", err)
+	}
+	if s != "Hello from EON container!" {
+		t.Errorf("content mismatch: got %q", s)
+	}
+
+	f2, ok := fresh.File("nested/test.bin")
+	if !ok {
+		t.Fatal("nested/test.bin not found in loaded EON")
+	}
+	b, err := f2.Bytes()
+	if err != nil {
+		t.Fatalf("f2.Bytes failed: %v", err)
+	}
+	if string(b) != "EON Universal Extent Payload 42" {
+		t.Errorf("content mismatch: got %q", string(b))
+	}
+}
+

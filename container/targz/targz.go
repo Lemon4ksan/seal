@@ -8,7 +8,7 @@ package targz
 import (
 	"io"
 
-	"github.com/lemon4ksan/seal/codec/gzip"
+	"github.com/lemon4ksan/foundation/codec/compress/gzip"
 	"github.com/lemon4ksan/seal/container/tar"
 )
 

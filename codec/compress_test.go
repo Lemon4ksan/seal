@@ -15,9 +15,9 @@ import (
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
 
+	"github.com/lemon4ksan/foundation/codec/compress/flate"
+	"github.com/lemon4ksan/foundation/codec/compress/gzip"
 	"github.com/lemon4ksan/seal/codec"
-	"github.com/lemon4ksan/seal/codec/flate"
-	"github.com/lemon4ksan/seal/codec/gzip"
 )
 
 func createGzipData(t testing.TB, payload []byte) []byte {

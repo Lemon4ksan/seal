@@ -7,7 +7,7 @@ package codec
 import (
 	"io"
 
-	"github.com/lemon4ksan/seal/codec/lzma"
+	"github.com/lemon4ksan/foundation/codec/compress/lzma"
 )
 
 // LZMACompressor implements LZMA1 compression.

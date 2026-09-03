@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/seal/codec/lzma"
+	"github.com/lemon4ksan/foundation/codec/compress/lzma"
 	"github.com/lemon4ksan/seal/file"
 )
 

@@ -209,4 +209,3 @@ func WithCheckpointData(data []byte) Option {
 func WithExtension(exts ...extension.Extension) Option {
 	return Option{Kind: OptExtension, Extensions: exts}
 }
-

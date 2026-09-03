@@ -28,9 +28,9 @@ const (
 
 // Common signature errors.
 var (
-	ErrInvalidKey       = errors.New("signature: invalid or missing Ed25519 key")
-	ErrSignatureFailed  = errors.New("signature: digital signature verification failed")
-	ErrHashMismatch     = errors.New("signature: archive content hash mismatch (tampered archive)")
+	ErrInvalidKey         = errors.New("signature: invalid or missing Ed25519 key")
+	ErrSignatureFailed    = errors.New("signature: digital signature verification failed")
+	ErrHashMismatch       = errors.New("signature: archive content hash mismatch (tampered archive)")
 	ErrUnsupportedVersion = errors.New("signature: unsupported signature version")
 )
 
@@ -152,7 +152,7 @@ func formatSignatureMessage(info extension.ArchiveInfo, contentHash []byte) []by
 	var buf bytes.Buffer
 	buf.WriteString("SEAL-ED25519-V1:")
 	buf.WriteString(string(info.Format))
-	buf.WriteString(fmt.Sprintf(":%d:", info.TotalFiles))
+	fmt.Fprintf(&buf, ":%d:", info.TotalFiles)
 	buf.Write(contentHash)
 	return buf.Bytes()
 }

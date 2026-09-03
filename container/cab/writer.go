@@ -185,8 +185,8 @@ func (w *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64, 
 	binary.LittleEndian.PutUint32(cfHdr[12:16], 0) // Reserved2
 	binary.LittleEndian.PutUint32(cfHdr[16:20], coffFiles)
 	binary.LittleEndian.PutUint32(cfHdr[20:24], 0) // Reserved3
-	cfHdr[24] = 3                                 // VersionMinor
-	cfHdr[25] = 1                                 // VersionMajor
+	cfHdr[24] = 3                                  // VersionMinor
+	cfHdr[25] = 1                                  // VersionMajor
 	binary.LittleEndian.PutUint16(cfHdr[26:28], 1) // CFolders
 	binary.LittleEndian.PutUint16(cfHdr[28:30], uint16(len(records)))
 	binary.LittleEndian.PutUint16(cfHdr[30:32], 0) // Flags

@@ -129,4 +129,3 @@ var (
 	ErrInvalidPassword    = errors.New("seal: incorrect or missing archive password")
 	ErrEntryNotFound      = errors.New("seal: file entry not found in archive")
 )
-

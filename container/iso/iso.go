@@ -30,24 +30,24 @@ const (
 
 // Volume descriptor types.
 const (
-	VDTypeBootRecord                  uint8 = 0x00
-	VDTypePrimaryVolumeDescriptor     uint8 = 0x01
+	VDTypeBootRecord                    uint8 = 0x00
+	VDTypePrimaryVolumeDescriptor       uint8 = 0x01
 	VDTypeSupplementaryVolumeDescriptor uint8 = 0x02
-	VDTypeVolumePartitionDescriptor   uint8 = 0x03
+	VDTypeVolumePartitionDescriptor     uint8 = 0x03
 	VDTypeVolumeDescriptorSetTerminator uint8 = 0xFF
 )
 
 // File flags in directory records.
 const (
-	FileFlagHidden    uint8 = 0x01
-	FileFlagDirectory uint8 = 0x02
+	FileFlagHidden     uint8 = 0x01
+	FileFlagDirectory  uint8 = 0x02
 	FileFlagAssociated uint8 = 0x04
 )
 
 // Common ISO errors.
 var (
-	ErrInvalidISO       = errors.New("iso: not a valid ISO 9660 disc image")
-	ErrCorruptedVolume  = errors.New("iso: corrupted volume descriptor table")
+	ErrInvalidISO         = errors.New("iso: not a valid ISO 9660 disc image")
+	ErrCorruptedVolume    = errors.New("iso: corrupted volume descriptor table")
 	ErrCorruptedDirectory = errors.New("iso: corrupted directory record")
 )
 
@@ -114,13 +114,14 @@ func ParseDirectoryRecord(b []byte, isJoliet bool) (*DirectoryRecord, int, error
 	}
 
 	rawName := b[33 : 33+nameLen]
-	if nameLen == 1 && rawName[0] == 0 {
+	switch {
+	case nameLen == 1 && rawName[0] == 0:
 		dr.Name = "."
-	} else if nameLen == 1 && rawName[0] == 1 {
+	case nameLen == 1 && rawName[0] == 1:
 		dr.Name = ".."
-	} else if isJoliet {
+	case isJoliet:
 		dr.Name = DecodeUTF16BE(rawName)
-	} else {
+	default:
 		dr.Name = string(rawName)
 	}
 

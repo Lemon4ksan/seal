@@ -17,7 +17,7 @@ func TestBundle_Roundtrip(t *testing.T) {
 	entries := map[extension.ID][]byte{
 		"seal.signature": []byte("ED25519-SIGNATURE-BYTES-12345"),
 		"acme.license":   []byte(`{"user":"Alice","tier":"enterprise"}`),
-		"test.raw":       []byte{0x00, 0xFF, 0x42, 0x13, 0x37},
+		"test.raw":       {0x00, 0xFF, 0x42, 0x13, 0x37},
 	}
 
 	encoded := extension.EncodeBundle(entries)

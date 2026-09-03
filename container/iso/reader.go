@@ -15,13 +15,13 @@ import (
 
 // Reader provides random-access inspection and file extraction for ISO 9660 and Joliet disc images.
 type Reader struct {
-	rAt       io.ReaderAt
-	size      int64
-	volID     string
-	isJoliet  bool
-	entries   []*file.File
-	rootExt   uint32
-	rootLen   uint32
+	rAt      io.ReaderAt
+	size     int64
+	volID    string
+	isJoliet bool
+	entries  []*file.File
+	rootExt  uint32
+	rootLen  uint32
 }
 
 // NewReader opens an ISO 9660 / Joliet disc image from an io.ReaderAt and parses its directory tree.
@@ -141,10 +141,7 @@ func (r *Reader) scanDirectory(extentLBA, dataLength uint32, parentPath string) 
 
 	// Directory records cannot cross 2048-byte sector boundaries
 	for secStart := 0; secStart < len(data); secStart += SectorSize {
-		secEnd := secStart + SectorSize
-		if secEnd > len(data) {
-			secEnd = len(data)
-		}
+		secEnd := min(secStart+SectorSize, len(data))
 		secData := data[secStart:secEnd]
 		pos := 0
 

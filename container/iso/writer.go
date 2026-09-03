@@ -234,7 +234,7 @@ func (w *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64, 
 	return totalBytes, nil
 }
 
-func buildPVD(b []byte, totalSectors, rootLBA uint32, rootSize uint32) {
+func buildPVD(b []byte, totalSectors, rootLBA, rootSize uint32) {
 	b[0] = VDTypePrimaryVolumeDescriptor
 	copy(b[1:6], StandardIdentifier)
 	b[6] = 0x01
@@ -249,7 +249,7 @@ func buildPVD(b []byte, totalSectors, rootLBA uint32, rootSize uint32) {
 	buildDirRecord(b[156:190], rootLBA, rootSize, time.Now(), true, []byte{0})
 }
 
-func buildJolietSVD(b []byte, totalSectors, rootLBA uint32, rootSize uint32) {
+func buildJolietSVD(b []byte, totalSectors, rootLBA, rootSize uint32) {
 	b[0] = VDTypeSupplementaryVolumeDescriptor
 	copy(b[1:6], StandardIdentifier)
 	b[6] = 0x01

@@ -14,7 +14,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/borrow"
 
-	"github.com/lemon4ksan/seal/codec/zstd"
+	"github.com/lemon4ksan/foundation/codec/compress/zstd"
 )
 
 // UnzstdDCZ decompresses a Dictionary-Compressed Zstandard payload (RFC 9842 §5)

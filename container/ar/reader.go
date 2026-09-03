@@ -93,7 +93,8 @@ func (ar *Reader) Next() (*Header, []byte, error) {
 		fileName := rawName
 
 		// 3. GNU long name lookup (e.g. "/12")
-		if strings.HasPrefix(rawName, "/") && len(rawName) > 1 && rawName[1] >= '0' && rawName[1] <= '9' {
+		switch {
+		case strings.HasPrefix(rawName, "/") && len(rawName) > 1 && rawName[1] >= '0' && rawName[1] <= '9':
 			off, err := strconv.Atoi(rawName[1:])
 			if err == nil && ar.stringTable != nil && off < len(ar.stringTable) {
 				sub := ar.stringTable[off:]
@@ -104,7 +105,7 @@ func (ar *Reader) Next() (*Header, []byte, error) {
 					fileName = string(sub)
 				}
 			}
-		} else if strings.HasPrefix(rawName, "#1/") {
+		case strings.HasPrefix(rawName, "#1/"):
 			// 4. BSD extended name (#1/<length>)
 			nameLen, err := strconv.Atoi(rawName[3:])
 			if err == nil && int64(nameLen) <= size {
@@ -115,7 +116,7 @@ func (ar *Reader) Next() (*Header, []byte, error) {
 				fileName = strings.TrimRight(string(nameBuf), "\x00")
 				size -= int64(nameLen)
 			}
-		} else {
+		default:
 			// 5. Standard GNU name (slash-terminated)
 			fileName = strings.TrimSuffix(rawName, "/")
 		}

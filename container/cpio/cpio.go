@@ -48,20 +48,20 @@ var (
 
 // Header represents a parsed CPIO file entry header.
 type Header struct {
-	Magic      string
-	Ino        uint64
-	Mode       uint32
-	UID        uint64
-	GID        uint64
-	NLink      uint64
-	MTime      time.Time
-	FileSize   int64
-	DevMajor   uint64
-	DevMinor   uint64
-	RDevMajor  uint64
-	RDevMinor  uint64
-	Name       string
-	Checksum   uint32
+	Magic     string
+	Ino       uint64
+	Mode      uint32
+	UID       uint64
+	GID       uint64
+	NLink     uint64
+	MTime     time.Time
+	FileSize  int64
+	DevMajor  uint64
+	DevMinor  uint64
+	RDevMajor uint64
+	RDevMinor uint64
+	Name      string
+	Checksum  uint32
 }
 
 // IsDir returns true if the mode represents a directory.

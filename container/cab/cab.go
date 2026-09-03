@@ -124,7 +124,7 @@ type FileEntry struct {
 
 // ModTime converts MS-DOS date and time words to [time.Time].
 func (e *FileEntry) ModTime() time.Time {
-	year := int((e.Date >> 9) & 0x7F) + 1980
+	year := int((e.Date>>9)&0x7F) + 1980
 	month := time.Month((e.Date >> 5) & 0x0F)
 	day := int(e.Date & 0x1F)
 

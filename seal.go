@@ -9,6 +9,7 @@ import (
 
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/container/eon"
 	"github.com/lemon4ksan/seal/container/rar"
 	"github.com/lemon4ksan/seal/container/sevenzip"
 	"github.com/lemon4ksan/seal/container/tar"
@@ -29,6 +30,8 @@ var ErrArchiveFrozen = container.ErrArchiveFrozen
 // DefaultContainer resolves standard built-in container engines by type without global state.
 func DefaultContainer(t ContainerType) (Container, error) {
 	switch t {
+	case container.Eon:
+		return eon.New(), nil
 	case container.Zip:
 		return zip.New(), nil
 	case container.Tar:
@@ -105,6 +108,11 @@ func NewTarZst(opts ...Option) *Archive {
 // New7z constructs a new [Archive] configured specifically for the 7-Zip container.
 func New7z(opts ...Option) *Archive {
 	return NewArchive(append([]Option{archive.WithContainer(sevenzip.New())}, opts...)...)
+}
+
+// NewEon constructs a new [Archive] configured specifically for the EON container (.eon).
+func NewEon(opts ...Option) *Archive {
+	return NewArchive(append([]Option{archive.WithContainer(eon.New())}, opts...)...)
 }
 
 // NewFile constructs a standalone [File] entry.
