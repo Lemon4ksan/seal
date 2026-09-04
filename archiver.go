@@ -18,6 +18,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/lemon4ksan/foundation/generic"
+	"github.com/lemon4ksan/foundation/vfs"
+
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/checkpoint"
 	"github.com/lemon4ksan/seal/container"
@@ -29,7 +32,6 @@ import (
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/internal/pool"
 	"github.com/lemon4ksan/seal/option"
-	"github.com/lemon4ksan/seal/vfs"
 )
 
 type processConfig struct {
@@ -181,9 +183,7 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 		var taskCounter atomic.Int64
 
 		for w := 0; w < numWorkers; w++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for {
 					if err := ctx.Err(); err != nil {
 						errMu.Lock()
@@ -250,10 +250,7 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 						continue
 					}
 
-					mode := f.Mode()
-					if mode == 0 {
-						mode = 0o644
-					}
+					mode := generic.Coalesce(f.Mode(), 0o644)
 					out, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode.Perm())
 					if err != nil {
 						_ = rc.Close()
@@ -298,7 +295,7 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 						procCfg.onDone(f.Name(), copyErr)
 					}
 				}
-			}()
+			})
 		}
 
 		wg.Wait()
