@@ -7,10 +7,12 @@ package rar_test
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"hash/crc32"
 	"io"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/container/rar"
@@ -76,28 +78,20 @@ func createTestRAR4Archive(filename string, content []byte) []byte {
 func TestRAR_SniffHeader(t *testing.T) {
 	// Test RAR4 magic
 	rar4Magic := []byte{0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00}
-	if tpe := container.SniffHeader(rar4Magic); tpe != container.Rar {
-		t.Fatalf("SniffHeader for RAR4: got %v, want %v", tpe, container.Rar)
-	}
+	assert.Equal(t, container.Rar, container.SniffHeader(rar4Magic))
 
 	// Test RAR5 magic
 	rar5Magic := []byte{0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00}
-	if tpe := container.SniffHeader(rar5Magic); tpe != container.Rar {
-		t.Fatalf("SniffHeader for RAR5: got %v, want %v", tpe, container.Rar)
-	}
+	assert.Equal(t, container.Rar, container.SniffHeader(rar5Magic))
 }
 
 func TestRAR_WriteArchive_Rejection(t *testing.T) {
 	eng := rar.New()
-	if eng.Type() != container.Rar {
-		t.Fatalf("Expected type %v, got %v", container.Rar, eng.Type())
-	}
+	assert.Equal(t, container.Rar, eng.Type())
 
 	// Attempting to write a RAR archive must return ErrCreateNotSupported
 	_, err := eng.WriteArchive(&bytes.Buffer{}, nil, container.Config{})
-	if !errors.Is(err, rar.ErrCreateNotSupported) {
-		t.Fatalf("Expected ErrCreateNotSupported, got: %v", err)
-	}
+	require.ErrorIs(t, err, rar.ErrCreateNotSupported)
 }
 
 func TestRAR_ReadCatalog_And_Extraction(t *testing.T) {
@@ -108,53 +102,31 @@ func TestRAR_ReadCatalog_And_Extraction(t *testing.T) {
 
 	// Test OpenCatalog on Engine
 	eng, err := container.Get(container.Rar)
-	if err != nil {
-		t.Fatalf("container.Get(container.Rar) failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	rAt := bytes.NewReader(rarBytes)
 	entries, _, err := eng.OpenCatalog(rAt, int64(len(rarBytes)), "", nil)
-	if err != nil {
-		t.Fatalf("OpenCatalog failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(entries) != 1 {
-		t.Fatalf("Expected 1 entry, got %d", len(entries))
-	}
+	assert.Len(t, entries, 1)
 
 	entry := entries[0]
-	if entry.Name() != filename {
-		t.Fatalf("Entry name mismatch: got %q, want %q", entry.Name(), filename)
-	}
-	if entry.UncompressedSize() != int64(len(expectedData)) {
-		t.Fatalf("Size mismatch: got %d, want %d", entry.UncompressedSize(), len(expectedData))
-	}
+	assert.Equal(t, filename, entry.Name())
+	assert.Equal(t, int64(len(expectedData)), entry.UncompressedSize())
 
 	// Test Open() and data read
 	rc, err := entry.Open()
-	if err != nil {
-		t.Fatalf("entry.Open() failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer func() { _ = rc.Close() }()
 
 	extracted, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("Reading entry stream: %v", err)
-	}
+	require.NoError(t, err)
 
-	if !bytes.Equal(extracted, expectedData) {
-		t.Fatalf("Extracted content mismatch: got %q, want %q", string(extracted), string(expectedData))
-	}
+	assert.Equal(t, expectedData, extracted)
 
 	// Test ScanStream
 	streamEntries, _, err := eng.ScanStream(bytes.NewReader(rarBytes), "", nil)
-	if err != nil {
-		t.Fatalf("ScanStream failed: %v", err)
-	}
-	if len(streamEntries) != 1 {
-		t.Fatalf("ScanStream expected 1 entry, got %d", len(streamEntries))
-	}
-	if streamEntries[0].Name() != filename {
-		t.Fatalf("ScanStream name mismatch: got %q, want %q", streamEntries[0].Name(), filename)
-	}
+	require.NoError(t, err)
+	assert.Len(t, streamEntries, 1)
+	assert.Equal(t, filename, streamEntries[0].Name())
 }

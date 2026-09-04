@@ -87,4 +87,3 @@ linters:
     paths:
       - "examples/.*"
       - "tests/.*"
-      - "codec/(flate|fse|huff0|zstd|gzip|brotli)/.*"

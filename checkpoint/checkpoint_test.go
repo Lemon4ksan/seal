@@ -5,8 +5,10 @@
 package checkpoint_test
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal/checkpoint"
 )
@@ -18,34 +20,21 @@ func TestCheckpoint_Roundtrip(t *testing.T) {
 	st.SourceHash = "sha256:abcdef0123456789"
 
 	encoded, err := st.Encode()
-	if err != nil {
-		t.Fatalf("Encode failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	decoded, err := checkpoint.Decode(encoded)
-	if err != nil {
-		t.Fatalf("Decode failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if decoded.Magic != checkpoint.Magic {
-		t.Fatalf("Magic mismatch: got %q, want %q", decoded.Magic, checkpoint.Magic)
-	}
-	if decoded.SessionID != st.SessionID {
-		t.Fatalf("SessionID mismatch: got %q, want %q", decoded.SessionID, st.SessionID)
-	}
-	if decoded.DoneFiles != 7 || decoded.TotalFiles != 10 {
-		t.Fatalf("File count mismatch: done %d, total %d", decoded.DoneFiles, decoded.TotalFiles)
-	}
-	if len(decoded.RemainingFiles) != len(rem) {
-		t.Fatalf("Remaining count mismatch: got %d, want %d", len(decoded.RemainingFiles), len(rem))
-	}
+	assert.Equal(t, checkpoint.Magic, decoded.Magic)
+	assert.Equal(t, st.SessionID, decoded.SessionID)
+	assert.Equal(t, 7, decoded.DoneFiles)
+	assert.Equal(t, 10, decoded.TotalFiles)
+	assert.Equal(t, rem, decoded.RemainingFiles)
 }
 
 func TestCheckpoint_InvalidMagic(t *testing.T) {
 	t.Parallel()
 	badJSON := []byte(`{"magic":"CORRUPTED","version":1}`)
 	_, err := checkpoint.Decode(badJSON)
-	if !errors.Is(err, checkpoint.ErrInvalidMagic) {
-		t.Fatalf("Expected ErrInvalidMagic, got %v", err)
-	}
+	require.ErrorIs(t, err, checkpoint.ErrInvalidMagic)
 }

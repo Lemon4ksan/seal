@@ -210,7 +210,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 		binary.LittleEndian.PutUint16(pxTLV[0:2], TagPOSIXPermissions)
 		binary.LittleEndian.PutUint16(pxTLV[2:4], 12) // length
 		binary.LittleEndian.PutUint32(pxTLV[4:8], mode)
-		binary.LittleEndian.PutUint32(pxTLV[8:12], 0) // UID
+		binary.LittleEndian.PutUint32(pxTLV[8:12], 0)  // UID
 		binary.LittleEndian.PutUint32(pxTLV[12:16], 0) // GID
 
 		extents = append(extents, extentMeta{
@@ -244,7 +244,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 	var ctocHdr [CTOCHeaderSize]byte
 	copy(ctocHdr[0:4], MagicCTOC[:])
 	binary.LittleEndian.PutUint32(ctocHdr[4:8], uint32(len(ctocEntries)))
-	binary.LittleEndian.PutUint32(ctocHdr[8:12], 0) // HotChunksCount
+	binary.LittleEndian.PutUint32(ctocHdr[8:12], 0)  // HotChunksCount
 	binary.LittleEndian.PutUint32(ctocHdr[12:16], 0) // WarmChunksCount
 	if _, err := ew.w.Write(ctocHdr[:]); err != nil {
 		return totalWritten, err
@@ -319,7 +319,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 	// 4. Archive Trailer (32 bytes at EOF)
 	var trailer [TrailerSize]byte
 	binary.LittleEndian.PutUint64(trailer[0:8], centralDirOffset)
-	binary.LittleEndian.PutUint64(trailer[8:16], 0) // RecoveryOffset (0 = absent)
+	binary.LittleEndian.PutUint64(trailer[8:16], 0)  // RecoveryOffset (0 = absent)
 	binary.LittleEndian.PutUint64(trailer[16:24], 0) // ArchiveStartOffset (0 = no stub)
 	flagsCopy := uint32(FlagCentralDir | FlagAlignedBlocks)
 	binary.LittleEndian.PutUint32(trailer[24:28], flagsCopy)

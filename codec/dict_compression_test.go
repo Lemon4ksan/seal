@@ -9,6 +9,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec"
 )
 
@@ -31,51 +34,30 @@ func TestDCZ_Decompression(t *testing.T) {
 
 	t.Run("UnzstdDCZ", func(t *testing.T) {
 		decompressed, err := codec.UnzstdDCZ(dczStream, nil, dictPayload)
-		if err != nil {
-			t.Fatalf("UnzstdDCZ failed: %v", err)
-		}
-
-		if !bytes.Equal(decompressed, originalData) {
-			t.Fatalf("mismatch: got %q, want %q", decompressed, originalData)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, originalData, decompressed)
 	})
 
 	t.Run("DecompressWithDict", func(t *testing.T) {
 		decompressed, err := codec.DecompressWithDict("dcz", dczStream, nil, dictPayload)
-		if err != nil {
-			t.Fatalf("DecompressWithDict(dcz) failed: %v", err)
-		}
-
-		if !bytes.Equal(decompressed, originalData) {
-			t.Fatalf("mismatch: got %q, want %q", decompressed, originalData)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, originalData, decompressed)
 	})
 
 	t.Run("NewDCZReader streaming", func(t *testing.T) {
 		reader, err := codec.NewDictionaryReader("dcz", bytes.NewReader(dczStream), dictPayload)
-		if err != nil {
-			t.Fatalf("NewDictionaryReader failed: %v", err)
-		}
-
+		require.NoError(t, err)
 		defer reader.Close()
 
 		decompressed, err := io.ReadAll(reader)
-		if err != nil {
-			t.Fatalf("streaming read failed: %v", err)
-		}
-
-		if !bytes.Equal(decompressed, originalData) {
-			t.Fatalf("mismatch: got %q, want %q", decompressed, originalData)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, originalData, decompressed)
 	})
 
 	t.Run("SHA-256 mismatch rejection", func(t *testing.T) {
 		wrongDict := []byte("different dictionary contents")
-
 		_, err := codec.UnzstdDCZ(dczStream, nil, wrongDict)
-		if err == nil {
-			t.Fatal("expected error on dictionary hash mismatch, got nil")
-		}
+		require.Error(t, err, "expected error on dictionary hash mismatch")
 	})
 
 	t.Run("Corrupt header rejection", func(t *testing.T) {
@@ -84,9 +66,7 @@ func TestDCZ_Decompression(t *testing.T) {
 		corrupt[0] = 0x00 // corrupt magic
 
 		_, err := codec.UnzstdDCZ(corrupt, nil, dictPayload)
-		if err == nil {
-			t.Fatal("expected error on corrupt magic, got nil")
-		}
+		require.Error(t, err, "expected error on corrupt magic")
 	})
 }
 
@@ -107,51 +87,30 @@ func TestDCB_Decompression(t *testing.T) {
 
 	t.Run("UnbrotliDCB", func(t *testing.T) {
 		decompressed, err := codec.UnbrotliDCB(dcbStream, nil, dictPayload)
-		if err != nil {
-			t.Fatalf("UnbrotliDCB failed: %v", err)
-		}
-
-		if !bytes.Equal(decompressed, originalData) {
-			t.Fatalf("mismatch: got %q, want %q", decompressed, originalData)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, originalData, decompressed)
 	})
 
 	t.Run("DecompressWithDict", func(t *testing.T) {
 		decompressed, err := codec.DecompressWithDict("dcb", dcbStream, nil, dictPayload)
-		if err != nil {
-			t.Fatalf("DecompressWithDict(dcb) failed: %v", err)
-		}
-
-		if !bytes.Equal(decompressed, originalData) {
-			t.Fatalf("mismatch: got %q, want %q", decompressed, originalData)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, originalData, decompressed)
 	})
 
 	t.Run("NewDCBReader streaming", func(t *testing.T) {
 		reader, err := codec.NewDictionaryReader("dcb", bytes.NewReader(dcbStream), dictPayload)
-		if err != nil {
-			t.Fatalf("NewDictionaryReader failed: %v", err)
-		}
-
+		require.NoError(t, err)
 		defer reader.Close()
 
 		decompressed, err := io.ReadAll(reader)
-		if err != nil {
-			t.Fatalf("streaming read failed: %v", err)
-		}
-
-		if !bytes.Equal(decompressed, originalData) {
-			t.Fatalf("mismatch: got %q, want %q", decompressed, originalData)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, originalData, decompressed)
 	})
 
 	t.Run("SHA-256 mismatch rejection", func(t *testing.T) {
 		wrongDict := []byte("wrong dictionary")
-
 		_, err := codec.UnbrotliDCB(dcbStream, nil, wrongDict)
-		if err == nil {
-			t.Fatal("expected error on hash mismatch, got nil")
-		}
+		require.Error(t, err, "expected error on hash mismatch")
 	})
 
 	t.Run("Corrupt header rejection", func(t *testing.T) {
@@ -160,8 +119,6 @@ func TestDCB_Decompression(t *testing.T) {
 		corrupt[0] = 0x00
 
 		_, err := codec.UnbrotliDCB(corrupt, nil, dictPayload)
-		if err == nil {
-			t.Fatal("expected error on corrupt magic, got nil")
-		}
+		require.Error(t, err, "expected error on corrupt magic")
 	})
 }

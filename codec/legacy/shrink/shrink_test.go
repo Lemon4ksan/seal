@@ -6,9 +6,11 @@ package shrink_test
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal/codec/legacy/shrink"
 )
@@ -19,9 +21,8 @@ func TestShrink_Empty(t *testing.T) {
 
 	buf := make([]byte, 16)
 	n, err := r.Read(buf)
-	if !errors.Is(err, io.EOF) || n != 0 {
-		t.Errorf("expected EOF, got n=%d, err=%v", n, err)
-	}
+	require.ErrorIs(t, err, io.EOF)
+	assert.Equal(t, 0, n)
 }
 
 func TestShrink_LiteralStream(t *testing.T) {
@@ -37,12 +38,8 @@ func TestShrink_LiteralStream(t *testing.T) {
 	defer r.Close()
 
 	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
-	if string(out) != "AB" {
-		t.Errorf("expected 'AB', got %q", string(out))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "AB", string(out))
 }
 
 func TestShrink_CompressDecompress_Roundtrip(t *testing.T) {
@@ -53,21 +50,13 @@ func TestShrink_CompressDecompress_Roundtrip(t *testing.T) {
 	comp := shrink.NewCompressor()
 	var compBuf bytes.Buffer
 	n, err := comp.Compress(bytes.NewReader(sample), &compBuf)
-	if err != nil {
-		t.Fatalf("Compress failed: %v", err)
-	}
-	if n != int64(len(sample)) {
-		t.Fatalf("uncompressed size mismatch: got %d, want %d", n, len(sample))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(sample)), n)
 
 	dec := shrink.NewReader(&compBuf)
 	defer dec.Close()
 
 	decomp, err := io.ReadAll(dec)
-	if err != nil {
-		t.Fatalf("Decompress failed: %v", err)
-	}
-	if !bytes.Equal(decomp, sample) {
-		t.Fatalf("roundtrip mismatch:\ngot:  %q\nwant: %q", string(decomp), string(sample))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, sample, decomp)
 }

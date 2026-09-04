@@ -12,6 +12,7 @@ import (
 	"github.com/lemon4ksan/foundation/codec/compress/gzip"
 	"github.com/lemon4ksan/foundation/codec/compress/lzma"
 	"github.com/lemon4ksan/foundation/codec/filter/bcj"
+	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/seal/codec/ppmd"
 )
 
@@ -63,9 +64,7 @@ func generateBinaryCorpus(size int) []byte {
 
 func TestBenchmarkSuite_Sanity(t *testing.T) {
 	data := generateTextCorpus(64 * 1024)
-	if len(data) != 64*1024 {
-		t.Fatalf("Unexpected corpus size: %d", len(data))
-	}
+	assert.Len(t, data, 64*1024)
 }
 
 func BenchmarkCodecs_Text_1MB(b *testing.B) {

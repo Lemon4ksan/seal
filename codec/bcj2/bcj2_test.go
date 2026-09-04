@@ -11,6 +11,9 @@ import (
 	"io"
 	"math/rand"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 )
 
 func TestBCJ2_Roundtrip(t *testing.T) {
@@ -39,24 +42,15 @@ func TestBCJ2_Roundtrip(t *testing.T) {
 
 	// Encode into 4 streams
 	err := EncodeStreams(bytes.NewReader(original), &mainBuf, &callBuf, &jumpBuf, &rcBuf)
-	if err != nil {
-		t.Fatalf("EncodeStreams failed: %v", err)
-	}
-
-	if mainBuf.Len() == 0 {
-		t.Fatalf("Main stream is empty")
-	}
+	require.NoError(t, err)
+	assert.Greater(t, mainBuf.Len(), 0, "Main stream is empty")
 
 	// Decode back from 4 streams
 	var decoded bytes.Buffer
 	err = DecodeStreams(&mainBuf, &callBuf, &jumpBuf, &rcBuf, &decoded)
-	if err != nil {
-		t.Fatalf("DecodeStreams failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if !bytes.Equal(decoded.Bytes(), original) {
-		t.Fatalf("BCJ2 roundtrip failed: got %d bytes, want %d bytes", decoded.Len(), len(original))
-	}
+	assert.Equal(t, original, decoded.Bytes())
 }
 
 func TestBCJ2_ComplexOpcodePatterns(t *testing.T) {
@@ -88,19 +82,13 @@ func TestBCJ2_ComplexOpcodePatterns(t *testing.T) {
 
 	var mainBuf, callBuf, jumpBuf, rcBuf bytes.Buffer
 	err := EncodeStreams(bytes.NewReader(originalData), &mainBuf, &callBuf, &jumpBuf, &rcBuf)
-	if err != nil {
-		t.Fatalf("EncodeStreams failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	var decoded bytes.Buffer
 	err = DecodeStreams(&mainBuf, &callBuf, &jumpBuf, &rcBuf, &decoded)
-	if err != nil {
-		t.Fatalf("DecodeStreams failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if !bytes.Equal(originalData, decoded.Bytes()) {
-		t.Fatalf("ComplexOpcodePatterns mismatch: got %d, want %d", decoded.Len(), len(originalData))
-	}
+	assert.Equal(t, originalData, decoded.Bytes())
 }
 
 func TestBCJ2_ChunkedStreaming(t *testing.T) {
@@ -112,9 +100,7 @@ func TestBCJ2_ChunkedStreaming(t *testing.T) {
 
 	var mainBuf, callBuf, jumpBuf, rcBuf bytes.Buffer
 	err := EncodeStreams(bytes.NewReader(data), &mainBuf, &callBuf, &jumpBuf, &rcBuf)
-	if err != nil {
-		t.Fatalf("EncodeStreams failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	dec := NewStreamDecoder(&mainBuf, &callBuf, &jumpBuf, &rcBuf)
 	var decoded bytes.Buffer
@@ -127,23 +113,17 @@ func TestBCJ2_ChunkedStreaming(t *testing.T) {
 		if errors.Is(err, io.EOF) {
 			break
 		}
-		if err != nil {
-			t.Fatalf("StreamDecoder read error: %v", err)
-		}
+		require.NoError(t, err)
 	}
 
-	if !bytes.Equal(data, decoded.Bytes()) {
-		t.Fatalf("Chunked decode mismatch: got %d, want %d", decoded.Len(), len(data))
-	}
+	assert.Equal(t, data, decoded.Bytes())
 }
 
 func TestBCJ2_EmptyStream(t *testing.T) {
 	var mainBuf, callBuf, jumpBuf, rcBuf bytes.Buffer
 
 	err := EncodeStreams(bytes.NewReader(nil), &mainBuf, &callBuf, &jumpBuf, &rcBuf)
-	if err != nil {
-		t.Fatalf("EncodeStreams on empty reader failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	var decoded bytes.Buffer
 	err = DecodeStreams(&mainBuf, &callBuf, &jumpBuf, &rcBuf, &decoded)
@@ -151,7 +131,5 @@ func TestBCJ2_EmptyStream(t *testing.T) {
 		t.Fatalf("DecodeStreams on empty streams failed: %v", err)
 	}
 
-	if decoded.Len() != 0 {
-		t.Fatalf("expected 0 bytes, got %d", decoded.Len())
-	}
+	assert.Equal(t, 0, decoded.Len())
 }

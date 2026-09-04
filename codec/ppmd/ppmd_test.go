@@ -9,6 +9,9 @@ import (
 	"crypto/rand"
 	"io"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 )
 
 func TestPPMd_Roundtrip(t *testing.T) {
@@ -17,40 +20,26 @@ func TestPPMd_Roundtrip(t *testing.T) {
 	comp := NewCompressor(DefaultOrder, DefaultMemSize)
 	var compressed bytes.Buffer
 	n, err := comp.Compress(bytes.NewReader(original), &compressed)
-	if err != nil {
-		t.Fatalf("Compress failed: %v", err)
-	}
-	if n != int64(len(original)) {
-		t.Fatalf("Compress size mismatch: got %d, want %d", n, len(original))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(original)), n)
 
 	decomp := NewDecompressor(DefaultOrder, DefaultMemSize)
 	rc, err := decomp.Decompress(&compressed, uint64(len(original)))
-	if err != nil {
-		t.Fatalf("Decompress failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	decoded, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
-
-	if !bytes.Equal(decoded, original) {
-		t.Fatalf("PPMd mismatch: got %q, want %q", string(decoded), string(original))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, original, decoded)
 }
 
 func TestPPMd_Properties(t *testing.T) {
 	props := Properties{Order: 8, MemSize: 32 * 1024 * 1024, RestorationMethod: 0}
 	encoded := props.EncodeProperties()
 	parsed, err := ParseProperties(encoded)
-	if err != nil {
-		t.Fatalf("ParseProperties failed: %v", err)
-	}
-	if parsed.Order != props.Order || parsed.MemSize != props.MemSize {
-		t.Fatalf("Properties mismatch: %+v vs %+v", parsed, props)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, props.Order, parsed.Order)
+	assert.Equal(t, props.MemSize, parsed.MemSize)
 }
 
 func BenchmarkPPMd_Compress(b *testing.B) {

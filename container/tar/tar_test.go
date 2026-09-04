@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/container/tar"
 	"github.com/lemon4ksan/seal/file"
@@ -43,19 +46,14 @@ func TestTar_Roundtrip(t *testing.T) {
 			ModTime:  time.Unix(1700000000, 0),
 			Typeflag: typeflag,
 		}
-		if err := tw.WriteHeader(entry); err != nil {
-			t.Fatalf("WriteHeader failed: %v", err)
-		}
+		require.NoError(t, tw.WriteHeader(entry))
 		if len(e.content) > 0 {
-			if _, err := tw.WritePayload(strings.NewReader(e.content)); err != nil {
-				t.Fatalf("WritePayload failed: %v", err)
-			}
+			_, err := tw.WritePayload(strings.NewReader(e.content))
+			require.NoError(t, err)
 		}
 	}
 
-	if err := tw.Close(); err != nil {
-		t.Fatalf("Close failed: %v", err)
-	}
+	require.NoError(t, tw.Close())
 
 	tr := tar.NewReader(buf)
 	readCount := 0
@@ -65,27 +63,19 @@ func TestTar_Roundtrip(t *testing.T) {
 		if errors.Is(err, io.EOF) {
 			break
 		}
-		if err != nil {
-			t.Fatalf("tr.Next failed: %v", err)
-		}
+		require.NoError(t, err)
 
 		var data []byte
 		if !entry.FileInfo().IsDir() {
 			data, err = io.ReadAll(src)
-			if err != nil {
-				t.Fatalf("io.ReadAll failed: %v", err)
-			}
+			require.NoError(t, err)
 		}
 
-		if string(data) != entries[readCount].content {
-			t.Errorf("content mismatch for %s: got %q, want %q", entry.Name, string(data), entries[readCount].content)
-		}
+		assert.Equalf(t, entries[readCount].content, string(data), "content mismatch for %s", entry.Name)
 		readCount++
 	}
 
-	if readCount != len(entries) {
-		t.Errorf("read entries count mismatch: got %d, want %d", readCount, len(entries))
-	}
+	assert.Equal(t, len(entries), readCount, "read entries count mismatch")
 }
 
 func TestTar_LongPath_PAX(t *testing.T) {
@@ -103,33 +93,20 @@ func TestTar_LongPath_PAX(t *testing.T) {
 		Typeflag: tar.TypeReg,
 	}
 
-	if err := tw.WriteHeader(h); err != nil {
-		t.Fatalf("WriteHeader long path failed: %v", err)
-	}
-	if _, err := tw.WritePayload(strings.NewReader(content)); err != nil {
-		t.Fatalf("WritePayload failed: %v", err)
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatalf("Close failed: %v", err)
-	}
+	require.NoError(t, tw.WriteHeader(h))
+	_, err := tw.WritePayload(strings.NewReader(content))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
 
 	tr := tar.NewReader(buf)
 	entry, src, err := tr.Next()
-	if err != nil {
-		t.Fatalf("tr.Next failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if entry.Name != longPath {
-		t.Errorf("long path mismatch: got %q, want %q", entry.Name, longPath)
-	}
+	assert.Equal(t, longPath, entry.Name)
 
 	data, err := io.ReadAll(src)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
-	if string(data) != content {
-		t.Errorf("content mismatch: got %q, want %q", string(data), content)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, content, string(data))
 }
 
 func TestTar_UTF8_NonASCII(t *testing.T) {
@@ -147,33 +124,20 @@ func TestTar_UTF8_NonASCII(t *testing.T) {
 		Typeflag: tar.TypeReg,
 	}
 
-	if err := tw.WriteHeader(h); err != nil {
-		t.Fatalf("WriteHeader UTF-8 failed: %v", err)
-	}
-	if _, err := tw.WritePayload(strings.NewReader(content)); err != nil {
-		t.Fatalf("WritePayload failed: %v", err)
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatalf("Close failed: %v", err)
-	}
+	require.NoError(t, tw.WriteHeader(h))
+	_, err := tw.WritePayload(strings.NewReader(content))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
 
 	tr := tar.NewReader(buf)
 	entry, src, err := tr.Next()
-	if err != nil {
-		t.Fatalf("tr.Next failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if entry.Name != utf8Path {
-		t.Errorf("UTF-8 path mismatch: got %q, want %q", entry.Name, utf8Path)
-	}
+	assert.Equal(t, utf8Path, entry.Name)
 
 	data, err := io.ReadAll(src)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
-	if string(data) != content {
-		t.Errorf("content mismatch: got %q, want %q", string(data), content)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, content, string(data))
 }
 
 func TestTar_Container_CompressedVariants(t *testing.T) {
@@ -187,9 +151,7 @@ func TestTar_Container_CompressedVariants(t *testing.T) {
 	for _, fmtType := range formats {
 		t.Run(string(fmtType), func(t *testing.T) {
 			engine, err := container.Get(fmtType)
-			if err != nil {
-				t.Fatalf("container.Get(%s) failed: %v", fmtType, err)
-			}
+			require.NoError(t, err)
 
 			f1, _ := file.New("hello.txt", false)
 			f1Content := []byte("Hello Compressed TAR World!")
@@ -204,34 +166,20 @@ func TestTar_Container_CompressedVariants(t *testing.T) {
 
 			var archiveBuf bytes.Buffer
 			written, err := engine.WriteArchive(&archiveBuf, files, container.Config{})
-			if err != nil {
-				t.Fatalf("WriteArchive failed: %v", err)
-			}
-			if written <= 0 || archiveBuf.Len() == 0 {
-				t.Fatalf("unexpected written size: %d", written)
-			}
+			require.NoError(t, err)
+			assert.Greater(t, written, int64(0))
+			assert.Greater(t, archiveBuf.Len(), 0)
 
 			readFiles, _, err := engine.ScanStream(&archiveBuf, "", nil)
-			if err != nil {
-				t.Fatalf("ScanStream failed: %v", err)
-			}
-
-			if len(readFiles) != 2 {
-				t.Fatalf("expected 2 files, got %d", len(readFiles))
-			}
+			require.NoError(t, err)
+			assert.Len(t, readFiles, 2)
 
 			r, err := readFiles[0].Open()
-			if err != nil {
-				t.Fatalf("failed to open read file: %v", err)
-			}
+			require.NoError(t, err)
 			data, err := io.ReadAll(r)
 			_ = r.Close()
-			if err != nil {
-				t.Fatalf("failed to read file data: %v", err)
-			}
-			if string(data) != string(f1Content) {
-				t.Errorf("content mismatch: got %q, want %q", string(data), string(f1Content))
-			}
+			require.NoError(t, err)
+			assert.Equal(t, string(f1Content), string(data))
 		})
 	}
 }

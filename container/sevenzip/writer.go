@@ -19,6 +19,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/codec/compress/lzma"
 	"github.com/lemon4ksan/foundation/codec/filter/bcj"
+
 	"github.com/lemon4ksan/seal/checkpoint"
 	"github.com/lemon4ksan/seal/codec/bcj2"
 	"github.com/lemon4ksan/seal/codec/ppmd"

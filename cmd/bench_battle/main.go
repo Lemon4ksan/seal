@@ -16,6 +16,7 @@ import (
 	"github.com/lemon4ksan/foundation/codec/compress/lzma"
 	"github.com/lemon4ksan/foundation/codec/compress/zstd"
 	"github.com/lemon4ksan/foundation/codec/filter/bcj"
+
 	"github.com/lemon4ksan/seal/codec"
 	_ "github.com/lemon4ksan/seal/codec/legacy"
 	"github.com/lemon4ksan/seal/codec/ppmd"

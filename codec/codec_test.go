@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec"
 )
 
@@ -21,27 +24,16 @@ func TestDeflate_Roundtrip(t *testing.T) {
 	var compressed bytes.Buffer
 
 	uncompBytes, err := comp.Compress(strings.NewReader(original), &compressed)
-	if err != nil {
-		t.Fatalf("Compress failed: %v", err)
-	}
-	if uncompBytes != int64(len(original)) {
-		t.Errorf("uncompressed bytes mismatch: got %d, want %d", uncompBytes, len(original))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(original)), uncompBytes)
 
 	rc, err := decomp.Decompress(&compressed)
-	if err != nil {
-		t.Fatalf("Decompress failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	decompressed, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
-
-	if string(decompressed) != original {
-		t.Errorf("content mismatch")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, original, string(decompressed))
 }
 
 func TestGzip_Roundtrip(t *testing.T) {
@@ -52,22 +44,13 @@ func TestGzip_Roundtrip(t *testing.T) {
 	var compressed bytes.Buffer
 
 	_, err := comp.Compress(strings.NewReader(original), &compressed)
-	if err != nil {
-		t.Fatalf("Compress failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	rc, err := decomp.Decompress(&compressed)
-	if err != nil {
-		t.Fatalf("Decompress failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	decompressed, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
-
-	if string(decompressed) != original {
-		t.Errorf("content mismatch: got %q, want %q", string(decompressed), original)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, original, string(decompressed))
 }

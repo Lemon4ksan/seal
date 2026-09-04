@@ -9,6 +9,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec/xz"
 )
 
@@ -20,20 +23,12 @@ func TestVLI_Roundtrip(t *testing.T) {
 	for _, v := range testValues {
 		var buf bytes.Buffer
 		n, err := xz.WriteVLI(&buf, v)
-		if err != nil {
-			t.Fatalf("WriteVLI(%d) failed: %v", v, err)
-		}
-		if n != xz.VLISize(v) {
-			t.Errorf("VLISize mismatch for %d: got %d, want %d", v, n, xz.VLISize(v))
-		}
+		require.NoError(t, err)
+		assert.Equal(t, xz.VLISize(v), n)
 
 		decoded, err := xz.ReadVLI(bytes.NewReader(buf.Bytes()))
-		if err != nil {
-			t.Fatalf("ReadVLI(%d) failed: %v", v, err)
-		}
-		if decoded != v {
-			t.Errorf("VLI mismatch: got %d, want %d", decoded, v)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, v, decoded)
 	}
 }
 
@@ -42,32 +37,21 @@ func TestXZ_Roundtrip_Plain(t *testing.T) {
 
 	var compBuf bytes.Buffer
 	w, err := xz.NewWriter(&compBuf)
-	if err != nil {
-		t.Fatalf("NewWriter failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if _, err := w.Write(data); err != nil {
-		t.Fatalf("Write failed: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatalf("Close failed: %v", err)
-	}
+	_, err = w.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
 
 	// Decompress
 	r, err := xz.NewReader(bytes.NewReader(compBuf.Bytes()))
-	if err != nil {
-		t.Fatalf("NewReader failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer r.Close()
 
 	decomp, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if !bytes.Equal(decomp, data) {
-		t.Fatalf("data mismatch:\ngot:  %q\nwant: %q", string(decomp), string(data))
-	}
+	assert.Equal(t, data, decomp)
 }
 
 func TestXZ_Roundtrip_WithBCJ(t *testing.T) {
@@ -86,38 +70,25 @@ func TestXZ_Roundtrip_WithBCJ(t *testing.T) {
 
 	var compBuf bytes.Buffer
 	w, err := xz.NewWriterOptions(&compBuf, opts)
-	if err != nil {
-		t.Fatalf("NewWriterOptions failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if _, err := w.Write(data); err != nil {
-		t.Fatalf("Write failed: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatalf("Close failed: %v", err)
-	}
+	_, err = w.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
 
 	// Decompress
 	r, err := xz.NewReader(bytes.NewReader(compBuf.Bytes()))
-	if err != nil {
-		t.Fatalf("NewReader failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer r.Close()
 
 	decomp, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if !bytes.Equal(decomp, data) {
-		t.Fatalf("BCJ data mismatch")
-	}
+	assert.Equal(t, data, decomp)
 }
 
 func TestXZ_InvalidHeader(t *testing.T) {
 	invalid := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05}
 	_, err := xz.NewReader(bytes.NewReader(invalid))
-	if err == nil {
-		t.Errorf("expected error on invalid magic, got nil")
-	}
+	require.Error(t, err, "expected error on invalid magic")
 }

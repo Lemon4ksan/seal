@@ -9,6 +9,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container/zip"
 	"github.com/lemon4ksan/seal/file"
@@ -66,50 +69,34 @@ func TestZip_CustomCodec_Registration(t *testing.T) {
 	// Create an archive with an entry using CustomMethod
 	original := []byte("Custom compression algorithm inside a standard ZIP container!")
 	f1, err := file.New("payload.bin", false)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 	f1.WithData(original)
 	f1.SetMethod(CustomMethod)
 
 	var zipBuf bytes.Buffer
 	zw := zip.NewWriter(&zipBuf, codec.DefaultRegistry)
 
-	if err := zw.WriteEntry(f1, bytes.NewReader(original)); err != nil {
-		t.Fatalf("WriteEntry with custom codec failed: %v", err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatalf("Closing zip writer: %v", err)
-	}
+	err = zw.WriteEntry(f1, bytes.NewReader(original))
+	require.NoError(t, err)
+	err = zw.Close()
+	require.NoError(t, err)
 
 	// Verify that the file payload on disk is actually encoded/compressed
-	if bytes.Contains(zipBuf.Bytes(), original) {
-		t.Fatal("Expected raw ZIP payload to be transformed/compressed")
-	}
+	assert.False(t, bytes.Contains(zipBuf.Bytes(), original), "Expected raw ZIP payload to be transformed/compressed")
 
 	// Read back and extract using Seal ZIP reader
 	rAt := bytes.NewReader(zipBuf.Bytes())
 	zr, err := zip.NewReader(rAt, int64(zipBuf.Len()), "", codec.DefaultRegistry)
-	if err != nil {
-		t.Fatalf("NewReader failed on custom codec ZIP: %v", err)
-	}
+	require.NoError(t, err)
 
 	entries := zr.Entries()
-	if len(entries) != 1 {
-		t.Fatalf("Expected 1 entry, got %d", len(entries))
-	}
+	require.Len(t, entries, 1)
 
 	rc, err := entries[0].Open()
-	if err != nil {
-		t.Fatalf("Opening custom codec entry failed: %v", err)
-	}
+	require.NoError(t, err)
 	extracted, err := io.ReadAll(rc)
 	_ = rc.Close()
-	if err != nil {
-		t.Fatalf("Reading extracted payload: %v", err)
-	}
+	require.NoError(t, err)
 
-	if !bytes.Equal(extracted, original) {
-		t.Fatalf("Extracted content mismatch: got %q, want %q", string(extracted), string(original))
-	}
+	assert.Equal(t, original, extracted)
 }

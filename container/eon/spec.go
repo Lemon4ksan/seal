@@ -40,7 +40,7 @@ const (
 	INDXHeaderSize         = 8
 	ExtentRecordPrefixSize = 56
 
-	DefaultBlockSizeShift = 12 // 4096 bytes (4 KiB)
+	DefaultBlockSizeShift  = 12               // 4096 bytes (4 KiB)
 	DefaultChunkTargetSize = 32 * 1024 * 1024 // 32 MiB uncompressed
 	MicroFrameSize         = 64 * 1024        // 64 KiB
 )
@@ -99,15 +99,15 @@ const (
 // Standard TLV tags.
 const (
 	TagPOSIXPermissions uint16 = 0x5058 // 'PX'
-	TagDigitalSignature  uint16 = 0x5349 // 'SI'
-	TagProvenance        uint16 = 0x5056 // 'PV'
-	TagEntrypoint        uint16 = 0x4550 // 'EP'
-	TagEnvironment       uint16 = 0x4556 // 'EV'
-	TagComment           uint16 = 0x434D // 'CM'
-	TagWindowsInfo       uint16 = 0x4E54 // 'NT'
-	TagExtendedAttrs     uint16 = 0x5841 // 'XA'
-	TagIngestPriority    uint16 = 0x5052 // 'PR'
-	TagTensorInfo        uint16 = 0x5453 // 'TS'
+	TagDigitalSignature uint16 = 0x5349 // 'SI'
+	TagProvenance       uint16 = 0x5056 // 'PV'
+	TagEntrypoint       uint16 = 0x4550 // 'EP'
+	TagEnvironment      uint16 = 0x4556 // 'EV'
+	TagComment          uint16 = 0x434D // 'CM'
+	TagWindowsInfo      uint16 = 0x4E54 // 'NT'
+	TagExtendedAttrs    uint16 = 0x5841 // 'XA'
+	TagIngestPriority   uint16 = 0x5052 // 'PR'
+	TagTensorInfo       uint16 = 0x5453 // 'TS'
 )
 
 // Sentinel errors.

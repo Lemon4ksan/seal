@@ -6,9 +6,10 @@ package tests
 
 import (
 	"bytes"
-	"errors"
 	"strings"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/file"
@@ -20,72 +21,52 @@ func TestValidation_InvalidEntries(t *testing.T) {
 	t.Run("EmptyFilename", func(t *testing.T) {
 		t.Parallel()
 		_, err := file.New("", false)
-		if err == nil {
-			t.Fatalf("expected error on empty filename, got nil")
-		}
+		require.Error(t, err)
 	})
 
 	t.Run("FilenameTooLong", func(t *testing.T) {
 		t.Parallel()
 		hugeName := strings.Repeat("a", 70000)
 		f, err := file.New("short.txt", false)
-		if err != nil {
-			t.Fatalf("file.New failed: %v", err)
-		}
+		require.NoError(t, err)
 		f.SetName(hugeName)
 
-		if err := f.Validate(); !errors.Is(err, file.ErrFilenameTooLong) {
-			t.Fatalf("expected ErrFilenameTooLong, got %v", err)
-		}
+		require.ErrorIs(t, f.Validate(), file.ErrFilenameTooLong)
 
 		arc := seal.NewArchive()
 		arc.Add(f)
 		var buf bytes.Buffer
 		_, err = arc.WriteTo(t.Context(), &buf)
-		if err == nil {
-			t.Fatalf("expected error writing archive with too long filename, got nil")
-		}
+		require.Error(t, err)
 	})
 
 	t.Run("NullByteInPath", func(t *testing.T) {
 		t.Parallel()
 		f, err := file.New("test.txt", false)
-		if err != nil {
-			t.Fatalf("file.New failed: %v", err)
-		}
+		require.NoError(t, err)
 		f.SetName("invalid\x00path.txt")
 
-		if err := f.Validate(); !errors.Is(err, file.ErrNullByteInPath) {
-			t.Fatalf("expected ErrNullByteInPath, got %v", err)
-		}
+		require.ErrorIs(t, f.Validate(), file.ErrNullByteInPath)
 
 		arc := seal.NewArchive()
 		arc.Add(f)
 		var buf bytes.Buffer
 		_, err = arc.WriteTo(t.Context(), &buf)
-		if err == nil {
-			t.Fatalf("expected error writing archive with null byte, got nil")
-		}
+		require.Error(t, err)
 	})
 
 	t.Run("NegativeFileSize", func(t *testing.T) {
 		t.Parallel()
 		f, err := file.New("test.txt", false)
-		if err != nil {
-			t.Fatalf("file.New failed: %v", err)
-		}
+		require.NoError(t, err)
 		f.SetSizes(-100, 0, 0)
 
-		if err := f.Validate(); !errors.Is(err, file.ErrNegativeSize) {
-			t.Fatalf("expected ErrNegativeSize, got %v", err)
-		}
+		require.ErrorIs(t, f.Validate(), file.ErrNegativeSize)
 
 		arc := seal.NewArchive()
 		arc.Add(f)
 		var buf bytes.Buffer
 		_, err = arc.WriteTo(t.Context(), &buf)
-		if err == nil {
-			t.Fatalf("expected error writing archive with negative size, got nil")
-		}
+		require.Error(t, err)
 	})
 }

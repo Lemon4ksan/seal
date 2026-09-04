@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/container"
 	_ "github.com/lemon4ksan/seal/container/cab"
@@ -32,52 +35,37 @@ func TestCAB_EndToEnd_Integration(t *testing.T) {
 		seal.ToFilePath(cabPath),
 		seal.WithContainer(container.Cab),
 	)
-	if err != nil {
-		t.Fatalf("ArchiveDir failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// 2. Inspect with seal.List
 	entries, err := seal.List(t.Context(), seal.FromFilePath(cabPath))
-	if err != nil {
-		t.Fatalf("seal.List failed: %v", err)
-	}
-	if len(entries) != 4 {
-		t.Fatalf("Expected 4 entries in CAB catalog (2 dirs + 2 files), got %d", len(entries))
-	}
+	require.NoError(t, err)
+	require.Len(t, entries, 4)
 
 	// 3. Check file presence with seal.ExistsIn
 	exists, err := seal.ExistsIn(t.Context(), seal.FromFilePath(cabPath), "setup.inf")
-	if err != nil || !exists {
-		t.Fatalf("ExistsIn setup.inf failed: exists=%v, err=%v", exists, err)
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
 
 	exists, err = seal.ExistsIn(t.Context(), seal.FromFilePath(cabPath), "drivers/net/adapter.sys")
-	if err != nil || !exists {
-		t.Fatalf("ExistsIn drivers/net/adapter.sys failed: exists=%v, err=%v", exists, err)
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
 
 	// 4. Test tree rendering
 	tree, err := seal.Tree(t.Context(), seal.FromFilePath(cabPath))
-	if err != nil {
-		t.Fatalf("seal.Tree failed: %v", err)
-	}
-	if tree == "" {
-		t.Fatalf("seal.Tree returned empty string")
-	}
+	require.NoError(t, err)
+	assert.NotEmpty(t, tree)
 
 	// 5. Extract with seal.Unarchive
 	extractDir := t.TempDir()
-	if err := seal.Unarchive(t.Context(), seal.FromFilePath(cabPath), extractDir); err != nil {
-		t.Fatalf("Unarchive failed: %v", err)
-	}
+	err = seal.Unarchive(t.Context(), seal.FromFilePath(cabPath), extractDir)
+	require.NoError(t, err)
 
 	infData, err := os.ReadFile(filepath.Join(extractDir, "setup.inf"))
-	if err != nil || string(infData) != "[Version]\nSignature=\"$Windows NT$\"\n" {
-		t.Fatalf("Extracted setup.inf mismatch: %v, data=%q", err, string(infData))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "[Version]\nSignature=\"$Windows NT$\"\n", string(infData))
 
 	sysData, err := os.ReadFile(filepath.Join(extractDir, "drivers", "net", "adapter.sys"))
-	if err != nil || string(sysData) != "SYS DRIVER BINARY CONTENT" {
-		t.Fatalf("Extracted adapter.sys mismatch: %v, data=%q", err, string(sysData))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "SYS DRIVER BINARY CONTENT", string(sysData))
 }

@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec"
 	_ "github.com/lemon4ksan/seal/codec/legacy/cmpsc"
 	"github.com/lemon4ksan/seal/file"
@@ -20,46 +23,30 @@ func TestZip_Roundtrip_Plain(t *testing.T) {
 	w := NewWriter(buf, codec.DefaultRegistry)
 
 	file1, err := file.New("hello.txt", false)
-	if err != nil {
-		t.Fatalf("NewFile: %v", err)
-	}
+	require.NoError(t, err)
 	file1.WithModTime(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 
 	content1 := []byte("Hello, Seal ZIP engine!")
-	if err := w.WriteEntry(file1, bytes.NewReader(content1)); err != nil {
-		t.Fatalf("WriteEntry: %v", err)
-	}
+	err = w.WriteEntry(file1, bytes.NewReader(content1))
+	require.NoError(t, err)
 
-	if err := w.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
+	err = w.Close()
+	require.NoError(t, err)
 
 	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "", codec.DefaultRegistry)
-	if err != nil {
-		t.Fatalf("NewReader: %v", err)
-	}
+	require.NoError(t, err)
 
 	entries := r.Entries()
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(entries))
-	}
-	if entries[0].Name() != "hello.txt" {
-		t.Fatalf("expected hello.txt, got %s", entries[0].Name())
-	}
+	require.Len(t, entries, 1)
+	assert.Equal(t, "hello.txt", entries[0].Name())
 
 	rc, err := entries[0].Open()
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	readBytes, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if string(readBytes) != string(content1) {
-		t.Fatalf("content mismatch: got %q, want %q", string(readBytes), string(content1))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, string(content1), string(readBytes))
 }
 
 func TestZip_Roundtrip_AES256(t *testing.T) {
@@ -68,67 +55,45 @@ func TestZip_Roundtrip_AES256(t *testing.T) {
 	w.SetPassword("SecretPassword123")
 
 	f, err := file.New("secure.txt", false)
-	if err != nil {
-		t.Fatalf("NewFile: %v", err)
-	}
+	require.NoError(t, err)
 	f.WithEncryption(file.AES256, "SecretPassword123")
 
 	content := []byte("Highly confidential data protected with AES-256 standard.")
-	if err := w.WriteEntry(f, bytes.NewReader(content)); err != nil {
-		t.Fatalf("WriteEntry: %v", err)
-	}
+	err = w.WriteEntry(f, bytes.NewReader(content))
+	require.NoError(t, err)
 
-	if err := w.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
+	err = w.Close()
+	require.NoError(t, err)
 
 	// Verify authentication and decryption succeeds when matching passphrase is provided
 	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "SecretPassword123", codec.DefaultRegistry)
-	if err != nil {
-		t.Fatalf("NewReader: %v", err)
-	}
+	require.NoError(t, err)
 
 	entry, ok := r.Entry("secure.txt")
-	if !ok {
-		t.Fatalf("entry secure.txt not found")
-	}
-	if entry.Encryption() != file.AES256 {
-		t.Fatalf("expected AES256 encryption, got %v", entry.Encryption())
-	}
+	require.True(t, ok)
+	assert.Equal(t, file.AES256, entry.Encryption())
 
 	rc, err := entry.Open()
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	decrypted, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if string(decrypted) != string(content) {
-		t.Fatalf("decrypted mismatch: got %q, want %q", string(decrypted), string(content))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, string(content), string(decrypted))
 
 	// Verify authentication failure when incorrect passphrase is provided
 	rBad, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "WrongPassword", codec.DefaultRegistry)
-	if err != nil {
-		t.Fatalf("NewReader bad: %v", err)
-	}
+	require.NoError(t, err)
 
 	entryBad, ok := rBad.Entry("secure.txt")
-	if !ok {
-		t.Fatalf("entry secure.txt not found in bad reader")
-	}
+	require.True(t, ok)
 
 	rcBad, err := entryBad.Open()
 	if err == nil {
 		_, err = io.ReadAll(rcBad)
 		_ = rcBad.Close()
 	}
-	if err == nil {
-		t.Fatalf("expected error decrypting with wrong password, got nil")
-	}
+	require.Error(t, err)
 }
 
 func TestZip_Roundtrip_AES128(t *testing.T) {
@@ -137,46 +102,30 @@ func TestZip_Roundtrip_AES128(t *testing.T) {
 	w.SetPassword("SecretAES128Password")
 
 	f, err := file.New("secure128.txt", false)
-	if err != nil {
-		t.Fatalf("NewFile: %v", err)
-	}
+	require.NoError(t, err)
 	f.WithEncryption(file.AES128, "SecretAES128Password")
 
 	content := []byte("Highly confidential data protected with WinZip AES-128 standard.")
-	if err := w.WriteEntry(f, bytes.NewReader(content)); err != nil {
-		t.Fatalf("WriteEntry: %v", err)
-	}
+	err = w.WriteEntry(f, bytes.NewReader(content))
+	require.NoError(t, err)
 
-	if err := w.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
+	err = w.Close()
+	require.NoError(t, err)
 
 	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "SecretAES128Password", codec.DefaultRegistry)
-	if err != nil {
-		t.Fatalf("NewReader: %v", err)
-	}
+	require.NoError(t, err)
 
 	entry, ok := r.Entry("secure128.txt")
-	if !ok {
-		t.Fatalf("entry secure128.txt not found")
-	}
-	if entry.Encryption() != file.AES128 {
-		t.Fatalf("expected AES128 encryption, got %v", entry.Encryption())
-	}
+	require.True(t, ok)
+	assert.Equal(t, file.AES128, entry.Encryption())
 
 	rc, err := entry.Open()
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	decrypted, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if string(decrypted) != string(content) {
-		t.Fatalf("decrypted mismatch: got %q, want %q", string(decrypted), string(content))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, string(content), string(decrypted))
 }
 
 func TestZip_SFX_SelfExtractingArchive(t *testing.T) {
@@ -185,16 +134,12 @@ func TestZip_SFX_SelfExtractingArchive(t *testing.T) {
 	w := NewWriter(zipBuf, codec.DefaultRegistry)
 
 	f, err := file.New("setup.cfg", false)
-	if err != nil {
-		t.Fatalf("NewFile: %v", err)
-	}
+	require.NoError(t, err)
 	content := []byte("[SFX Config]\nAppVersion=2026.1\nAutoRun=true\n")
-	if err := w.WriteEntry(f, bytes.NewReader(content)); err != nil {
-		t.Fatalf("WriteEntry: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
+	err = w.WriteEntry(f, bytes.NewReader(content))
+	require.NoError(t, err)
+	err = w.Close()
+	require.NoError(t, err)
 
 	// Prepend a 1024-byte mock PE32 executable stub (e.g. SFX unpacker binary)
 	sfxStub := make([]byte, 1024)
@@ -207,29 +152,18 @@ func TestZip_SFX_SelfExtractingArchive(t *testing.T) {
 
 	// Open SFX .exe as a ZIP archive
 	r, err := NewReader(bytes.NewReader(sfxExe), int64(len(sfxExe)), "", codec.DefaultRegistry)
-	if err != nil {
-		t.Fatalf("NewReader on SFX failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	entry, ok := r.Entry("setup.cfg")
-	if !ok {
-		t.Fatalf("entry setup.cfg not found in SFX archive")
-	}
+	require.True(t, ok)
 
 	rc, err := entry.Open()
-	if err != nil {
-		t.Fatalf("entry.Open failed on SFX: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	readBytes, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll failed on SFX: %v", err)
-	}
-
-	if !bytes.Equal(readBytes, content) {
-		t.Fatalf("SFX content mismatch: got %q, want %q", string(readBytes), string(content))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, content, readBytes)
 }
 
 func TestZip_StrictCompliance_APPNOTE412_EmptyArchive(t *testing.T) {
@@ -237,22 +171,15 @@ func TestZip_StrictCompliance_APPNOTE412_EmptyArchive(t *testing.T) {
 	// an empty archive containing only the 22-byte EOCD record is valid and permitted.
 	buf := new(bytes.Buffer)
 	w := NewWriter(buf, codec.DefaultRegistry)
-	if err := w.Close(); err != nil {
-		t.Fatalf("unexpected error on empty archive: %v", err)
-	}
+	err := w.Close()
+	require.NoError(t, err)
 
-	if buf.Len() != 22 {
-		t.Fatalf("expected empty archive to be exactly 22 bytes (EOCD record), got %d bytes", buf.Len())
-	}
+	assert.Equal(t, 22, buf.Len())
 
 	// Verify the resulting empty archive can be read
 	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "", codec.DefaultRegistry)
-	if err != nil {
-		t.Fatalf("NewReader on empty archive failed: %v", err)
-	}
-	if len(r.Entries()) != 0 {
-		t.Fatalf("expected 0 entries, got %d", len(r.Entries()))
-	}
+	require.NoError(t, err)
+	assert.Empty(t, r.Entries())
 }
 
 func TestZip_StrictCompliance_APPNOTE444_DataDescriptorBit3(t *testing.T) {
@@ -264,40 +191,22 @@ func TestZip_StrictCompliance_APPNOTE444_DataDescriptorBit3(t *testing.T) {
 
 	f, _ := file.New("streamed.txt", false)
 	content := []byte("Testing APPNOTE 4.4.4 Data Descriptor zeroing.")
-	if err := w.WriteEntry(f, bytes.NewReader(content)); err != nil {
-		t.Fatalf("WriteEntry failed: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatalf("Close failed: %v", err)
-	}
+	err := w.WriteEntry(f, bytes.NewReader(content))
+	require.NoError(t, err)
+	err = w.Close()
+	require.NoError(t, err)
 
 	// Parse Local File Header directly from the raw stream
 	sr := bytes.NewReader(buf.Bytes())
 	var sig [4]byte
 	_, _ = io.ReadFull(sr, sig[:])
 	lfh, err := ReadLocalFileHeader(sr)
-	if err != nil {
-		t.Fatalf("ReadLocalFileHeader failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if (lfh.GeneralPurposeBitFlag & FlagDataDescriptor) == 0 {
-		t.Fatalf("expected FlagDataDescriptor (Bit 3) to be set in streaming mode")
-	}
-	if lfh.CRC32 != 0 {
-		t.Errorf("APPNOTE 4.4.4 violation: Local Header CRC32 MUST be 0 when Bit 3 is set, got 0x%08x", lfh.CRC32)
-	}
-	if lfh.CompressedSize != 0 {
-		t.Errorf(
-			"APPNOTE 4.4.4 violation: Local Header CompressedSize MUST be 0 when Bit 3 is set, got %d",
-			lfh.CompressedSize,
-		)
-	}
-	if lfh.UncompressedSize != 0 {
-		t.Errorf(
-			"APPNOTE 4.4.4 violation: Local Header UncompressedSize MUST be 0 when Bit 3 is set, got %d",
-			lfh.UncompressedSize,
-		)
-	}
+	assert.NotZero(t, lfh.GeneralPurposeBitFlag&FlagDataDescriptor)
+	assert.Equal(t, uint32(0), lfh.CRC32)
+	assert.Equal(t, uint32(0), lfh.CompressedSize)
+	assert.Equal(t, uint32(0), lfh.UncompressedSize)
 }
 
 func TestZip_StrictCompliance_APPNOTE444_UTF8EFS(t *testing.T) {
@@ -306,25 +215,17 @@ func TestZip_StrictCompliance_APPNOTE444_UTF8EFS(t *testing.T) {
 
 	// UTF-8 non-ASCII filename
 	f, _ := file.New("документ.pdf", false)
-	if err := w.WriteEntry(f, bytes.NewReader([]byte("PDF Data"))); err != nil {
-		t.Fatalf("WriteEntry failed: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatalf("Close failed: %v", err)
-	}
+	err := w.WriteEntry(f, bytes.NewReader([]byte("PDF Data")))
+	require.NoError(t, err)
+	err = w.Close()
+	require.NoError(t, err)
 
 	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "", codec.DefaultRegistry)
-	if err != nil {
-		t.Fatalf("NewReader failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	entry, ok := r.Entry("документ.pdf")
-	if !ok {
-		t.Fatalf("entry not found")
-	}
-	if (uint16(entry.Flags()) & FlagLanguageEncodingUTF8) == 0 {
-		t.Errorf("APPNOTE 4.4.4 violation: FlagLanguageEncodingUTF8 (Bit 11) MUST be set on non-ASCII names")
-	}
+	require.True(t, ok)
+	assert.NotZero(t, uint16(entry.Flags())&FlagLanguageEncodingUTF8)
 }
 
 func TestZip_StrictCompliance_APPNOTE441_VersionNeeded(t *testing.T) {
@@ -349,10 +250,7 @@ func TestZip_StrictCompliance_APPNOTE441_VersionNeeded(t *testing.T) {
 
 	for _, tt := range tests {
 		got := ComputeVersionNeeded(tt.method, tt.isDir, tt.isEncrypted, tt.isZip64)
-		if got != tt.wantVersion {
-			t.Errorf("ComputeVersionNeeded(%v, %v, %v, %v) = %d, want %d",
-				tt.method, tt.isDir, tt.isEncrypted, tt.isZip64, got, tt.wantVersion)
-		}
+		assert.Equalf(t, tt.wantVersion, got, "ComputeVersionNeeded(%v, %v, %v, %v)", tt.method, tt.isDir, tt.isEncrypted, tt.isZip64)
 	}
 }
 
@@ -361,45 +259,28 @@ func TestZip_IBM_CMPSC_Roundtrip(t *testing.T) {
 	w := NewWriter(buf, codec.DefaultRegistry)
 
 	file1, err := file.New("mainframe_job.jcl", false)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	require.NoError(t, err)
 	file1.WithMethod(codec.IBMCmpsc)
 	content := []byte("//JOB01 EXEC PGM=IEFBR14\n//DD1 DD DSN=SYS1.LINKLIB,DISP=SHR\n//SYSIN DD *\n/*\n")
 
-	if err := w.WriteEntry(file1, bytes.NewReader(content)); err != nil {
-		t.Fatalf("WriteEntry: %v", err)
-	}
+	err = w.WriteEntry(file1, bytes.NewReader(content))
+	require.NoError(t, err)
 
-	if err := w.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
+	err = w.Close()
+	require.NoError(t, err)
 
 	r, err := NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "", codec.DefaultRegistry)
-	if err != nil {
-		t.Fatalf("NewReader: %v", err)
-	}
+	require.NoError(t, err)
 
 	entries := r.Entries()
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(entries))
-	}
-	if entries[0].Method() != codec.IBMCmpsc {
-		t.Fatalf("expected Method 16 (IBMCmpsc), got %v", entries[0].Method())
-	}
+	require.Len(t, entries, 1)
+	assert.Equal(t, codec.IBMCmpsc, entries[0].Method())
 
 	rc, err := entries[0].Open()
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	decomp, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-
-	if !bytes.Equal(decomp, content) {
-		t.Fatalf("mismatch: got %q, want %q", string(decomp), string(content))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, content, decomp)
 }

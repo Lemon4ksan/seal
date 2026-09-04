@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/container/wim"
 	"github.com/lemon4ksan/seal/file"
@@ -45,23 +48,14 @@ func TestWim_Roundtrip(t *testing.T) {
 	var buf bytes.Buffer
 	writer := wim.NewWriter(&buf)
 	written, err := writer.WriteArchive(files)
-	if err != nil {
-		t.Fatalf("WriteArchive failed: %v", err)
-	}
-	if written <= 0 {
-		t.Fatalf("Expected positive bytes written, got %d", written)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, written, int64(0))
 
 	// Read back
 	rAt := bytes.NewReader(buf.Bytes())
 	reader, err := wim.NewReader(rAt, int64(buf.Len()))
-	if err != nil {
-		t.Fatalf("NewReader failed: %v", err)
-	}
-
-	if len(reader.Entries) == 0 {
-		t.Fatal("Expected non-empty entries")
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, reader.Entries)
 
 	found := make(map[string]*file.File)
 	for _, entry := range reader.Entries {
@@ -70,35 +64,20 @@ func TestWim_Roundtrip(t *testing.T) {
 
 	for _, original := range files {
 		entry, ok := found[original.Name()]
-		if !ok {
-			t.Errorf("Expected file %q in WIM, but not found", original.Name())
-			continue
-		}
-		if entry.UncompressedSize() != original.UncompressedSize() {
-			t.Errorf("File %q size mismatch: got %d, want %d",
-				original.Name(), entry.UncompressedSize(), original.UncompressedSize())
-		}
+		require.Truef(t, ok, "Expected file %q in WIM, but not found", original.Name())
+		assert.Equal(t, original.UncompressedSize(), entry.UncompressedSize())
 
 		rc, err := entry.Open()
-		if err != nil {
-			t.Errorf("Opening %q: %v", entry.Name(), err)
-			continue
-		}
+		require.NoError(t, err)
 		content, err := io.ReadAll(rc)
 		_ = rc.Close()
-		if err != nil {
-			t.Errorf("Reading %q: %v", entry.Name(), err)
-			continue
-		}
+		require.NoError(t, err)
 
 		origRC, _ := original.Open()
 		origContent, _ := io.ReadAll(origRC)
 		_ = origRC.Close()
 
-		if !bytes.Equal(content, origContent) {
-			t.Errorf("File %q content mismatch: got %q, want %q",
-				original.Name(), content, origContent)
-		}
+		assert.Equalf(t, origContent, content, "File %q content mismatch", original.Name())
 	}
 }
 
@@ -118,15 +97,12 @@ func TestWim_Deduplication(t *testing.T) {
 
 	var buf bytes.Buffer
 	writer := wim.NewWriter(&buf)
-	if _, err := writer.WriteArchive(files); err != nil {
-		t.Fatalf("WriteArchive failed: %v", err)
-	}
+	_, err := writer.WriteArchive(files)
+	require.NoError(t, err)
 
 	rAt := bytes.NewReader(buf.Bytes())
 	reader, err := wim.NewReader(rAt, int64(buf.Len()))
-	if err != nil {
-		t.Fatalf("NewReader failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// In Lookup Table, there should be:
 	// 1 data blob (for the 3 identical files) + 1 metadata blob = 2 entries!
@@ -134,15 +110,11 @@ func TestWim_Deduplication(t *testing.T) {
 	for _, entry := range reader.LookupTable {
 		if entry.ResHdr.Flags()&wim.ResFlagMetadata == 0 {
 			dataBlobs++
-			if entry.RefCount != 3 {
-				t.Errorf("Expected RefCount 3 for deduplicated blob, got %d", entry.RefCount)
-			}
+			assert.Equal(t, uint32(3), entry.RefCount, "Expected RefCount 3 for deduplicated blob")
 		}
 	}
 
-	if dataBlobs != 1 {
-		t.Fatalf("Expected exactly 1 deduplicated data blob in lookup table, got %d", dataBlobs)
-	}
+	assert.Equal(t, 1, dataBlobs, "Expected exactly 1 deduplicated data blob in lookup table")
 }
 
 func TestWim_7Zip_CrossValidation(t *testing.T) {
@@ -166,44 +138,32 @@ func TestWim_7Zip_CrossValidation(t *testing.T) {
 	}).WithSize(int64(len(`{"format":"wim","engine":"seal"}`)))
 
 	fOut, err := os.Create(wimPath)
-	if err != nil {
-		t.Fatalf("Creating wim file: %v", err)
-	}
+	require.NoError(t, err)
 	engine, err := container.Get(container.Wim)
-	if err != nil {
-		t.Fatalf("Getting Wim container engine: %v", err)
-	}
-	if _, err := engine.WriteArchive(fOut, files, container.Config{}); err != nil {
-		_ = fOut.Close()
-		t.Fatalf("Writing WIM via engine: %v", err)
-	}
+	require.NoError(t, err)
+	_, err = engine.WriteArchive(fOut, files, container.Config{})
+	require.NoError(t, err)
 	_ = fOut.Close()
 
 	// 1. Verify with 7-Zip test command
 	cmdTest := exec.CommandContext(t.Context(), sevenZipPath, "t", wimPath)
 	out, err := cmdTest.CombinedOutput()
-	if err != nil {
-		t.Fatalf("7-Zip test command failed on Seal WIM:\n%s", string(out))
-	}
+	require.NoErrorf(t, err, "7-Zip test command failed on Seal WIM:\n%s", string(out))
 
 	// 2. Extract with 7-Zip
 	extractDir := filepath.Join(tempDir, "7z_extracted")
 	cmdExtract := exec.CommandContext(t.Context(), sevenZipPath, "x", wimPath, "-o"+extractDir, "-y")
 	out, err = cmdExtract.CombinedOutput()
-	if err != nil {
-		t.Fatalf("7-Zip extract failed on Seal WIM:\n%s", string(out))
-	}
+	require.NoErrorf(t, err, "7-Zip extract failed on Seal WIM:\n%s", string(out))
 
 	// Verify extracted files match
 	content1, err := os.ReadFile(filepath.Join(extractDir, "greeting.txt"))
-	if err != nil || string(content1) != "Hello from Seal WIM!" {
-		t.Errorf("greeting.txt mismatch: got %q, err %v", string(content1), err)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Hello from Seal WIM!", string(content1))
 
 	content2, err := os.ReadFile(filepath.Join(extractDir, "nested", "data.json"))
-	if err != nil || string(content2) != `{"format":"wim","engine":"seal"}` {
-		t.Errorf("nested/data.json mismatch: got %q, err %v", string(content2), err)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, `{"format":"wim","engine":"seal"}`, string(content2))
 
 	// 3. Create WIM with 7-Zip, then read with Seal
 	sevenZipWim := filepath.Join(tempDir, "test_official_7z.wim")
@@ -211,24 +171,16 @@ func TestWim_7Zip_CrossValidation(t *testing.T) {
 		filepath.Join(extractDir, "greeting.txt"),
 		filepath.Join(extractDir, "nested", "data.json"))
 	out, err = cmdCreate7z.CombinedOutput()
-	if err != nil {
-		t.Fatalf("7-Zip creation failed:\n%s", string(out))
-	}
+	require.NoErrorf(t, err, "7-Zip creation failed:\n%s", string(out))
 
 	f7z, err := os.Open(sevenZipWim)
-	if err != nil {
-		t.Fatalf("Opening 7z-created WIM: %v", err)
-	}
+	require.NoError(t, err)
 	defer f7z.Close()
 	st, _ := f7z.Stat()
 
 	sealCatalog, _, err := engine.OpenCatalog(f7z, st.Size(), "", nil)
-	if err != nil {
-		t.Fatalf("Seal failed to open 7z-created WIM: %v", err)
-	}
-	if len(sealCatalog) == 0 {
-		t.Fatal("Seal returned empty catalog for 7z-created WIM")
-	}
+	require.NoError(t, err)
+	assert.NotEmpty(t, sealCatalog)
 
 	// 4. Create LZX WIM with 7-Zip, then read and verify with Seal
 	lzxWim := filepath.Join(tempDir, "test_official_7z_lzx.wim")

@@ -8,6 +8,9 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container/zip"
 	"github.com/lemon4ksan/seal/file"
@@ -32,22 +35,12 @@ func TestInspector_SFX_And_TrailingGarbage(t *testing.T) {
 	fullData = append(fullData, trailingGarbage...)
 
 	report, err := zip.Inspect(bytes.NewReader(fullData), int64(len(fullData)))
-	if err != nil {
-		t.Fatalf("Inspect failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if !report.IsSFX {
-		t.Errorf("expected IsSFX to be true")
-	}
-	if report.SFXStubSize != 512 {
-		t.Errorf("expected SFXStubSize 512, got %d", report.SFXStubSize)
-	}
-	if report.TrailingGarbageSize != int64(len(trailingGarbage)) {
-		t.Errorf("expected TrailingGarbageSize %d, got %d", len(trailingGarbage), report.TrailingGarbageSize)
-	}
-	if report.EntriesCount != 1 {
-		t.Errorf("expected 1 entry, got %d", report.EntriesCount)
-	}
+	assert.True(t, report.IsSFX)
+	assert.Equal(t, int64(512), report.SFXStubSize)
+	assert.Equal(t, int64(len(trailingGarbage)), report.TrailingGarbageSize)
+	assert.Equal(t, 1, report.EntriesCount)
 }
 
 func TestInspector_ZipSlip_SecurityHazard(t *testing.T) {
@@ -87,9 +80,7 @@ func TestInspector_ZipSlip_SecurityHazard(t *testing.T) {
 	buf.Write(eocd)
 
 	report, err := zip.Inspect(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
-	if err != nil {
-		t.Fatalf("Inspect failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	foundZipSlip := false
 	for _, issue := range report.Issues {
@@ -99,9 +90,7 @@ func TestInspector_ZipSlip_SecurityHazard(t *testing.T) {
 		}
 	}
 
-	if !foundZipSlip {
-		t.Errorf("expected SEC_ZIP_SLIP security hazard to be reported")
-	}
+	assert.True(t, foundZipSlip, "expected SEC_ZIP_SLIP security hazard to be reported")
 }
 
 func TestInspector_VintageHostOS_And_UnassignedExtraTag_And_ReservedBitFlags(t *testing.T) {
@@ -153,19 +142,15 @@ func TestInspector_VintageHostOS_And_UnassignedExtraTag_And_ReservedBitFlags(t *
 	buf.Write(eocd)
 
 	report, err := zip.Inspect(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
-	if err != nil {
-		t.Fatalf("Inspect failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// 1. Verify Vintage OS
-	if len(report.VintageSystems) == 0 || report.VintageSystems[0] != "Commodore Amiga" {
-		t.Errorf("expected VintageSystems to contain 'Commodore Amiga', got: %v", report.VintageSystems)
-	}
+	require.NotEmpty(t, report.VintageSystems)
+	assert.Equal(t, "Commodore Amiga", report.VintageSystems[0])
 
 	// 2. Verify Unassigned Extra Tag
-	if len(report.UnassignedExtraFields) == 0 || report.UnassignedExtraFields[0].Tag != 0xDEAD {
-		t.Errorf("expected UnassignedExtraFields to contain 0xDEAD, got: %v", report.UnassignedExtraFields)
-	}
+	require.NotEmpty(t, report.UnassignedExtraFields)
+	assert.Equal(t, uint16(0xDEAD), report.UnassignedExtraFields[0].Tag)
 
 	// 3. Verify Reserved Bit Flag warning
 	foundReservedFlagWarn := false
@@ -175,7 +160,5 @@ func TestInspector_VintageHostOS_And_UnassignedExtraTag_And_ReservedBitFlags(t *
 			break
 		}
 	}
-	if !foundReservedFlagWarn {
-		t.Errorf("expected WARN_RESERVED_BIT_FLAGS issue to be reported")
-	}
+	assert.True(t, foundReservedFlagWarn, "expected WARN_RESERVED_BIT_FLAGS issue to be reported")
 }

@@ -6,23 +6,22 @@ package implode_test
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal/codec/legacy/implode"
 )
 
 func TestImplode_Empty(t *testing.T) {
 	r, err := implode.NewReader(bytes.NewReader(nil), true, true)
-	if err != nil {
-		t.Fatalf("NewReader failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer r.Close()
 
 	buf := make([]byte, 16)
 	n, err := r.Read(buf)
-	if !errors.Is(err, io.EOF) || n != 0 {
-		t.Errorf("expected EOF, got n=%d, err=%v", n, err)
-	}
+	require.ErrorIs(t, err, io.EOF)
+	assert.Equal(t, 0, n)
 }

@@ -72,6 +72,7 @@ func (w *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64, 
 		}
 	}
 
+	var allFileItems []*isoItem
 	for _, f := range files {
 		clean := strings.TrimPrefix(f.Name(), "/")
 		clean = strings.TrimSuffix(clean, "/")
@@ -124,6 +125,7 @@ func (w *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64, 
 			}
 
 			itemsByDir[parentDir] = append(itemsByDir[parentDir], item)
+			allFileItems = append(allFileItems, item)
 		}
 
 		if cfg.OnFileDone != nil {
@@ -153,19 +155,15 @@ func (w *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64, 
 	}
 
 	// Assign LBAs for file data sectors
-	for _, items := range itemsByDir {
-		for _, item := range items {
-			if !item.isDir {
-				item.extentLBA = nextLBA
-				size := len(item.data)
-				secCount := uint32((size + SectorSize - 1) / SectorSize)
-				if secCount == 0 {
-					secCount = 1
-				}
-				item.sectorCount = secCount
-				nextLBA += secCount
-			}
+	for _, item := range allFileItems {
+		item.extentLBA = nextLBA
+		size := len(item.data)
+		secCount := uint32((size + SectorSize - 1) / SectorSize)
+		if secCount == 0 {
+			secCount = 1
 		}
+		item.sectorCount = secCount
+		nextLBA += secCount
 	}
 
 	totalSectors := nextLBA
@@ -215,18 +213,14 @@ func (w *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64, 
 
 	// 6. Write File Data Extents
 	zeroPad := make([]byte, SectorSize)
-	for _, items := range itemsByDir {
-		for _, item := range items {
-			if !item.isDir {
-				if _, err := w.dest.Write(item.data); err != nil {
-					return 0, err
-				}
-				pad := int(item.sectorCount*SectorSize) - len(item.data)
-				if pad > 0 {
-					if _, err := w.dest.Write(zeroPad[:pad]); err != nil {
-						return 0, err
-					}
-				}
+	for _, item := range allFileItems {
+		if _, err := w.dest.Write(item.data); err != nil {
+			return 0, err
+		}
+		pad := int(item.sectorCount*SectorSize) - len(item.data)
+		if pad > 0 {
+			if _, err := w.dest.Write(zeroPad[:pad]); err != nil {
+				return 0, err
 			}
 		}
 	}

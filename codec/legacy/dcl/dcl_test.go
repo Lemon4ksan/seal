@@ -10,6 +10,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec/legacy/dcl"
 )
 
@@ -18,10 +21,8 @@ func TestDCL_Empty(t *testing.T) {
 	defer r.Close()
 
 	buf := make([]byte, 16)
-	n, err := r.Read(buf)
-	if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Errorf("expected EOF, got n=%d, err=%v", n, err)
-	}
+	_, err := r.Read(buf)
+	assert.True(t, errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF), "expected EOF or ErrUnexpectedEOF")
 }
 
 func TestDCL_BlastVector(t *testing.T) {
@@ -33,12 +34,8 @@ func TestDCL_BlastVector(t *testing.T) {
 	defer r.Close()
 
 	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	expected := "AIAIAIAIAIAIA"
-	if string(out) != expected {
-		t.Fatalf("DCL mismatch:\ngot:  %q\nwant: %q", string(out), expected)
-	}
+	assert.Equal(t, expected, string(out))
 }

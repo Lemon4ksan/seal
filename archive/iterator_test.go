@@ -5,9 +5,11 @@
 package archive_test
 
 import (
-	"bytes"
 	"io"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/file"
@@ -30,9 +32,7 @@ func TestArchive_All_Iterator(t *testing.T) {
 		collected = append(collected, f.Name())
 	}
 
-	if len(collected) != 3 || collected[0] != "a.txt" || collected[1] != "b.txt" || collected[2] != "c.txt" {
-		t.Fatalf("unexpected files from All(): %v", collected)
-	}
+	require.Equal(t, []string{"a.txt", "b.txt", "c.txt"}, collected)
 
 	// Early break test
 	var early []string
@@ -42,9 +42,7 @@ func TestArchive_All_Iterator(t *testing.T) {
 			break
 		}
 	}
-	if len(early) != 2 {
-		t.Fatalf("expected 2 elements from early break, got %d", len(early))
-	}
+	assert.Len(t, early, 2)
 }
 
 func TestArchive_AllWithIndex_Iterator(t *testing.T) {
@@ -61,12 +59,8 @@ func TestArchive_AllWithIndex_Iterator(t *testing.T) {
 		names = append(names, f.Name())
 	}
 
-	if len(indices) != 2 || indices[0] != 0 || indices[1] != 1 {
-		t.Fatalf("unexpected indices: %v", indices)
-	}
-	if len(names) != 2 || names[0] != "x.txt" || names[1] != "y.txt" {
-		t.Fatalf("unexpected names: %v", names)
-	}
+	assert.Equal(t, []int{0, 1}, indices)
+	assert.Equal(t, []string{"x.txt", "y.txt"}, names)
 }
 
 func TestArchive_StatefulIterator(t *testing.T) {
@@ -79,56 +73,36 @@ func TestArchive_StatefulIterator(t *testing.T) {
 	arc.Add(f1, f2)
 
 	it := arc.NewIterator()
-	if it.Len() != 2 {
-		t.Errorf("expected Len 2, got %d", it.Len())
-	}
-	if it.Pos() != -1 {
-		t.Errorf("expected initial Pos -1, got %d", it.Pos())
-	}
+	assert.Equal(t, 2, it.Len())
+	assert.Equal(t, -1, it.Pos())
 
 	// First item
-	if !it.Next() {
-		t.Fatalf("expected Next() true for item 0")
-	}
-	if it.Pos() != 0 || it.File().Name() != "file1.txt" {
-		t.Errorf("expected item 0 to be file1.txt, got %v (pos %d)", it.File(), it.Pos())
-	}
+	require.True(t, it.Next(), "expected Next() true for item 0")
+	assert.Equal(t, 0, it.Pos())
+	assert.Equal(t, "file1.txt", it.File().Name())
+
 	rc, err := it.Open()
-	if err != nil {
-		t.Fatalf("it.Open() failed: %v", err)
-	}
+	require.NoError(t, err)
 	data, _ := io.ReadAll(rc)
 	rc.Close()
-	if !bytes.Equal(data, []byte("content-1")) {
-		t.Errorf("unexpected content: %s", string(data))
-	}
+	assert.Equal(t, []byte("content-1"), data)
 
 	// Second item
-	if !it.Next() {
-		t.Fatalf("expected Next() true for item 1")
-	}
-	if it.Pos() != 1 || it.File().Name() != "file2.txt" {
-		t.Errorf("expected item 1 to be file2.txt, got %v (pos %d)", it.File(), it.Pos())
-	}
+	require.True(t, it.Next(), "expected Next() true for item 1")
+	assert.Equal(t, 1, it.Pos())
+	assert.Equal(t, "file2.txt", it.File().Name())
+
 	b, err := it.Bytes()
-	if err != nil || !bytes.Equal(b, []byte("content-2")) {
-		t.Errorf("it.Bytes() mismatch: %s, %v", string(b), err)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, []byte("content-2"), b)
 
 	// End of iteration
-	if it.Next() {
-		t.Errorf("expected Next() false at end")
-	}
-	if it.File() != nil {
-		t.Errorf("expected File() nil at end")
-	}
+	assert.False(t, it.Next(), "expected Next() false at end")
+	assert.Nil(t, it.File(), "expected File() nil at end")
 
 	// Reset
 	it.Reset()
-	if it.Pos() != -1 {
-		t.Errorf("expected Pos -1 after Reset")
-	}
-	if !it.Next() || it.File().Name() != "file1.txt" {
-		t.Errorf("failed to iterate after Reset")
-	}
+	assert.Equal(t, -1, it.Pos(), "expected Pos -1 after Reset")
+	require.True(t, it.Next())
+	assert.Equal(t, "file1.txt", it.File().Name())
 }

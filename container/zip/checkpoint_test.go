@@ -10,6 +10,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/container/zip"
 	"github.com/lemon4ksan/seal/file"
@@ -22,9 +25,7 @@ func TestZip_StealthCheckpoint_Roundtrip(t *testing.T) {
 	)
 
 	f1, err := file.New("notes.txt", false)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 	f1.WithData([]byte("Hello Resumable ZIP World!"))
 
 	eng := zip.New()
@@ -35,45 +36,29 @@ func TestZip_StealthCheckpoint_Roundtrip(t *testing.T) {
 	}
 
 	n, err := eng.WriteArchive(&buf, []*file.File{f1}, cfg)
-	if err != nil {
-		t.Fatalf("WriteArchive failed: %v", err)
-	}
-	if n <= 0 {
-		t.Fatalf("Expected positive bytes written, got %d", n)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, n, int64(0))
 
 	archiveBytes := buf.Bytes()
 
 	// 1. Verify standard Go archive/zip reader considers it 100% valid
 	stdZipReader, err := archivezip.NewReader(bytes.NewReader(archiveBytes), int64(len(archiveBytes)))
-	if err != nil {
-		t.Fatalf("Standard archive/zip failed to open archive: %v", err)
-	}
-	if len(stdZipReader.File) != 1 {
-		t.Fatalf("Expected 1 file in standard reader, got %d", len(stdZipReader.File))
-	}
+	require.NoError(t, err)
+	require.Len(t, stdZipReader.File, 1)
+
 	stdFile, err := stdZipReader.File[0].Open()
-	if err != nil {
-		t.Fatalf("Standard open failed: %v", err)
-	}
-	stdContent, _ := io.ReadAll(stdFile)
+	require.NoError(t, err)
+	stdContent, err := io.ReadAll(stdFile)
 	_ = stdFile.Close()
-	if string(stdContent) != "Hello Resumable ZIP World!" {
-		t.Fatalf("Standard content mismatch: %s", string(stdContent))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Hello Resumable ZIP World!", string(stdContent))
 
 	// 2. Read using Seal's zip.Reader
 	rAt := bytes.NewReader(archiveBytes)
 	zr, err := zip.NewReader(rAt, int64(len(archiveBytes)), "", nil)
-	if err != nil {
-		t.Fatalf("zip.NewReader failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	cpData, ok := zr.Checkpoint()
-	if !ok {
-		t.Fatalf("Expected checkpoint to be detected, got false")
-	}
-	if !bytes.Equal(cpData, checkpointPayload) {
-		t.Fatalf("Checkpoint mismatch:\ngot  %s\nwant %s", string(cpData), string(checkpointPayload))
-	}
+	require.True(t, ok)
+	assert.Equal(t, checkpointPayload, cpData)
 }

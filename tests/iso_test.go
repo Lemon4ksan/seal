@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/container"
 	_ "github.com/lemon4ksan/seal/container/iso"
@@ -33,52 +36,37 @@ func TestISO_EndToEnd_Integration(t *testing.T) {
 		seal.ToFilePath(isoPath),
 		seal.WithContainer(container.Iso),
 	)
-	if err != nil {
-		t.Fatalf("ArchiveDir failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// 2. Inspect with seal.List
 	entries, err := seal.List(t.Context(), seal.FromFilePath(isoPath))
-	if err != nil {
-		t.Fatalf("seal.List failed: %v", err)
-	}
-	if len(entries) < 3 {
-		t.Fatalf("Expected at least 3 entries in ISO catalog, got %d", len(entries))
-	}
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(entries), 3)
 
 	// 3. Check file presence with seal.ExistsIn
 	exists, err := seal.ExistsIn(t.Context(), seal.FromFilePath(isoPath), "autorun.inf")
-	if err != nil || !exists {
-		t.Fatalf("ExistsIn autorun.inf failed: exists=%v, err=%v", exists, err)
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
 
 	exists, err = seal.ExistsIn(t.Context(), seal.FromFilePath(isoPath), "boot/isolinux/isolinux.bin")
-	if err != nil || !exists {
-		t.Fatalf("ExistsIn boot/isolinux/isolinux.bin failed: exists=%v, err=%v", exists, err)
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
 
 	// 4. Test tree rendering
 	tree, err := seal.Tree(t.Context(), seal.FromFilePath(isoPath))
-	if err != nil {
-		t.Fatalf("seal.Tree failed: %v", err)
-	}
-	if tree == "" {
-		t.Fatalf("seal.Tree returned empty string")
-	}
+	require.NoError(t, err)
+	assert.NotEmpty(t, tree)
 
 	// 5. Extract with seal.Unarchive
 	extractDir := t.TempDir()
-	if err := seal.Unarchive(t.Context(), seal.FromFilePath(isoPath), extractDir); err != nil {
-		t.Fatalf("Unarchive failed: %v", err)
-	}
+	err = seal.Unarchive(t.Context(), seal.FromFilePath(isoPath), extractDir)
+	require.NoError(t, err)
 
 	infData, err := os.ReadFile(filepath.Join(extractDir, "autorun.inf"))
-	if err != nil || string(infData) != "[autorun]\nopen=setup.exe\n" {
-		t.Fatalf("Extracted autorun.inf mismatch: %v, data=%q", err, string(infData))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "[autorun]\nopen=setup.exe\n", string(infData))
 
 	binData, err := os.ReadFile(filepath.Join(extractDir, "boot", "isolinux", "isolinux.bin"))
-	if err != nil || string(binData) != "BOOTLOADER BINARY DATA" {
-		t.Fatalf("Extracted isolinux.bin mismatch: %v, data=%q", err, string(binData))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "BOOTLOADER BINARY DATA", string(binData))
 }

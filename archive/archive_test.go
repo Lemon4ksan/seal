@@ -10,6 +10,9 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container/zip"
@@ -26,34 +29,19 @@ func TestArchive_BasicOperations(t *testing.T) {
 		return io.NopCloser(bytes.NewReader([]byte("Lazy evaluated"))), nil
 	})
 
-	if !a.Exists("test.txt") {
-		t.Errorf("expected test.txt to exist")
-	}
-	if !a.Exists("config.json") {
-		t.Errorf("expected config.json to exist")
-	}
+	assert.True(t, a.Exists("test.txt"), "expected test.txt to exist")
+	assert.True(t, a.Exists("config.json"), "expected config.json to exist")
 
 	files := a.Files()
-	if len(files) != 3 {
-		t.Fatalf("expected 3 files, got %d", len(files))
-	}
+	assert.Len(t, files, 3)
 
-	if err := a.Rename("test.txt", "renamed.txt"); err != nil {
-		t.Fatalf("Rename failed: %v", err)
-	}
-	if a.Exists("test.txt") {
-		t.Errorf("test.txt should not exist after rename")
-	}
-	if !a.Exists("renamed.txt") {
-		t.Errorf("renamed.txt should exist after rename")
-	}
+	err := a.Rename("test.txt", "renamed.txt")
+	require.NoError(t, err)
+	assert.False(t, a.Exists("test.txt"), "test.txt should not exist after rename")
+	assert.True(t, a.Exists("renamed.txt"), "renamed.txt should exist after rename")
 
-	if !a.Remove("renamed.txt") {
-		t.Errorf("expected Remove to return true")
-	}
-	if len(a.Files()) != 2 {
-		t.Errorf("expected 2 files after delete, got %d", len(a.Files()))
-	}
+	assert.True(t, a.Remove("renamed.txt"), "expected Remove to return true")
+	assert.Len(t, a.Files(), 2)
 }
 
 func TestArchive_AddFS(t *testing.T) {
@@ -65,20 +53,11 @@ func TestArchive_AddFS(t *testing.T) {
 
 	a := archive.New(archive.WithContainer(zip.New()), option.WithCompression(codec.Store, 0))
 	added, err := a.AddFS(mockFS)
-	if err != nil {
-		t.Fatalf("AddFS failed: %v", err)
-	}
-
-	if len(added) < 2 {
-		t.Fatalf("expected at least 2 entries, got %d", len(added))
-	}
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, len(added), 2)
 
 	buf := new(bytes.Buffer)
 	written, err := a.WriteTo(t.Context(), buf)
-	if err != nil {
-		t.Fatalf("WriteTo failed: %v", err)
-	}
-	if written <= 0 {
-		t.Errorf("expected written bytes > 0, got %d", written)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, written, int64(0), "expected written bytes > 0")
 }

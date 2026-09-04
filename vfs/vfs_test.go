@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/vfs"
 )
 
@@ -16,24 +19,16 @@ func TestSafePath(t *testing.T) {
 
 	// Valid path
 	safe, err := vfs.SafePath(dest, "sub/file.txt")
-	if err != nil {
-		t.Fatalf("SafePath failed: %v", err)
-	}
-	if !filepath.IsAbs(safe) {
-		t.Errorf("expected absolute path: %s", safe)
-	}
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(safe))
 
 	// Zip Slip attempt with ../
 	_, err = vfs.SafePath(dest, "../../etc/passwd")
-	if err == nil {
-		t.Errorf("expected error on path traversal escape")
-	}
+	require.Error(t, err)
 
 	// Control character attempt
 	_, err = vfs.SafePath(dest, "evil\x00file.txt")
-	if err == nil {
-		t.Errorf("expected error on control character filename")
-	}
+	require.Error(t, err)
 }
 
 func TestTree_Rendering(t *testing.T) {
@@ -48,8 +43,5 @@ func TestTree_Rendering(t *testing.T) {
 
 	root := vfs.BuildTree(entries)
 	rendered := vfs.RenderTree(root)
-
-	if rendered == "" {
-		t.Fatal("rendered tree is empty")
-	}
+	assert.NotEmpty(t, rendered)
 }

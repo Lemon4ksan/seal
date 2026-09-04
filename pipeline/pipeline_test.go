@@ -10,6 +10,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/crypto"
 )
@@ -37,42 +40,26 @@ func TestWritePipeline_FullChain(t *testing.T) {
 		})
 
 	res, err := pipe.Execute(bytes.NewReader(rawContent))
-	if err != nil {
-		t.Fatalf("pipeline.Execute failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if res.UncompressedBytes != int64(len(rawContent)) {
-		t.Fatalf("UncompressedBytes mismatch: got %d, want %d", res.UncompressedBytes, len(rawContent))
-	}
-	if res.Checksum != expectedCRC {
-		t.Fatalf("Checksum mismatch: got 0x%08x, want 0x%08x", res.Checksum, expectedCRC)
-	}
-	if res.CompressedBytes != int64(outputBuf.Len()) {
-		t.Fatalf("CompressedBytes mismatch: got %d, want %d", res.CompressedBytes, outputBuf.Len())
-	}
+	assert.Equal(t, int64(len(rawContent)), res.UncompressedBytes)
+	assert.Equal(t, expectedCRC, res.Checksum)
+	assert.Equal(t, int64(outputBuf.Len()), res.CompressedBytes)
 
 	// Verify decryption and decompression unwrapping
 	aesReader, err := crypto.NewAESCTRReader(&outputBuf, "PipelineSecret123", int64(outputBuf.Len()), 32, 16)
-	if err != nil {
-		t.Fatalf("NewAESCTRReader failed: %v", err)
-	}
+	require.NoError(t, err)
+
 	decomp, err := codec.DefaultRegistry.Decompressor(codec.Deflate)
-	if err != nil {
-		t.Fatalf("Decompressor failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	decompReader, err := decomp.Decompress(aesReader)
-	if err != nil {
-		t.Fatalf("Decompress failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer decompReader.Close()
 
 	var decompBuf bytes.Buffer
-	if _, err := io.Copy(&decompBuf, decompReader); err != nil {
-		t.Fatalf("io.Copy failed: %v", err)
-	}
+	_, err = io.Copy(&decompBuf, decompReader)
+	require.NoError(t, err)
 
-	if decompBuf.String() != string(rawContent) {
-		t.Fatalf("recovered content mismatch: got %q, want %q", decompBuf.String(), string(rawContent))
-	}
+	assert.Equal(t, string(rawContent), decompBuf.String())
 }

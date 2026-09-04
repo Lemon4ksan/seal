@@ -9,6 +9,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/container/zip"
 	"github.com/lemon4ksan/seal/file"
@@ -38,38 +41,32 @@ func TestMultiVolumeReader_BoundaryCrossing(t *testing.T) {
 	}
 
 	mvr, err := zip.NewMultiVolumeReader(volumes)
-	if err != nil {
-		t.Fatalf("NewMultiVolumeReader failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if mvr.Size() != 30 {
-		t.Errorf("expected size 30, got %d", mvr.Size())
-	}
-	if mvr.TotalVolumes() != 3 {
-		t.Errorf("expected 3 volumes, got %d", mvr.TotalVolumes())
-	}
+	assert.Equal(t, int64(30), mvr.Size())
+	assert.Equal(t, 3, mvr.TotalVolumes())
 
 	// 1. Read within single volume
 	buf := make([]byte, 5)
 	n, err := mvr.ReadAt(buf, 2)
-	if err != nil || n != 5 || string(buf) != "23456" {
-		t.Errorf("read single volume failed: n=%d, err=%v, data=%q", n, err, string(buf))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+	assert.Equal(t, "23456", string(buf))
 
 	// 2. Read spanning boundary between seg1 and seg2 (offset 8 to 13: "89ABC")
 	bufCross := make([]byte, 5)
 	n, err = mvr.ReadAt(bufCross, 8)
-	if err != nil || n != 5 || string(bufCross) != "89ABC" {
-		t.Errorf("read boundary cross failed: n=%d, err=%v, data=%q", n, err, string(bufCross))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+	assert.Equal(t, "89ABC", string(bufCross))
 
 	// 3. Read spanning all 3 volumes (offset 5 to 25)
 	bufAll := make([]byte, 20)
 	n, err = mvr.ReadAt(bufAll, 5)
 	expected := "56789ABCDEFGHIJklmno"
-	if err != nil || n != 20 || string(bufAll) != expected {
-		t.Errorf("read all 3 volumes failed: n=%d, err=%v, data=%q, want=%q", n, err, string(bufAll), expected)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 20, n)
+	assert.Equal(t, expected, string(bufAll))
 }
 
 func TestMultiVolume_ZIP_Roundtrip(t *testing.T) {
@@ -95,14 +92,10 @@ func TestMultiVolume_ZIP_Roundtrip(t *testing.T) {
 
 	eng := zip.NewEngine()
 	_, err := eng.WriteArchive(mvw, files, container.Config{})
-	if err != nil {
-		t.Fatalf("WriteArchive failed: %v", err)
-	}
+	require.NoError(t, err)
 	mvw.Close()
 
-	if len(volumeBuffers) < 2 {
-		t.Fatalf("expected multiple volume segments, got %d", len(volumeBuffers))
-	}
+	require.GreaterOrEqual(t, len(volumeBuffers), 2)
 
 	// 3. Assemble MultiVolumeReader
 	var readVolumes []zip.Volume
@@ -116,47 +109,30 @@ func TestMultiVolume_ZIP_Roundtrip(t *testing.T) {
 	}
 
 	mvr, err := zip.NewMultiVolumeReader(readVolumes)
-	if err != nil {
-		t.Fatalf("NewMultiVolumeReader failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// 4. Read Catalog from virtual multi-volume reader
 	loadedFiles, _, err := eng.OpenCatalog(mvr, mvr.Size(), "", nil)
-	if err != nil {
-		t.Fatalf("OpenCatalog on multi-volume reader failed: %v", err)
-	}
-
-	if len(loadedFiles) != 3 {
-		t.Fatalf("expected 3 loaded files, got %d", len(loadedFiles))
-	}
+	require.NoError(t, err)
+	require.Len(t, loadedFiles, 3)
 
 	// 5. Verify uncompressed contents of each file across volumes
 	for _, lf := range loadedFiles {
 		rc, err := lf.Open()
-		if err != nil {
-			t.Fatalf("open %s failed: %v", lf.Name(), err)
-		}
+		require.NoError(t, err)
 		data, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			t.Fatalf("read %s failed: %v", lf.Name(), err)
-		}
+		_ = rc.Close()
+		require.NoError(t, err)
 
 		switch lf.Name() {
 		case "doc1.txt":
-			if string(data) != "Large content piece #1 for multi-volume zip test" {
-				t.Errorf("doc1.txt content mismatch: %q", string(data))
-			}
+			assert.Equal(t, "Large content piece #1 for multi-volume zip test", string(data))
 		case "doc2.txt":
-			if string(data) != "Large content piece #2 with more bytes to trigger splitting" {
-				t.Errorf("doc2.txt content mismatch: %q", string(data))
-			}
+			assert.Equal(t, "Large content piece #2 with more bytes to trigger splitting", string(data))
 		case "folder/doc3.txt":
-			if string(data) != "Deeply nested content piece #3 in multi-volume archive" {
-				t.Errorf("folder/doc3.txt content mismatch: %q", string(data))
-			}
+			assert.Equal(t, "Deeply nested content piece #3 in multi-volume archive", string(data))
 		default:
-			t.Errorf("unexpected file in archive: %s", lf.Name())
+			t.Fatalf("unexpected file in archive: %s", lf.Name())
 		}
 	}
 }

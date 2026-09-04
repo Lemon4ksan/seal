@@ -9,6 +9,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/container/sevenzip"
 	"github.com/lemon4ksan/seal/file"
 )
@@ -61,16 +64,13 @@ func TestSevenZip_CustomCoder_Registration(t *testing.T) {
 
 	// Verify lookup
 	lookedUp, ok := sevenzip.LookupCoder(mock.MethodID())
-	if !ok || lookedUp.Name() != mock.Name() {
-		t.Fatalf("LookupCoder failed or returned wrong coder")
-	}
+	require.True(t, ok)
+	assert.Equal(t, mock.Name(), lookedUp.Name())
 
 	// Create an archive using the custom coder
 	original := []byte("Testing CustomCoder registration and pipeline execution in 7z!")
 	f1, err := file.New("secret.dat", false)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 	f1.WithData(original)
 
 	var archiveBuf bytes.Buffer
@@ -79,36 +79,22 @@ func TestSevenZip_CustomCoder_Registration(t *testing.T) {
 	})
 
 	written, err := zw.WriteArchive([]*file.File{f1})
-	if err != nil {
-		t.Fatalf("WriteArchive with custom coder failed: %v", err)
-	}
-	if written <= 0 {
-		t.Fatalf("Expected positive bytes written, got %d", written)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, written, int64(0))
 
 	// Read back the archive using Seal reader
 	rAt := bytes.NewReader(archiveBuf.Bytes())
 	zr, err := sevenzip.NewReader(rAt, int64(archiveBuf.Len()), "")
-	if err != nil {
-		t.Fatalf("NewReader on custom-coded archive failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	entries := zr.Entries()
-	if len(entries) != 1 {
-		t.Fatalf("Expected 1 entry, got %d", len(entries))
-	}
+	require.Len(t, entries, 1)
 
 	rc, err := entries[0].Open()
-	if err != nil {
-		t.Fatalf("Opening custom-coded entry failed: %v", err)
-	}
+	require.NoError(t, err)
 	decompressed, err := io.ReadAll(rc)
 	_ = rc.Close()
-	if err != nil {
-		t.Fatalf("Reading custom-coded entry failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if !bytes.Equal(decompressed, original) {
-		t.Fatalf("Decompressed mismatch: got %q, want %q", string(decompressed), string(original))
-	}
+	assert.Equal(t, original, decompressed)
 }

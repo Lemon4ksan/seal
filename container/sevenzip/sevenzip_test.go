@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/file"
 )
@@ -64,16 +67,11 @@ func TestWriteNumber_Boundaries(t *testing.T) {
 
 	for _, val := range cases {
 		var buf bytes.Buffer
-		if err := WriteNumber(&buf, val); err != nil {
-			t.Fatalf("WriteNumber(%d) failed: %v", val, err)
-		}
+		err := WriteNumber(&buf, val)
+		require.NoErrorf(t, err, "WriteNumber(%d) failed: %v", val, err)
 		readVal, err := ReadNumber(&buf)
-		if err != nil {
-			t.Fatalf("ReadNumber for (%d) failed: %v", val, err)
-		}
-		if readVal != val {
-			t.Fatalf("Number roundtrip mismatch: wrote %d, read %d (encoded len=%d)", val, readVal, buf.Len())
-		}
+		require.NoErrorf(t, err, "ReadNumber for (%d) failed: %v", val, err)
+		assert.Equalf(t, val, readVal, "Number roundtrip mismatch: wrote %d, read %d (encoded len=%d)", val, readVal, buf.Len())
 	}
 }
 
@@ -84,9 +82,7 @@ func TestAES256_KeyDerivationAndCrypto(t *testing.T) {
 
 	key1 := DeriveKey(password, salt, numCyclesPower)
 	key2 := DeriveKey(password, salt, numCyclesPower)
-	if key1 != key2 {
-		t.Fatalf("DeriveKey is non-deterministic")
-	}
+	assert.Equal(t, key1, key2, "DeriveKey is non-deterministic")
 
 	// Encrypted stream roundtrip test
 	plain := []byte("Sensitive payload to be protected with AES-256-CBC multi-round key stretching!")
@@ -107,24 +103,16 @@ func TestAES256_KeyDerivationAndCrypto(t *testing.T) {
 
 	// Decrypt
 	decR, err := DecryptStream(bytes.NewReader(plain), password, props)
-	if err != nil {
-		t.Fatalf("DecryptStream failed: %v", err)
-	}
+	require.NoError(t, err)
 	decData, err := io.ReadAll(decR)
-	if err != nil {
-		t.Fatalf("ReadAll decrypt failed: %v", err)
-	}
-	if len(decData) != len(plain) {
-		t.Fatalf("Decrypted length mismatch: got %d, want %d", len(decData), len(plain))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, len(plain), len(decData))
 }
 
 func TestSevenZip_Roundtrip(t *testing.T) {
 	// Construct test file graph including nested paths and directories
 	f1, err := file.New("hello.txt", false)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 	content1 := []byte("Hello, 7-Zip world from Seal archiving engine!")
 	f1.SetOpenFunc(func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(content1)), nil
@@ -132,9 +120,7 @@ func TestSevenZip_Roundtrip(t *testing.T) {
 	f1.WithModTime(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 
 	f2, err := file.New("docs/readme.md", false)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 	content2 := []byte(
 		"# Seal Archiver\n\nHigh-performance universal 7-Zip archiving substrate with LZMA/LZMA2 support.",
 	)
@@ -143,9 +129,7 @@ func TestSevenZip_Roundtrip(t *testing.T) {
 	})
 
 	f3, err := file.New("empty_dir/", true)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	files := []*file.File{f1, f2, f3}
 
@@ -153,23 +137,15 @@ func TestSevenZip_Roundtrip(t *testing.T) {
 	ws := &inMemoryWriteSeeker{}
 	writer := NewWriter(ws)
 	totalWritten, err := writer.WriteArchive(files)
-	if err != nil {
-		t.Fatalf("WriteArchive failed: %v", err)
-	}
-	if totalWritten != int64(len(ws.buf)) {
-		t.Fatalf("Total written mismatch: got %d, want %d", totalWritten, len(ws.buf))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(ws.buf)), totalWritten)
 
 	// Deserialize container and verify roundtrip fidelity
 	reader, err := NewReader(bytes.NewReader(ws.buf), int64(len(ws.buf)), "")
-	if err != nil {
-		t.Fatalf("NewReader failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	entries := reader.Entries()
-	if len(entries) != 3 {
-		t.Fatalf("Expected 3 entries, got %d", len(entries))
-	}
+	require.Len(t, entries, 3)
 
 	entryMap := make(map[string]*file.File)
 	for _, e := range entries {
@@ -178,58 +154,34 @@ func TestSevenZip_Roundtrip(t *testing.T) {
 
 	// Verify file 1
 	e1, ok := entryMap["hello.txt"]
-	if !ok {
-		t.Fatalf("e1 'hello.txt' missing from entries")
-	}
+	require.True(t, ok, "e1 'hello.txt' missing from entries")
 	rc1, err := e1.Open()
-	if err != nil {
-		t.Fatalf("e1 Open failed: %v", err)
-	}
+	require.NoError(t, err)
 	res1, err := io.ReadAll(rc1)
 	_ = rc1.Close()
-	if err != nil {
-		t.Fatalf("e1 ReadAll failed: %v", err)
-	}
-	if !bytes.Equal(res1, content1) {
-		t.Errorf("e1 content mismatch: got %q, want %q", string(res1), string(content1))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, content1, res1)
 
 	// Verify file 2
 	e2, ok := entryMap["docs/readme.md"]
-	if !ok {
-		t.Fatalf("e2 'docs/readme.md' missing from entries")
-	}
+	require.True(t, ok, "e2 'docs/readme.md' missing from entries")
 	rc2, err := e2.Open()
-	if err != nil {
-		t.Fatalf("e2 Open failed: %v", err)
-	}
+	require.NoError(t, err)
 	res2, err := io.ReadAll(rc2)
 	_ = rc2.Close()
-	if err != nil {
-		t.Fatalf("e2 ReadAll failed: %v", err)
-	}
-	if !bytes.Equal(res2, content2) {
-		t.Errorf("e2 content mismatch: got %q, want %q", string(res2), string(content2))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, content2, res2)
 
 	// Verify file 3 (dir)
 	e3, ok := entryMap["empty_dir/"]
-	if !ok {
-		t.Fatalf("e3 'empty_dir/' missing from entries")
-	}
-	if !e3.IsDir() {
-		t.Errorf("e3 expected directory, got regular file")
-	}
+	require.True(t, ok, "e3 'empty_dir/' missing from entries")
+	assert.True(t, e3.IsDir())
 }
 
 func TestContainerRegistration(t *testing.T) {
 	c, err := container.Get(container.SevenZip)
-	if err != nil {
-		t.Fatalf("container.Get(SevenZip) failed: %v", err)
-	}
-	if c.Type() != container.SevenZip {
-		t.Fatalf("expected container type %v, got %v", container.SevenZip, c.Type())
-	}
+	require.NoError(t, err)
+	assert.Equal(t, container.SevenZip, c.Type())
 }
 
 func TestSevenZip_AES256_EncryptedHeader_Roundtrip(t *testing.T) {
@@ -246,49 +198,33 @@ func TestSevenZip_AES256_EncryptedHeader_Roundtrip(t *testing.T) {
 	content2 := []byte("Secondary payload with encrypted headers hiding file names.")
 
 	f1, err := file.New("secret/doc.txt", false)
-	if err != nil {
-		t.Fatalf("file.New f1 failed: %v", err)
-	}
+	require.NoError(t, err)
 	f1.WithData(content1)
 
 	f2, err := file.New("confidential.json", false)
-	if err != nil {
-		t.Fatalf("file.New f2 failed: %v", err)
-	}
+	require.NoError(t, err)
 	f2.WithData(content2)
 
 	n, err := zw.WriteArchive([]*file.File{f1, f2})
-	if err != nil {
-		t.Fatalf("WriteArchive failed: %v", err)
-	}
-	if n <= 0 {
-		t.Fatalf("expected written bytes > 0, got %d", n)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, n, int64(0))
 
 	archiveBytes := outBuf.buf
 
 	// 1. Attempt to open without password: must fail on encrypted header
 	_, err = NewReader(bytes.NewReader(archiveBytes), int64(len(archiveBytes)), "")
-	if err == nil {
-		t.Fatalf("expected error reading encrypted header without password, got nil")
-	}
+	require.Error(t, err)
 
 	// 2. Attempt to open with wrong password: must fail
 	_, err = NewReader(bytes.NewReader(archiveBytes), int64(len(archiveBytes)), "WrongPassword")
-	if err == nil {
-		t.Fatalf("expected error reading encrypted header with wrong password, got nil")
-	}
+	require.Error(t, err)
 
 	// 3. Open with correct password: must succeed and extract both files
 	zr, err := NewReader(bytes.NewReader(archiveBytes), int64(len(archiveBytes)), pwd)
-	if err != nil {
-		t.Fatalf("NewReader with correct password failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	entries := zr.Entries()
-	if len(entries) != 2 {
-		t.Fatalf("expected 2 entries, got %d", len(entries))
-	}
+	require.Len(t, entries, 2)
 
 	entryMap := make(map[string]*file.File)
 	for _, e := range entries {
@@ -297,37 +233,21 @@ func TestSevenZip_AES256_EncryptedHeader_Roundtrip(t *testing.T) {
 
 	// Verify doc.txt
 	e1, ok := entryMap["secret/doc.txt"]
-	if !ok {
-		t.Fatalf("missing 'secret/doc.txt' in encrypted archive")
-	}
+	require.True(t, ok, "missing 'secret/doc.txt' in encrypted archive")
 	rc1, err := e1.Open()
-	if err != nil {
-		t.Fatalf("open e1 failed: %v", err)
-	}
+	require.NoError(t, err)
 	data1, err := io.ReadAll(rc1)
 	_ = rc1.Close()
-	if err != nil {
-		t.Fatalf("read e1 failed: %v", err)
-	}
-	if !bytes.Equal(data1, content1) {
-		t.Errorf("e1 content mismatch: got %q, want %q", string(data1), string(content1))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, content1, data1)
 
 	// Verify confidential.json
 	e2, ok := entryMap["confidential.json"]
-	if !ok {
-		t.Fatalf("missing 'confidential.json' in encrypted archive")
-	}
+	require.True(t, ok, "missing 'confidential.json' in encrypted archive")
 	rc2, err := e2.Open()
-	if err != nil {
-		t.Fatalf("open e2 failed: %v", err)
-	}
+	require.NoError(t, err)
 	data2, err := io.ReadAll(rc2)
 	_ = rc2.Close()
-	if err != nil {
-		t.Fatalf("read e2 failed: %v", err)
-	}
-	if !bytes.Equal(data2, content2) {
-		t.Errorf("e2 content mismatch: got %q, want %q", string(data2), string(content2))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, content2, data2)
 }

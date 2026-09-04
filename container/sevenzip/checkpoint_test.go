@@ -12,6 +12,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/container/sevenzip"
 	"github.com/lemon4ksan/seal/file"
 )
@@ -21,9 +24,7 @@ func Test7z_StealthCheckpoint_Roundtrip(t *testing.T) {
 	checkpointPayload := []byte(`{"magic":"SEAL_CHECKPOINT_V1","session_id":"sess-999","done_files":1,"total_files":2}`)
 
 	f1, err := file.New("hello.txt", false)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 	f1.WithData([]byte("Hello Resumable 7-Zip World!"))
 
 	var buf bytes.Buffer
@@ -33,63 +34,42 @@ func Test7z_StealthCheckpoint_Roundtrip(t *testing.T) {
 	})
 
 	n, err := w.WriteArchive([]*file.File{f1})
-	if err != nil {
-		t.Fatalf("WriteArchive failed: %v", err)
-	}
-	if n <= 0 {
-		t.Fatalf("Expected positive bytes written, got %d", n)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, n, int64(0))
 
 	archiveBytes := buf.Bytes()
 
 	// 1. Read using Seal's sevenzip.Reader
 	rAt := bytes.NewReader(archiveBytes)
 	zr, err := sevenzip.NewReader(rAt, int64(len(archiveBytes)), "")
-	if err != nil {
-		t.Fatalf("NewReader failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	cpData, ok := zr.Checkpoint()
-	if !ok {
-		t.Fatalf("Expected checkpoint to be detected, got false")
-	}
-	if !bytes.Equal(cpData, checkpointPayload) {
-		t.Fatalf("Checkpoint payload mismatch:\ngot  %s\nwant %s", string(cpData), string(checkpointPayload))
-	}
+	require.True(t, ok)
+	assert.Equal(t, checkpointPayload, cpData)
 
 	// 2. Verify file extraction
 	entries := zr.Entries()
-	if len(entries) != 1 {
-		t.Fatalf("Expected 1 entry, got %d", len(entries))
-	}
+	require.Len(t, entries, 1)
 	rc, err := entries[0].Open()
-	if err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer func() { _ = rc.Close() }()
 
 	extracted, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
-	if string(extracted) != "Hello Resumable 7-Zip World!" {
-		t.Fatalf("Extracted mismatch: %q", string(extracted))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Hello Resumable 7-Zip World!", string(extracted))
 
 	// 3. Cross-validate with official 7z.exe if installed
 	sevenZipBin, err := exec.LookPath("7z")
 	if err == nil {
 		tmpDir := t.TempDir()
 		archivePath := filepath.Join(tmpDir, "test_checkpoint.7z")
-		if err := os.WriteFile(archivePath, archiveBytes, 0o644); err != nil {
-			t.Fatalf("Failed to write temp archive: %v", err)
-		}
+		err := os.WriteFile(archivePath, archiveBytes, 0o644)
+		require.NoError(t, err)
 
 		cmd := exec.CommandContext(t.Context(), sevenZipBin, "t", archivePath)
 		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Official 7z.exe failed to test archive:\nError: %v\nOutput: %s", err, string(output))
-		}
+		require.NoErrorf(t, err, "Official 7z.exe failed to test archive:\nError: %v\nOutput: %s", err, string(output))
 		t.Logf("Official 7z.exe verified stealth checkpoint archive successfully:\n%s", string(output))
 	}
 }

@@ -5,15 +5,16 @@
 package tests
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/container"
@@ -80,43 +81,31 @@ func TestExtension_MultiFormat_Roundtrip(t *testing.T) {
 				seal.WithContainer(tc.container),
 				seal.WithExtension(origLic, rawSig),
 			)
-			if err != nil {
-				t.Fatalf("ArchiveDir failed: %v", err)
-			}
+			require.NoError(t, err)
 
 			// 2. Extract archive to make sure normal extraction is completely unaffected
 			extractDir := t.TempDir()
-			if err := seal.Unarchive(t.Context(), seal.FromFilePath(archivePath), extractDir); err != nil {
-				t.Fatalf("Unarchive failed: %v", err)
-			}
+			err = seal.Unarchive(t.Context(), seal.FromFilePath(archivePath), extractDir)
+			require.NoError(t, err)
 			data, err := os.ReadFile(filepath.Join(extractDir, "config.json"))
-			if err != nil || string(data) != `{"env":"prod"}` {
-				t.Fatalf("Extracted file mismatch or error: %v, data=%q", err, string(data))
-			}
+			require.NoError(t, err)
+			assert.Equal(t, `{"env":"prod"}`, string(data))
 
 			// 3. Inspect extensions
 			readLic := &TestLicenseExtension{}
 			readSig := extension.NewRaw("acme.signature", nil)
-			if err := seal.InspectExtensions(t.Context(), archivePath, readLic, readSig); err != nil {
-				t.Fatalf("InspectExtensions failed: %v", err)
-			}
+			err = seal.InspectExtensions(t.Context(), archivePath, readLic, readSig)
+			require.NoError(t, err)
 
-			if readLic.LicenseKey != origLic.LicenseKey || readLic.Tier != origLic.Tier || readLic.CustomerID != origLic.CustomerID {
-				t.Fatalf("License mismatch: got %+v, want %+v", readLic, origLic)
-			}
-
-			if !bytes.Equal(readSig.Data, rawSig.Data) {
-				t.Fatalf("Signature mismatch: got %x, want %x", readSig.Data, rawSig.Data)
-			}
+			assert.Equal(t, origLic.LicenseKey, readLic.LicenseKey)
+			assert.Equal(t, origLic.Tier, readLic.Tier)
+			assert.Equal(t, origLic.CustomerID, readLic.CustomerID)
+			assert.Equal(t, rawSig.Data, readSig.Data)
 
 			// 4. GetExtension direct lookup
 			rawBytes, err := seal.GetExtension(t.Context(), archivePath, "acme.signature")
-			if err != nil {
-				t.Fatalf("GetExtension failed: %v", err)
-			}
-			if !bytes.Equal(rawBytes, rawSig.Data) {
-				t.Fatalf("GetExtension payload mismatch")
-			}
+			require.NoError(t, err)
+			assert.Equal(t, rawSig.Data, rawBytes)
 		})
 	}
 }
@@ -125,14 +114,10 @@ func TestExtension_FirstParty_SignatureAndProvenance(t *testing.T) {
 	t.Parallel()
 
 	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	signer, err := signature.NewSigner(privKey, "Lemon4ksan <release@seal.dev>")
-	if err != nil {
-		t.Fatalf("NewSigner failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	prov := provenance.New(provenance.Info{
 		Commit:  "1234567890abcdef",
@@ -154,31 +139,22 @@ func TestExtension_FirstParty_SignatureAndProvenance(t *testing.T) {
 		seal.WithContainer(container.Zip),
 		seal.WithExtension(signer, prov),
 	)
-	if err != nil {
-		t.Fatalf("ArchiveDir failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// 1. Verify Signature
 	sigState, err := seal.VerifySignature(t.Context(), archivePath, pubKey)
-	if err != nil {
-		t.Fatalf("VerifySignature failed: %v", err)
-	}
-	if sigState.Signer != "Lemon4ksan <release@seal.dev>" {
-		t.Fatalf("Signer mismatch: got %q", sigState.Signer)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Lemon4ksan <release@seal.dev>", sigState.Signer)
 
 	// 2. Reject verification with wrong public key
 	wrongPub, _, _ := ed25519.GenerateKey(rand.Reader)
-	if _, err := seal.VerifySignature(t.Context(), archivePath, wrongPub); !errors.Is(err, seal.ErrSignatureInvalid) {
-		t.Fatalf("Expected ErrSignatureInvalid with wrong key, got: %v", err)
-	}
+	_, err = seal.VerifySignature(t.Context(), archivePath, wrongPub)
+	require.ErrorIs(t, err, seal.ErrSignatureInvalid)
 
 	// 3. Inspect Provenance
 	provInfo, err := seal.InspectProvenance(t.Context(), archivePath)
-	if err != nil {
-		t.Fatalf("InspectProvenance failed: %v", err)
-	}
-	if provInfo.Commit != "1234567890abcdef" || provInfo.Branch != "v1.0-release" || provInfo.Builder != "GitHub-Actions" {
-		t.Fatalf("Provenance mismatch: got %+v", provInfo)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "1234567890abcdef", provInfo.Commit)
+	assert.Equal(t, "v1.0-release", provInfo.Branch)
+	assert.Equal(t, "GitHub-Actions", provInfo.Builder)
 }

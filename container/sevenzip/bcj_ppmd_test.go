@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/foundation/codec/compress/lzma"
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/file"
 )
 
@@ -25,9 +28,7 @@ func TestSevenZip_BCJ_Filter_Roundtrip(t *testing.T) {
 	rawBinary := x86Code.Bytes()
 
 	f1, err := file.New("program.exe", false)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 	f1.SetSizes(int64(len(rawBinary)), 0, 0)
 	f1.WithModTime(time.Now())
 	f1.SetOpenFunc(func() (io.ReadCloser, error) {
@@ -42,38 +43,24 @@ func TestSevenZip_BCJ_Filter_Roundtrip(t *testing.T) {
 	})
 
 	n, err := writer.WriteArchive([]*file.File{f1})
-	if err != nil {
-		t.Fatalf("WriteArchive with BCJ failed: %v", err)
-	}
-	if n <= 0 {
-		t.Fatalf("WriteArchive returned invalid bytes count: %d", n)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, n, int64(0))
 
 	// Decompress and verify
 	reader, err := NewReader(bytes.NewReader(ws.buf), int64(len(ws.buf)), "")
-	if err != nil {
-		t.Fatalf("NewReader failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	entries := reader.Entries()
-	if len(entries) != 1 {
-		t.Fatalf("Expected 1 entry, got %d", len(entries))
-	}
+	require.Len(t, entries, 1)
 
 	rc, err := entries[0].Open()
-	if err != nil {
-		t.Fatalf("Entry.Open failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	decompressed, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if !bytes.Equal(decompressed, rawBinary) {
-		t.Fatalf("Decompressed binary does not match original! Got len %d, want %d", len(decompressed), len(rawBinary))
-	}
+	assert.Equal(t, rawBinary, decompressed)
 }
 
 func TestSevenZip_PPMd_Method_Roundtrip(t *testing.T) {
@@ -83,9 +70,7 @@ func TestSevenZip_PPMd_Method_Roundtrip(t *testing.T) {
 		"Seal implements native pure-Go PPMd model encoding and decoding!")
 
 	f1, err := file.New("document.txt", false)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 	f1.SetSizes(int64(len(sampleText)), 0, 0)
 	f1.WithModTime(time.Now())
 	f1.SetOpenFunc(func() (io.ReadCloser, error) {
@@ -100,36 +85,22 @@ func TestSevenZip_PPMd_Method_Roundtrip(t *testing.T) {
 	})
 
 	n, err := writer.WriteArchive([]*file.File{f1})
-	if err != nil {
-		t.Fatalf("WriteArchive with PPMd failed: %v", err)
-	}
-	if n <= 0 {
-		t.Fatalf("WriteArchive returned invalid bytes count: %d", n)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, n, int64(0))
 
 	// Decompress and verify
 	reader, err := NewReader(bytes.NewReader(ws.buf), int64(len(ws.buf)), "")
-	if err != nil {
-		t.Fatalf("NewReader failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	entries := reader.Entries()
-	if len(entries) != 1 {
-		t.Fatalf("Expected 1 entry, got %d", len(entries))
-	}
+	require.Len(t, entries, 1)
 
 	rc, err := entries[0].Open()
-	if err != nil {
-		t.Fatalf("Entry.Open failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	decompressed, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if !bytes.Equal(decompressed, sampleText) {
-		t.Fatalf("Decompressed text does not match original! Got %q, want %q", string(decompressed), string(sampleText))
-	}
+	assert.Equal(t, sampleText, decompressed)
 }

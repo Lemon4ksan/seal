@@ -10,6 +10,9 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/container"
 )
@@ -22,59 +25,36 @@ func TestArchive_BasicOperations(t *testing.T) {
 	archive.AddString("Hello World", "greeting.txt")
 	archive.AddBytes([]byte(`{"status":"ok"}`), "config.json")
 
-	if !archive.Exists("greeting.txt") {
-		t.Error("greeting.txt should exist")
-	}
-	if !archive.Exists("config.json") {
-		t.Error("config.json should exist")
-	}
+	assert.True(t, archive.Exists("greeting.txt"), "greeting.txt should exist")
+	assert.True(t, archive.Exists("config.json"), "config.json should exist")
 
 	// Read through virtual FS
 	data, err := archive.ReadFile("greeting.txt")
-	if err != nil {
-		t.Fatalf("archive.ReadFile failed: %v", err)
-	}
-	if string(data) != "Hello World" {
-		t.Errorf("content mismatch: got %q", string(data))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Hello World", string(data))
 
 	// Rename
-	if err := archive.Rename("greeting.txt", "docs/greeting.txt"); err != nil {
-		t.Fatalf("Rename failed: %v", err)
-	}
-	if archive.Exists("greeting.txt") {
-		t.Error("old name greeting.txt should not exist")
-	}
-	if !archive.Exists("docs/greeting.txt") {
-		t.Error("new name docs/greeting.txt should exist")
-	}
+	err = archive.Rename("greeting.txt", "docs/greeting.txt")
+	require.NoError(t, err)
+	assert.False(t, archive.Exists("greeting.txt"), "old name greeting.txt should not exist")
+	assert.True(t, archive.Exists("docs/greeting.txt"), "new name docs/greeting.txt should exist")
 
 	// Tree
 	treeStr := archive.Tree()
-	if treeStr == "" {
-		t.Error("expected non-empty tree string")
-	}
+	assert.NotEmpty(t, treeStr, "expected non-empty tree string")
 
 	// Serialization roundtrip
 	buf := new(bytes.Buffer)
 	written, err := archive.WriteTo(t.Context(), buf)
-	if err != nil {
-		t.Fatalf("WriteTo failed: %v", err)
-	}
-	if written <= 0 {
-		t.Errorf("expected positive written count, got %d", written)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, written, int64(0), "expected positive written count")
 
 	// Read back into new archive
 	raw := buf.Bytes()
 	freshArchive := seal.NewArchive()
 	loaded, err := freshArchive.Load(bytes.NewReader(raw), int64(len(raw)))
-	if err != nil {
-		t.Fatalf("freshArchive.Load failed: %v", err)
-	}
-	if len(loaded) != 2 {
-		t.Fatalf("expected 2 loaded entries, got %d", len(loaded))
-	}
+	require.NoError(t, err)
+	assert.Len(t, loaded, 2)
 }
 
 func TestArchive_AddFS(t *testing.T) {
@@ -86,41 +66,27 @@ func TestArchive_AddFS(t *testing.T) {
 
 	archive := seal.NewArchive()
 	added, err := archive.AddFS(memFS)
-	if err != nil {
-		t.Fatalf("AddFS failed: %v", err)
-	}
-	if len(added) < 2 {
-		t.Fatalf("expected at least 2 entries, got %d", len(added))
-	}
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, len(added), 2)
 
 	buf := new(bytes.Buffer)
-	if _, err := archive.WriteTo(t.Context(), buf); err != nil {
-		t.Fatalf("WriteTo failed: %v", err)
-	}
+	_, err = archive.WriteTo(t.Context(), buf)
+	require.NoError(t, err)
 
 	raw := buf.Bytes()
 	fresh := seal.NewArchive()
-	if _, err := fresh.Load(bytes.NewReader(raw), int64(len(raw))); err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
+	_, err = fresh.Load(bytes.NewReader(raw), int64(len(raw)))
+	require.NoError(t, err)
 
 	fileA, ok := fresh.File("a.txt")
-	if !ok {
-		t.Fatal("file a.txt not found")
-	}
+	require.True(t, ok, "file a.txt not found")
 	rc, err := fileA.Open()
-	if err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer rc.Close()
 
 	content, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
-	if string(content) != "file A" {
-		t.Errorf("content mismatch: got %q, want %q", string(content), "file A")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "file A", string(content))
 }
 
 func TestArchive_SevenZip_BasicOperations(t *testing.T) {
@@ -130,52 +96,30 @@ func TestArchive_SevenZip_BasicOperations(t *testing.T) {
 	arc.AddString("7z Content test string", "data.txt")
 	arc.AddBytes([]byte("Binary Payload 123456"), "sub/binary.bin")
 
-	if arc.Container() != container.SevenZip {
-		t.Fatalf("expected container %v, got %v", container.SevenZip, arc.Container())
-	}
+	assert.Equal(t, container.SevenZip, arc.Container())
 
 	buf := new(bytes.Buffer)
 	written, err := arc.WriteTo(t.Context(), buf)
-	if err != nil {
-		t.Fatalf("7z WriteTo failed: %v", err)
-	}
-	if written <= 0 {
-		t.Fatalf("expected positive written, got %d", written)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, written, int64(0))
 
 	raw := buf.Bytes()
 	fresh := seal.New7z()
 	loaded, err := fresh.Load(bytes.NewReader(raw), int64(len(raw)))
-	if err != nil {
-		t.Fatalf("7z Load failed: %v", err)
-	}
-	if len(loaded) != 2 {
-		t.Fatalf("expected 2 loaded entries, got %d", len(loaded))
-	}
+	require.NoError(t, err)
+	assert.Len(t, loaded, 2)
 
 	f1, ok := fresh.File("data.txt")
-	if !ok {
-		t.Fatal("data.txt not found in 7z")
-	}
+	require.True(t, ok, "data.txt not found in 7z")
 	s, err := f1.String()
-	if err != nil {
-		t.Fatalf("f1.String failed: %v", err)
-	}
-	if s != "7z Content test string" {
-		t.Errorf("f1 content mismatch: got %q", s)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "7z Content test string", s)
 
 	f2, ok := fresh.File("sub/binary.bin")
-	if !ok {
-		t.Fatal("sub/binary.bin not found in 7z")
-	}
+	require.True(t, ok, "sub/binary.bin not found in 7z")
 	b, err := f2.Bytes()
-	if err != nil {
-		t.Fatalf("f2.Bytes failed: %v", err)
-	}
-	if string(b) != "Binary Payload 123456" {
-		t.Errorf("f2 content mismatch: got %q", string(b))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Binary Payload 123456", string(b))
 }
 
 func TestArchive_EONRoundtrip(t *testing.T) {
@@ -187,45 +131,24 @@ func TestArchive_EONRoundtrip(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 	written, err := arc.WriteTo(t.Context(), buf)
-	if err != nil {
-		t.Fatalf("EON WriteTo failed: %v", err)
-	}
-	if written <= 0 {
-		t.Fatalf("expected positive written bytes, got %d", written)
-	}
+	require.NoError(t, err)
+	assert.Greater(t, written, int64(0))
 
 	raw := buf.Bytes()
 	fresh := seal.NewEon()
 	loaded, err := fresh.Load(bytes.NewReader(raw), int64(len(raw)))
-	if err != nil {
-		t.Fatalf("EON Load failed: %v", err)
-	}
-	if len(loaded) != 2 {
-		t.Fatalf("expected 2 loaded entries, got %d", len(loaded))
-	}
+	require.NoError(t, err)
+	assert.Len(t, loaded, 2)
 
 	f1, ok := fresh.File("hello.txt")
-	if !ok {
-		t.Fatal("hello.txt not found in loaded EON")
-	}
+	require.True(t, ok, "hello.txt not found in loaded EON")
 	s, err := f1.String()
-	if err != nil {
-		t.Fatalf("f1.String failed: %v", err)
-	}
-	if s != "Hello from EON container!" {
-		t.Errorf("content mismatch: got %q", s)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Hello from EON container!", s)
 
 	f2, ok := fresh.File("nested/test.bin")
-	if !ok {
-		t.Fatal("nested/test.bin not found in loaded EON")
-	}
+	require.True(t, ok, "nested/test.bin not found in loaded EON")
 	b, err := f2.Bytes()
-	if err != nil {
-		t.Fatalf("f2.Bytes failed: %v", err)
-	}
-	if string(b) != "EON Universal Extent Payload 42" {
-		t.Errorf("content mismatch: got %q", string(b))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "EON Universal Extent Payload 42", string(b))
 }
-

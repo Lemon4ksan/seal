@@ -11,43 +11,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/file"
 )
 
 func TestFile_CreationAndProperties(t *testing.T) {
 	f, err := file.New("docs/report.txt", false)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if f.Name() != "docs/report.txt" {
-		t.Errorf("Name mismatch: got %s, want docs/report.txt", f.Name())
-	}
-	if f.IsDir() {
-		t.Errorf("expected file, got directory")
-	}
+	assert.Equal(t, "docs/report.txt", f.Name())
+	assert.False(t, f.IsDir())
 
 	f.SetSizes(100, 50, 0x12345678)
-	if f.Size() != 100 || f.UncompressedSize() != 100 {
-		t.Errorf("uncompressed size mismatch: %d", f.Size())
-	}
-	if f.CompressedSize() != 50 {
-		t.Errorf("compressed size mismatch: %d", f.CompressedSize())
-	}
-	if f.CRC() != 0x12345678 {
-		t.Errorf("crc mismatch: 0x%08x", f.CRC())
-	}
+	assert.Equal(t, int64(100), f.Size())
+	assert.Equal(t, int64(100), f.UncompressedSize())
+	assert.Equal(t, int64(50), f.CompressedSize())
+	assert.Equal(t, uint32(0x12345678), f.CRC())
 
 	f.WithCompression(codec.ZStandard, 3)
-	if f.Method() != codec.ZStandard || f.Level() != 3 {
-		t.Errorf("compression mismatch: method=%v, level=%d", f.Method(), f.Level())
-	}
+	assert.Equal(t, codec.ZStandard, f.Method())
+	assert.Equal(t, 3, f.Level())
 
 	f.WithPassword("pass123")
-	if f.Password() != "pass123" || f.Encryption() != file.AES256 {
-		t.Errorf("password/encryption mismatch")
-	}
+	assert.Equal(t, "pass123", f.Password())
+	assert.Equal(t, file.AES256, f.Encryption())
 
 	data := []byte("Universal File Content")
 	f.SetOpenFunc(func() (io.ReadCloser, error) {
@@ -55,19 +45,13 @@ func TestFile_CreationAndProperties(t *testing.T) {
 	})
 
 	content, err := f.String()
-	if err != nil {
-		t.Fatalf("String() failed: %v", err)
-	}
-	if content != "Universal File Content" {
-		t.Errorf("content mismatch: got %q", content)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Universal File Content", content)
 }
 
 func TestFile_Concurrency(t *testing.T) {
 	f, err := file.New("concurrency_test.bin", false)
-	if err != nil {
-		t.Fatalf("file.New failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	f.SetOpenFunc(func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader([]byte("test"))), nil

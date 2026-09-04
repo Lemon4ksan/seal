@@ -15,6 +15,7 @@ import (
 	"github.com/lemon4ksan/foundation/codec/compress/gzip"
 	"github.com/lemon4ksan/foundation/codec/compress/lzma"
 	"github.com/lemon4ksan/foundation/codec/compress/zstd"
+
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/file"

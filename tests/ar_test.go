@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/container"
 	_ "github.com/lemon4ksan/seal/container/ar"
@@ -32,57 +35,41 @@ func TestAR_EndToEnd_Integration(t *testing.T) {
 		seal.ToFilePath(debPath),
 		seal.WithContainer(container.Ar),
 	)
-	if err != nil {
-		t.Fatalf("ArchiveDir failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// 2. Inspect with seal.List
 	entries, err := seal.List(t.Context(), seal.FromFilePath(debPath))
-	if err != nil {
-		t.Fatalf("seal.List failed: %v", err)
-	}
-	if len(entries) != 3 {
-		t.Fatalf("Expected 3 entries in AR catalog, got %d", len(entries))
-	}
+	require.NoError(t, err)
+	require.Len(t, entries, 3)
 
 	// 3. Check file presence with seal.ExistsIn
 	exists, err := seal.ExistsIn(t.Context(), seal.FromFilePath(debPath), "debian-binary")
-	if err != nil || !exists {
-		t.Fatalf("ExistsIn debian-binary failed: exists=%v, err=%v", exists, err)
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
 
 	exists, err = seal.ExistsIn(t.Context(), seal.FromFilePath(debPath), "data.tar.xz")
-	if err != nil || !exists {
-		t.Fatalf("ExistsIn data.tar.xz failed: exists=%v, err=%v", exists, err)
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
 
 	// 4. Test tree rendering
 	tree, err := seal.Tree(t.Context(), seal.FromFilePath(debPath))
-	if err != nil {
-		t.Fatalf("seal.Tree failed: %v", err)
-	}
-	if tree == "" {
-		t.Fatalf("seal.Tree returned empty string")
-	}
+	require.NoError(t, err)
+	assert.NotEmpty(t, tree)
 
 	// 5. Extract with seal.Unarchive
 	extractDir := t.TempDir()
-	if err := seal.Unarchive(t.Context(), seal.FromFilePath(debPath), extractDir); err != nil {
-		t.Fatalf("Unarchive failed: %v", err)
-	}
+	err = seal.Unarchive(t.Context(), seal.FromFilePath(debPath), extractDir)
+	require.NoError(t, err)
 
 	binData, err := os.ReadFile(filepath.Join(extractDir, "debian-binary"))
-	if err != nil || string(binData) != "2.0\n" {
-		t.Fatalf("Extracted debian-binary mismatch: %v, data=%q", err, string(binData))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "2.0\n", string(binData))
 
 	ctrlData, err := os.ReadFile(filepath.Join(extractDir, "control.tar.gz"))
-	if err != nil || string(ctrlData) != "MOCK_CONTROL_TAR_GZ" {
-		t.Fatalf("Extracted control.tar.gz mismatch: %v, data=%q", err, string(ctrlData))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "MOCK_CONTROL_TAR_GZ", string(ctrlData))
 
 	dataData, err := os.ReadFile(filepath.Join(extractDir, "data.tar.xz"))
-	if err != nil || string(dataData) != "MOCK_DATA_TAR_XZ" {
-		t.Fatalf("Extracted data.tar.xz mismatch: %v, data=%q", err, string(dataData))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "MOCK_DATA_TAR_XZ", string(dataData))
 }

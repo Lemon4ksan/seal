@@ -6,11 +6,13 @@ package tests
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/container"
@@ -54,73 +56,44 @@ func TestResumableArchiving_Zip_Lifecycle(t *testing.T) {
 		seal.WithSessionID("test-sess-zip"),
 		cancelOpt,
 	)
-
-	if !errors.Is(err, seal.ErrArchiveFrozen) {
-		t.Fatalf("Expected ErrArchiveFrozen, got: %v", err)
-	}
+	require.ErrorIs(t, err, seal.ErrArchiveFrozen)
 
 	// Phase 2: Verify the archive on disk is a 100% VALID zip archive
 	st, canResume, err := seal.CanResume(t.Context(), archivePath)
-	if err != nil {
-		t.Fatalf("CanResume failed: %v", err)
-	}
-	if !canResume || st == nil {
-		t.Fatalf("Expected canResume=true, got false")
-	}
-	if st.DoneFiles < 2 {
-		t.Fatalf("Expected at least 2 done files, got %d", st.DoneFiles)
-	}
-	if len(st.RemainingFiles) == 0 {
-		t.Fatalf("Expected remaining files, got 0")
-	}
+	require.NoError(t, err)
+	require.True(t, canResume)
+	require.NotNil(t, st)
+	assert.GreaterOrEqual(t, st.DoneFiles, 2)
+	assert.NotEmpty(t, st.RemainingFiles)
 
 	// Verify partial archive is readable and lists files
 	listEntries, err := seal.List(t.Context(), seal.FromFilePath(archivePath))
-	if err != nil {
-		t.Fatalf("seal.List on frozen archive failed: %v", err)
-	}
-	if len(listEntries) != st.DoneFiles {
-		t.Fatalf("List count mismatch: got %d, want %d", len(listEntries), st.DoneFiles)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, st.DoneFiles, len(listEntries))
 
 	// Phase 3: Resume archive creation to 100% completion
 	resumeErr := seal.ResumeArchive(t.Context(), archivePath)
-	if resumeErr != nil {
-		t.Fatalf("ResumeArchive failed: %v", resumeErr)
-	}
+	require.NoError(t, resumeErr)
 
 	// Phase 4: Verify completed archive
 	_, canResumeAfter, err := seal.CanResume(t.Context(), archivePath)
-	if err != nil {
-		t.Fatalf("CanResume after completion failed: %v", err)
-	}
-	if canResumeAfter {
-		t.Fatalf("Expected checkpoint to be removed after 100%% completion, but still present")
-	}
+	require.NoError(t, err)
+	assert.False(t, canResumeAfter, "Expected checkpoint to be removed after 100% completion, but still present")
 
 	finalEntries, err := seal.List(t.Context(), seal.FromFilePath(archivePath))
-	if err != nil {
-		t.Fatalf("Final seal.List failed: %v", err)
-	}
-	if len(finalEntries) != numFiles {
-		t.Fatalf("Expected %d total files, got %d", numFiles, len(finalEntries))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, numFiles, len(finalEntries))
 
 	// Verify extraction of completed zip
 	extractZipDir := filepath.Join(testDir, "extracted_zip")
-	if err := seal.Unarchive(t.Context(), seal.FromFilePath(archivePath), extractZipDir); err != nil {
-		t.Fatalf("seal.Unarchive on completed zip failed: %v", err)
-	}
+	err = seal.Unarchive(t.Context(), seal.FromFilePath(archivePath), extractZipDir)
+	require.NoError(t, err)
 	for i := 1; i <= numFiles; i++ {
 		fname := fmt.Sprintf("data_%d.txt", i)
 		expected := fmt.Sprintf("Payload content for file index %d in resumable test", i)
 		actual, err := os.ReadFile(filepath.Join(extractZipDir, fname))
-		if err != nil {
-			t.Fatalf("Failed to read extracted zip file %s: %v", fname, err)
-		}
-		if string(actual) != expected {
-			t.Fatalf("Content mismatch for %s: got %q, want %q", fname, string(actual), expected)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, expected, string(actual))
 	}
 }
 
@@ -161,59 +134,38 @@ func TestResumableArchiving_7z_Lifecycle(t *testing.T) {
 		seal.WithSessionID("test-sess-7z"),
 		cancelOpt,
 	)
-
-	if !errors.Is(err, seal.ErrArchiveFrozen) {
-		t.Fatalf("Expected ErrArchiveFrozen, got: %v", err)
-	}
+	require.ErrorIs(t, err, seal.ErrArchiveFrozen)
 
 	// Phase 2: Verify stealth checkpoint in 7z
 	st, canResume, err := seal.CanResume(t.Context(), archivePath)
-	if err != nil {
-		t.Fatalf("CanResume on 7z failed: %v", err)
-	}
-	if !canResume || st == nil {
-		t.Fatalf("Expected canResume=true on 7z, got false")
-	}
+	require.NoError(t, err)
+	require.True(t, canResume)
+	require.NotNil(t, st)
 
 	// Read entries from frozen archive
 	listEntries, err := seal.List(t.Context(), seal.FromFilePath(archivePath))
-	if err != nil {
-		t.Fatalf("seal.List on frozen 7z archive failed: %v", err)
-	}
-	if len(listEntries) == 0 {
-		t.Fatalf("Expected partial entries in frozen 7z, got 0")
-	}
+	require.NoError(t, err)
+	assert.NotEmpty(t, listEntries)
 
 	// Phase 3: Resume 7z archive to completion
 	resumeErr := seal.ResumeArchive(t.Context(), archivePath)
-	if resumeErr != nil {
-		t.Fatalf("ResumeArchive on 7z failed: %v", resumeErr)
-	}
+	require.NoError(t, resumeErr)
 
 	// Phase 4: Verify 100% completed 7z archive
 	finalEntries, err := seal.List(t.Context(), seal.FromFilePath(archivePath))
-	if err != nil {
-		t.Fatalf("Final 7z seal.List failed: %v", err)
-	}
-	if len(finalEntries) != numFiles {
-		t.Fatalf("Expected %d total files in 7z, got %d", numFiles, len(finalEntries))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, numFiles, len(finalEntries))
 
 	// Extract all files to ensure complete integrity
 	extractDir := filepath.Join(testDir, "extracted_7z")
-	if err := seal.Unarchive(t.Context(), seal.FromFilePath(archivePath), extractDir); err != nil {
-		t.Fatalf("seal.Unarchive on completed 7z failed: %v", err)
-	}
+	err = seal.Unarchive(t.Context(), seal.FromFilePath(archivePath), extractDir)
+	require.NoError(t, err)
 
 	for i := 1; i <= numFiles; i++ {
 		fname := fmt.Sprintf("binary_%d.dat", i)
 		expected := fmt.Sprintf("High compression content payload for 7z test %d", i)
 		actual, err := os.ReadFile(filepath.Join(extractDir, fname))
-		if err != nil {
-			t.Fatalf("Failed to read extracted file %s: %v", fname, err)
-		}
-		if string(actual) != expected {
-			t.Fatalf("Content mismatch for %s: got %q, want %q", fname, string(actual), expected)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, expected, string(actual))
 	}
 }

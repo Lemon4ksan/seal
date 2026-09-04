@@ -6,9 +6,11 @@ package deflate64_test
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal/codec/legacy/deflate64"
 )
@@ -19,9 +21,8 @@ func TestDeflate64_Empty(t *testing.T) {
 
 	buf := make([]byte, 16)
 	n, err := r.Read(buf)
-	if !errors.Is(err, io.EOF) || n != 0 {
-		t.Errorf("expected EOF, got n=%d, err=%v", n, err)
-	}
+	require.ErrorIs(t, err, io.EOF)
+	assert.Equal(t, 0, n)
 }
 
 func TestDeflate64_StoredBlock(t *testing.T) {
@@ -42,10 +43,6 @@ func TestDeflate64_StoredBlock(t *testing.T) {
 	defer r.Close()
 
 	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
-	if string(out) != "Hello" {
-		t.Errorf("expected 'Hello', got %q", string(out))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Hello", string(out))
 }

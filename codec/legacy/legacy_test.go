@@ -10,6 +10,8 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec"
 	_ "github.com/lemon4ksan/seal/codec/legacy"
 )
@@ -30,19 +32,13 @@ func TestLegacyCodecs_Registration(t *testing.T) {
 
 	for _, m := range methods {
 		dec, err := reg.Decompressor(m)
-		if err != nil {
-			t.Errorf("failed to get decompressor for method %v: %v", m, err)
-			continue
-		}
-		if dec == nil {
-			t.Errorf("nil decompressor returned for method %v", m)
-			continue
-		}
+		require.NoError(t, err)
+		require.NotNil(t, dec)
 
 		// Verify decompressor creates valid reader on empty input
 		rc, err := dec.Decompress(bytes.NewReader(nil))
 		if err != nil && !errors.Is(err, io.EOF) {
-			t.Errorf("dec.Decompress failed for method %v: %v", m, err)
+			require.NoError(t, err)
 		}
 		if rc != nil {
 			_ = rc.Close()

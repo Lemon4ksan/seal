@@ -10,6 +10,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/pipeline"
 )
 
@@ -40,9 +43,7 @@ func TestPipeline_Chain_Roundtrip(t *testing.T) {
 			if _, err := io.ReadFull(r, magic); err != nil {
 				return nil, err
 			}
-			if !bytes.Equal(magic, prefix) {
-				t.Fatalf("Prefix mismatch: got %q, want %q", magic, prefix)
-			}
+			require.Equal(t, prefix, magic)
 			return io.NopCloser(r), nil
 		},
 	)
@@ -53,35 +54,26 @@ func TestPipeline_Chain_Roundtrip(t *testing.T) {
 	// Test compression/encoding
 	var encodedBuf bytes.Buffer
 	wc, err := chain.WrapWriter(&encodedBuf)
-	if err != nil {
-		t.Fatalf("WrapWriter failed: %v", err)
-	}
-	if _, err := wc.Write(original); err != nil {
-		t.Fatalf("Writing to chain: %v", err)
-	}
-	if err := wc.Close(); err != nil {
-		t.Fatalf("Closing chain writer: %v", err)
-	}
+	require.NoError(t, err)
+
+	_, err = wc.Write(original)
+	require.NoError(t, err)
+
+	err = wc.Close()
+	require.NoError(t, err)
 
 	// Encoded output must not equal original
-	if bytes.Equal(encodedBuf.Bytes(), original) {
-		t.Fatal("Expected encoded output to be transformed")
-	}
+	assert.NotEqual(t, original, encodedBuf.Bytes(), "Expected encoded output to be transformed")
 
 	// Test decoding
 	rc, err := chain.WrapReader(&encodedBuf)
-	if err != nil {
-		t.Fatalf("WrapReader failed: %v", err)
-	}
+	require.NoError(t, err)
+
 	decoded, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("Reading from chain: %v", err)
-	}
+	require.NoError(t, err)
 	_ = rc.Close()
 
-	if !bytes.Equal(decoded, original) {
-		t.Fatalf("Decoded content mismatch: got %q, want %q", string(decoded), string(original))
-	}
+	assert.Equal(t, original, decoded)
 }
 
 type mockSplitter struct{}
@@ -153,17 +145,11 @@ func TestPipeline_ForkJoinDAG(t *testing.T) {
 	}
 
 	var dest bytes.Buffer
-	if err := dag.Execute(bytes.NewReader(original), &dest); err != nil {
-		t.Fatalf("DAG Execute failed: %v", err)
-	}
+	err := dag.Execute(bytes.NewReader(original), &dest)
+	require.NoError(t, err)
 
-	if processedCount != 3 {
-		t.Fatalf("Expected all 3 branches to be processed, got %d", processedCount)
-	}
-
-	if !bytes.Equal(dest.Bytes(), original) {
-		t.Fatalf("DAG roundtrip mismatch: got %q, want %q", dest.String(), string(original))
-	}
+	assert.Equal(t, 3, processedCount)
+	assert.Equal(t, original, dest.Bytes())
 }
 
 type nopWriteCloser struct {

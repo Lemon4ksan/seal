@@ -7,10 +7,12 @@ package tests
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"hash/crc32"
 	"io"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/container"
@@ -69,12 +71,8 @@ func createTestRARArchive(filename string, content []byte) []byte {
 func TestRAR_DefaultEngine_Integration(t *testing.T) {
 	t.Parallel()
 	eng, err := seal.DefaultContainer(container.Rar)
-	if err != nil {
-		t.Fatalf("DefaultEngine(container.Rar) failed: %v", err)
-	}
-	if eng.Type() != container.Rar {
-		t.Fatalf("Expected type %v, got %v", container.Rar, eng.Type())
-	}
+	require.NoError(t, err)
+	assert.Equal(t, container.Rar, eng.Type())
 
 	payload := []byte("Testing seamless UnRAR extraction through seal.Archive facade!")
 	archiveBytes := createTestRARArchive("notes/todo.txt", payload)
@@ -82,32 +80,19 @@ func TestRAR_DefaultEngine_Integration(t *testing.T) {
 	arc := seal.NewArchive()
 	rAt := bytes.NewReader(archiveBytes)
 	files, err := arc.Load(rAt, int64(len(archiveBytes)), eng)
-	if err != nil {
-		t.Fatalf("arc.Load with RAR engine failed: %v", err)
-	}
-
-	if len(files) != 1 {
-		t.Fatalf("Expected 1 file, got %d", len(files))
-	}
+	require.NoError(t, err)
+	require.Len(t, files, 1)
 
 	rc, err := files[0].Open()
-	if err != nil {
-		t.Fatalf("files[0].Open() failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer func() { _ = rc.Close() }()
 
 	extracted, err := io.ReadAll(rc)
-	if err != nil {
-		t.Fatalf("Reading extracted data: %v", err)
-	}
-	if !bytes.Equal(extracted, payload) {
-		t.Fatalf("Extracted mismatch: got %q, want %q", string(extracted), string(payload))
-	}
+	require.NoError(t, err)
+	assert.Equal(t, payload, extracted)
 
 	// Verify write rejection
 	var outBuf bytes.Buffer
 	_, err = eng.WriteArchive(&outBuf, files, container.Config{})
-	if !errors.Is(err, rar.ErrCreateNotSupported) {
-		t.Fatalf("Expected ErrCreateNotSupported, got %v", err)
-	}
+	require.ErrorIs(t, err, rar.ErrCreateNotSupported)
 }

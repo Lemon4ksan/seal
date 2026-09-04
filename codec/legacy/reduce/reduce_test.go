@@ -10,24 +10,21 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/codec/legacy/reduce"
 )
 
 func TestReduce_InvalidFactor(t *testing.T) {
 	_, err0 := reduce.NewReader(bytes.NewReader(nil), 0)
-	if err0 == nil {
-		t.Errorf("expected error for factor 0, got nil")
-	}
+	require.Error(t, err0, "expected error for factor 0")
 
 	_, err5 := reduce.NewReader(bytes.NewReader(nil), 5)
-	if err5 == nil {
-		t.Errorf("expected error for factor 5, got nil")
-	}
+	require.Error(t, err5, "expected error for factor 5")
 }
 
 func TestReduce_EmptyHeaderEOF(t *testing.T) {
 	_, err := reduce.NewReader(bytes.NewReader(nil), 1)
-	if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Errorf("expected EOF reading empty header, got %v", err)
-	}
+	assert.True(t, errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF), "expected EOF reading empty header")
 }

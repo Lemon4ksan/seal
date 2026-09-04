@@ -11,6 +11,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/container/zip"
 )
 
@@ -61,28 +64,16 @@ func TestStreamReader_WithDataDescriptor_WithSignature(t *testing.T) {
 	count := 0
 	for fe, r := range sr.All() {
 		count++
-		if fe.Name() != "stream.txt" {
-			t.Errorf("filename mismatch: got %q, want stream.txt", fe.Name())
-		}
+		assert.Equal(t, "stream.txt", fe.Name())
 		readData, err := io.ReadAll(r)
-		if err != nil {
-			t.Fatalf("read payload failed: %v", err)
-		}
-		if !bytes.Equal(readData, data) {
-			t.Fatalf("content mismatch: got %q, want %q", string(readData), string(data))
-		}
+		require.NoError(t, err)
+		assert.Equal(t, data, readData)
 		// Check that Data Descriptor updated entry sizes and CRC
-		if fe.CRC() != crc {
-			t.Errorf("CRC mismatch after reading: got %x, want %x", fe.CRC(), crc)
-		}
-		if fe.UncompressedSize() != int64(len(data)) {
-			t.Errorf("UncompressedSize mismatch: got %d, want %d", fe.UncompressedSize(), len(data))
-		}
+		assert.Equal(t, crc, fe.CRC())
+		assert.Equal(t, int64(len(data)), fe.UncompressedSize())
 	}
 
-	if count != 1 {
-		t.Fatalf("expected 1 streamed file, got %d", count)
-	}
+	assert.Equal(t, 1, count)
 }
 
 func TestStreamReader_WithDataDescriptor_NoSignature(t *testing.T) {
@@ -136,20 +127,10 @@ func TestStreamReader_WithDataDescriptor_NoSignature(t *testing.T) {
 
 	sr := zip.NewStreamReader(&buf, "", nil)
 	fe, r, err := sr.Next()
-	if err != nil {
-		t.Fatalf("sr.Next() failed: %v", err)
-	}
-	if fe.Name() != "nosig.txt" {
-		t.Errorf("name mismatch: got %q, want nosig.txt", fe.Name())
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "nosig.txt", fe.Name())
 	readData, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("io.ReadAll failed: %v", err)
-	}
-	if !bytes.Equal(readData, data) {
-		t.Fatalf("data mismatch: got %q, want %q", string(readData), string(data))
-	}
-	if fe.CRC() != crc {
-		t.Errorf("CRC mismatch: got %x, want %x", fe.CRC(), crc)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, data, readData)
+	assert.Equal(t, crc, fe.CRC())
 }

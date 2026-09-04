@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/seal/extension"
 	"github.com/lemon4ksan/seal/extension/provenance"
 )
@@ -29,19 +32,16 @@ func TestProvenance_Roundtrip(t *testing.T) {
 
 	p := provenance.New(origInfo)
 	payload, err := p.OnWrite(t.Context(), extension.ArchiveInfo{})
-	if err != nil {
-		t.Fatalf("OnWrite failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	readProv := provenance.New(provenance.Info{})
-	if err := readProv.OnRead(t.Context(), payload, extension.ArchiveInfo{}); err != nil {
-		t.Fatalf("OnRead failed: %v", err)
-	}
+	err = readProv.OnRead(t.Context(), payload, extension.ArchiveInfo{})
+	require.NoError(t, err)
 
 	info := readProv.Info()
-	if info.Commit != origInfo.Commit || info.Branch != origInfo.Branch || info.RepoURL != origInfo.RepoURL {
-		t.Fatalf("Provenance info mismatch: got %+v, want %+v", info, origInfo)
-	}
+	assert.Equal(t, origInfo.Commit, info.Commit)
+	assert.Equal(t, origInfo.Branch, info.Branch)
+	assert.Equal(t, origInfo.RepoURL, info.RepoURL)
 }
 
 func TestProvenance_Detect(t *testing.T) {
@@ -49,7 +49,7 @@ func TestProvenance_Detect(t *testing.T) {
 
 	p := provenance.Detect(t.Context())
 	info := p.Info()
-	if info.GoVersion == "" || info.OS == "" || info.Arch == "" {
-		t.Fatalf("Expected GoVersion, OS, and Arch to be detected: %+v", info)
-	}
+	assert.NotEmpty(t, info.GoVersion)
+	assert.NotEmpty(t, info.OS)
+	assert.NotEmpty(t, info.Arch)
 }

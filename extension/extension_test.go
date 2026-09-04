@@ -5,8 +5,10 @@
 package extension_test
 
 import (
-	"bytes"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/seal/extension"
 )
@@ -21,28 +23,16 @@ func TestBundle_Roundtrip(t *testing.T) {
 	}
 
 	encoded := extension.EncodeBundle(entries)
-	if len(encoded) == 0 {
-		t.Fatalf("expected non-empty encoded bundle")
-	}
+	require.NotEmpty(t, encoded)
 
 	decoded, err := extension.DecodeBundle(encoded)
-	if err != nil {
-		t.Fatalf("DecodeBundle failed: %v", err)
-	}
-
-	if len(decoded) != len(entries) {
-		t.Fatalf("expected %d entries, got %d", len(entries), len(decoded))
-	}
+	require.NoError(t, err)
+	require.Len(t, decoded, len(entries))
 
 	for id, original := range entries {
 		actual, ok := decoded[id]
-		if !ok {
-			t.Errorf("missing entry %q in decoded bundle", id)
-			continue
-		}
-		if !bytes.Equal(actual, original) {
-			t.Errorf("payload mismatch for %q: got %v, want %v", id, actual, original)
-		}
+		require.Truef(t, ok, "missing entry %q in decoded bundle", id)
+		assert.Equal(t, original, actual)
 	}
 }
 
@@ -51,17 +41,11 @@ func TestBundle_LegacyCheckpointFallback(t *testing.T) {
 
 	legacyPayload := []byte("SEAL_CHECKPOINT_V1\n{\"session_id\":\"legacy-123\"}\n---END_SEAL_CHECKPOINT---")
 	decoded, err := extension.DecodeBundle(legacyPayload)
-	if err != nil {
-		t.Fatalf("DecodeBundle with legacy checkpoint failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	cp, ok := decoded["seal.checkpoint"]
-	if !ok {
-		t.Fatalf("expected 'seal.checkpoint' entry for legacy payload")
-	}
-	if !bytes.Equal(cp, legacyPayload) {
-		t.Fatalf("legacy payload mismatch: got %q, want %q", string(cp), string(legacyPayload))
-	}
+	require.True(t, ok)
+	assert.Equal(t, legacyPayload, cp)
 }
 
 func TestBundle_StripBundle(t *testing.T) {
@@ -69,12 +53,8 @@ func TestBundle_StripBundle(t *testing.T) {
 
 	comment := "Official Release v1.0.0 SEXT\x01\x00\x00\x00"
 	stripped := extension.StripBundle(comment)
-	if stripped != "Official Release v1.0.0" {
-		t.Fatalf("unexpected stripped comment: %q", stripped)
-	}
+	assert.Equal(t, "Official Release v1.0.0", stripped)
 
 	plain := "Just a normal comment without extension"
-	if extension.StripBundle(plain) != plain {
-		t.Fatalf("plain comment was unexpectedly modified")
-	}
+	assert.Equal(t, plain, extension.StripBundle(plain))
 }
