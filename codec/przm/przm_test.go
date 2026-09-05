@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Lemon4ksan All rights reserved.
+﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/lemon4ksan/seal/codec/przm"
@@ -282,6 +283,181 @@ func BenchmarkPRZM_Throughput(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_, _ = przm.Decompress(compressed)
+		}
+	})
+}
+
+// TestPRZM_Unified_LevelsRoundtrip verifies that level 1, level 2 (PWS+CAST) and level 3
+// all decompress with 100% bitwise identity across all corpus types.
+func TestPRZM_Unified_LevelsRoundtrip(t *testing.T) {
+	sizes := []int{16 * 1024, 64 * 1024}
+	corpus := bench.GenerateCorpus(sizes)
+
+	for _, item := range corpus {
+		for _, lvl := range []int{1, 2, 3} {
+			testName := fmt.Sprintf("%s_lvl%d", item.Name, lvl)
+			t.Run(testName, func(t *testing.T) {
+				comp, err := przm.Compress(item.Data, lvl)
+				if err != nil {
+					t.Fatalf("compress failed: %v", err)
+				}
+				dec, err := przm.Decompress(comp)
+				if err != nil {
+					t.Fatalf("decompress failed: %v", err)
+				}
+				if !bytes.Equal(dec, item.Data) {
+					t.Fatalf("roundtrip mismatch for %s (len %d vs %d)", testName, len(dec), len(item.Data))
+				}
+			})
+		}
+	}
+}
+
+// TestPRZM_StreamRoundtrip verifies that CompressStream and DecompressStream
+// correctly stream data across chunks using continuous structural induction (T_CSI).
+func TestPRZM_StreamRoundtrip(t *testing.T) {
+	// Synthesize 256 KiB continuous JSON stream
+	var buf bytes.Buffer
+	for i := 0; buf.Len() < 256*1024; i++ {
+		fmt.Fprintf(&buf, `{"event":"metric_push","node_id":"cluster-%02d","cpu_pct":%.2f,"mem_mb":%d,"ts":%d}`+"\n",
+			i%16, 15.0+float64(i%80)/2.0, 1024+(i*3)%8192, 17180000+i)
+	}
+	original := buf.Bytes()[:256*1024]
+
+	// Compress stream
+	var compBuf bytes.Buffer
+	if err := przm.CompressStream(bytes.NewReader(original), &compBuf); err != nil {
+		t.Fatalf("CompressStream failed: %v", err)
+	}
+
+	compressedData := compBuf.Bytes()
+	ratio := float64(len(original)) / float64(len(compressedData))
+	t.Logf("Stream Compression (256 KiB JSON): %d -> %d bytes (Ratio: %.2fx)", len(original), len(compressedData), ratio)
+
+	// Decompress stream
+	var decBuf bytes.Buffer
+	if err := przm.DecompressStream(bytes.NewReader(compressedData), &decBuf); err != nil {
+		t.Fatalf("DecompressStream failed: %v", err)
+	}
+
+	decompressed := decBuf.Bytes()
+	if !bytes.Equal(decompressed, original) {
+		t.Fatalf("Stream roundtrip mismatch: len %d vs %d", len(decompressed), len(original))
+	}
+}
+
+func TestPRZM_GoExeChunks(t *testing.T) {
+	data, err := os.ReadFile(`C:\Program Files\go\bin\go.exe`)
+	if err != nil {
+		t.Skip("go.exe not found")
+	}
+	chunkSize := 4 * 1024 * 1024
+	for _, level := range []int{1, 2, 3} {
+		for start := 0; start < len(data); start += chunkSize {
+			end := start + chunkSize
+			if end > len(data) {
+				end = len(data)
+			}
+			chunk := data[start:end]
+			comp, err := przm.Compress(chunk, level)
+			if err != nil {
+				t.Fatalf("Level %d compress failed at [%d:%d]: %v", level, start, end, err)
+			}
+			dec, err := przm.Decompress(comp)
+			if err != nil {
+				t.Fatalf("Level %d decompress failed at [%d:%d]: %v", level, start, end, err)
+			}
+			if !bytes.Equal(dec, chunk) {
+				for i := 0; i < len(chunk) && i < len(dec); i++ {
+					if chunk[i] != dec[i] {
+						t.Fatalf("Level %d mismatch in chunk [%d:%d] at rel %d: expected %d, got %d",
+							level, start, end, i, chunk[i], dec[i])
+					}
+				}
+				t.Fatalf("Level %d mismatch length in chunk [%d:%d]: %d vs %d", level, start, end, len(chunk), len(dec))
+			}
+		}
+		t.Logf("Level %d passed 100%% bit-for-bit on all chunks of go.exe!", level)
+	}
+}
+
+func TestPRZM_Unified_v03_Engines(t *testing.T) {
+	// 1. TDA Ripser: Periodic Barcodes and Sparse Zeros
+	t.Run("TDA_PeriodicBarcodes", func(t *testing.T) {
+		raw := bytes.Repeat([]byte("CYCLIC_PERSISTENCE_VECTOR_01234567"), 128)
+		comp, err := przm.Compress(raw, 3)
+		if err != nil {
+			t.Fatalf("Compress level 3 failed: %v", err)
+		}
+		dec, err := przm.Decompress(comp)
+		if err != nil {
+			t.Fatalf("Decompress failed: %v", err)
+		}
+		if !bytes.Equal(dec, raw) {
+			t.Fatalf("TDA roundtrip mismatch: got %d bytes, want %d bytes", len(dec), len(raw))
+		}
+	})
+
+	// 2. Hyperbolic AST: Deep JSON brackets
+	t.Run("Hyperbolic_AST_JSON", func(t *testing.T) {
+		raw := bytes.Repeat([]byte(`{"user": {"id": 12345, "roles": ["admin", "developer"], "meta": {"active": true}}}, `), 32)
+		comp, err := przm.Compress(raw, 3)
+		if err != nil {
+			t.Fatalf("Compress level 3 failed: %v", err)
+		}
+		dec, err := przm.Decompress(comp)
+		if err != nil {
+			t.Fatalf("Decompress failed: %v", err)
+		}
+		if !bytes.Equal(dec, raw) {
+			t.Fatalf("Hyperbolic AST roundtrip mismatch: got %d bytes, want %d bytes", len(dec), len(raw))
+		}
+	})
+
+	// 3. Spectral Unitary: 4-Channel Redundant stream
+	t.Run("SpectralUnitary_4Channel", func(t *testing.T) {
+		n := 1024
+		raw := make([]byte, n*4)
+		for i := 0; i < n; i++ {
+			raw[i*4+0] = byte(i)
+			raw[i*4+1] = byte(i) // identical channel -> collapses to zero under unitary rotation!
+			raw[i*4+2] = byte(i * 3)
+			raw[i*4+3] = byte(i * 3)
+		}
+		comp, err := przm.Compress(raw, 4)
+		if err != nil {
+			t.Fatalf("Compress level 4 failed: %v", err)
+		}
+		dec, err := przm.Decompress(comp)
+		if err != nil {
+			t.Fatalf("Decompress failed: %v", err)
+		}
+		if !bytes.Equal(dec, raw) {
+			t.Fatalf("Spectral Unitary roundtrip mismatch: got %d bytes, want %d bytes", len(dec), len(raw))
+		}
+	})
+
+	// 4. HMDS: 4-Channel Interleaved data
+	t.Run("HMDS_4Channel", func(t *testing.T) {
+		n := 1024
+		raw := make([]byte, n*4)
+		for i := 0; i < n; i++ {
+			val := byte(i & 0xFF)
+			raw[i*4+0] = val
+			raw[i*4+1] = val + 1
+			raw[i*4+2] = val + 2
+			raw[i*4+3] = val + 3
+		}
+		comp, err := przm.Compress(raw, 4)
+		if err != nil {
+			t.Fatalf("Compress level 4 failed: %v", err)
+		}
+		dec, err := przm.Decompress(comp)
+		if err != nil {
+			t.Fatalf("Decompress failed: %v", err)
+		}
+		if !bytes.Equal(dec, raw) {
+			t.Fatalf("HMDS roundtrip mismatch: got %d bytes, want %d bytes", len(dec), len(raw))
 		}
 	})
 }

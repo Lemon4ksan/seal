@@ -13,9 +13,9 @@ import (
 
 // Frame constants and magic signatures.
 const (
-	MagicPRZM   uint32 = 0x4D5A5250 // ASCII 'P', 'R', 'Z', 'M' (Little-Endian)
-	HeaderSize  int    = 8
-	MaxBlockSize int   = 16 * 1024 * 1024 // 16 MiB max frame size
+	MagicPRZM    uint32 = 0x4D5A5250 // ASCII 'P', 'R', 'Z', 'M' (Little-Endian)
+	HeaderSize   int    = 8
+	MaxBlockSize int    = 16 * 1024 * 1024 // 16 MiB max frame size
 )
 
 // Frame configuration bitmasks (PRZM-SPEC-0.1 Section 2.2).
@@ -72,11 +72,11 @@ const (
 )
 
 var (
-	ErrInvalidMagic       = errors.New("przm: invalid magic signature")
-	ErrCorruptedFrame     = errors.New("przm: corrupted frame structure")
-	ErrOffsetOutOfBounds  = errors.New("przm: match offset out of decompressed bounds")
-	ErrBufferTooSmall     = errors.New("przm: output buffer too small")
-	ErrExceedsMaxBlock    = errors.New("przm: uncompressed size exceeds 16 MiB limit")
+	ErrInvalidMagic      = errors.New("przm: invalid magic signature")
+	ErrCorruptedFrame    = errors.New("przm: corrupted frame structure")
+	ErrOffsetOutOfBounds = errors.New("przm: match offset out of decompressed bounds")
+	ErrBufferTooSmall    = errors.New("przm: output buffer too small")
+	ErrExceedsMaxBlock   = errors.New("przm: uncompressed size exceeds 16 MiB limit")
 )
 
 // FrameHeader holds parsed frame metadata.

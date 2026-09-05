@@ -138,7 +138,7 @@ func GenerateTabular(targetSize int, stride int) []byte {
 	data := make([]byte, targetSize)
 	records := targetSize / stride
 
-	for r := 0; r < records; r++ {
+	for r := range records {
 		offset := r * stride
 		// Sequence ID (uint32)
 		binary.LittleEndian.PutUint32(data[offset:offset+4], uint32(r))

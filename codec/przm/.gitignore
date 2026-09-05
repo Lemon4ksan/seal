@@ -1,0 +1,28 @@
+# Lean 4 & Lake build artifacts
+.lake/
+*.olean
+*.ilean
+*.c
+
+# Go build & test artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+
+# Archive & temporary test binaries
+*.bin
+*.eon
+*.zip
+*.tar
+*.gz
+
+# IDE & OS metadata
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store

@@ -118,7 +118,7 @@ func AnalyzeFrame(compressed []byte) (*ChannelBreakdown, error) {
 		if op < 0x80 {
 			// Fast path 1: Fused Repeat Token (00 LLL MM KK)
 			litLen := int((op >> 4) & 0x07)
-			matchLen := int((op >> 2) & 0x03) + 4
+			matchLen := int((op>>2)&0x03) + 4
 			b.Cat00RepeatCount++
 			b.TotalMatches++
 			b.TotalMatchBytes += matchLen
@@ -220,7 +220,7 @@ func AnalyzeFrame(compressed []byte) (*ChannelBreakdown, error) {
 	// Compute Shannon Entropy of Literal Section: H(X) = -sum(P(x) * log2(P(x)))
 	rawLiteralBuf := literalBuf
 	if (hdr.Flags & FlagNibble) != 0 {
-		bPtr := decLitPool.Get().(*[]byte)
+		bPtr := decLitPool.Get()
 		defer decLitPool.Put(bPtr)
 		if unpacked, err := unpackNibblePlanes(literalBuf, bPtr); err == nil {
 			rawLiteralBuf = unpacked

@@ -18,10 +18,5 @@ profile.cov
 # Benchmark archives and scratch benchmarks
 *.7z
 *.eon
-cmd/bench_pf/
-cmd/bench_suite/
-cmd/bench_7z/
-cmd/profile_7z/
 .tmp/
 bin/
-

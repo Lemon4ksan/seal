@@ -7,20 +7,18 @@ package przm
 import (
 	"encoding/binary"
 	"fmt"
-	"sync"
 	"unsafe"
 
 	"github.com/lemon4ksan/foundation/bufkit"
 	"github.com/lemon4ksan/foundation/codec/filter/bcj"
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/silicon/simd"
 )
 
-var decLitPool = sync.Pool{
-	New: func() any {
-		b := bufkit.AlignedBytes(MaxBlockSize+64, bufkit.CacheLineSize)
-		return &b
-	},
-}
+var decLitPool = generic.NewPool(func() *[]byte {
+	b := bufkit.AlignedBytes(MaxBlockSize+64, bufkit.CacheLineSize)
+	return &b
+})
 
 // fastReadVarint decodes an unsigned varint with inline 1-byte and 2-byte fast paths.
 // In PRZM frames, offsets and match lengths <= 256K are guaranteed <= 3 bytes.
@@ -119,6 +117,14 @@ func copyMatch(baseDst unsafe.Pointer, dstPos, srcIdx, mLen, d int) {
 	}
 }
 
+// unpackLiterals unpacks literals from Section 4, supporting both v0.2 V-ANS and v0.1 Nibble-Planes.
+func unpackLiterals(src []byte, bPtr *[]byte) ([]byte, error) {
+	if len(src) >= 8 && src[0] == vansMagic0 && src[1] == vansMagic1 && src[2] == vansVer1 {
+		return VANSDecode4x(src)
+	}
+	return unpackNibblePlanes(src, bPtr)
+}
+
 // unpackNibblePlanes reconstructs raw literals from the Low-Nibble and High-Nibble planes.
 func unpackNibblePlanes(src []byte, bPtr *[]byte) ([]byte, error) {
 	if len(src) < 8 {
@@ -176,9 +182,9 @@ func unpackNibblePlanes(src []byte, bPtr *[]byte) ([]byte, error) {
 		p6 := *(*byte)(unsafe.Add(lowPlanePtr, j+6))
 		p7 := *(*byte)(unsafe.Add(lowPlanePtr, j+7))
 
-		d0 := (uint64(p0>>4)) | (uint64(p0&0x0F) << 8) | (uint64(p1>>4) << 16) | (uint64(p1&0x0F) << 24) |
+		d0 := (uint64(p0 >> 4)) | (uint64(p0&0x0F) << 8) | (uint64(p1>>4) << 16) | (uint64(p1&0x0F) << 24) |
 			(uint64(p2>>4) << 32) | (uint64(p2&0x0F) << 40) | (uint64(p3>>4) << 48) | (uint64(p3&0x0F) << 56)
-		d1 := (uint64(p4>>4)) | (uint64(p4&0x0F) << 8) | (uint64(p5>>4) << 16) | (uint64(p5&0x0F) << 24) |
+		d1 := (uint64(p4 >> 4)) | (uint64(p4&0x0F) << 8) | (uint64(p5>>4) << 16) | (uint64(p5&0x0F) << 24) |
 			(uint64(p6>>4) << 32) | (uint64(p6&0x0F) << 40) | (uint64(p7>>4) << 48) | (uint64(p7&0x0F) << 56)
 
 		*(*uint64)(unsafe.Add(dstPtr, 2*j)) |= d0
@@ -198,6 +204,51 @@ func unpackNibblePlanes(src []byte, bPtr *[]byte) ([]byte, error) {
 
 // Decompress decodes a PRZM-compressed byte slice back to original uncompressed bytes.
 func Decompress(src []byte) ([]byte, error) {
+	if len(src) == 0 {
+		return []byte{}, nil
+	}
+
+	if len(src) >= 4 {
+		// 32-bit magic formats (h-MDS, TDA, Spectral, Poincare, Clifford, GCTR)
+		switch binary.LittleEndian.Uint32(src[0:4]) {
+		case HMDSMagic:
+			return DecompressHMDS(src, nil)
+		case TDAMagic:
+			return DecompressTDA(src, nil)
+		case SpectralMagic:
+			return DecompressSpectralUnitary(src, nil)
+		case SymplecticMagic:
+			return DecompressSymplectic(src, nil)
+		case MahlerMagic:
+			return DecompressMahler(src, nil)
+		case SheafMagic:
+			return DecompressSheafTrellis(src, nil)
+		case ARM64Magic:
+			return DecompressARM64(src, nil)
+		case MacroTrellisMagic:
+			return DecompressMacroTrellis(src, nil)
+		case DependentSheafMagic:
+			return DecompressDependentSheaf(src, nil)
+		case PoincareMagic:
+			return DecodeHyperbolicAST(src)
+		case CliffordMagic:
+			return DecodeCliffordRotors(src)
+		case GCTRMagic:
+			return DecompressGCTR(src, nil)
+		}
+
+		// 3-byte versioned ISA formats (Zero-Schema VM, PWS, GGTC)
+		switch {
+		case src[0] == vmMagic0 && src[1] == vmMagic1 && src[2] == vmVer1:
+			return VMDecode(src)
+		case src[0] == pwsMagic0 && src[1] == pwsMagic1 && src[2] == pwsVer1:
+			return PWSDecode(src)
+		case src[0] == ggtcMagic0 && src[1] == ggtcMagic1 && src[2] == ggtcVer1:
+			res, _, err := decodeFullFrame(src)
+			return res, err
+		}
+	}
+
 	hdr, err := ParseFrameHeader(src)
 	if err != nil {
 		return nil, err
@@ -249,9 +300,9 @@ func Decompress(src []byte) ([]byte, error) {
 
 	var lits []byte
 	if (hdr.Flags & FlagNibble) != 0 {
-		bPtr := decLitPool.Get().(*[]byte)
+		bPtr := decLitPool.Get()
 		defer decLitPool.Put(bPtr)
-		unpacked, err := unpackNibblePlanes(src[sec4Offset:], bPtr)
+		unpacked, err := unpackLiterals(src[sec4Offset:], bPtr)
 		if err != nil {
 			return nil, err
 		}
@@ -286,7 +337,7 @@ func Decompress(src []byte) ([]byte, error) {
 		if op < 0x80 {
 			// Fast path 1: Fused Repeat Token (00 LLL MM KK)
 			litLen := int((op >> 4) & 0x07)
-			mLen := int((op >> 2) & 0x03) + 4
+			mLen := int((op>>2)&0x03) + 4
 			k := int(op & 0x03)
 
 			if litLen > 0 {
@@ -737,7 +788,7 @@ func Decompress(src []byte) ([]byte, error) {
 	}
 
 	if (hdr.Flags & FlagBCJSplit) != 0 {
-		bPtr := decLitPool.Get().(*[]byte)
+		bPtr := decLitPool.Get()
 		defer decLitPool.Put(bPtr)
 		unsplitX86(dst, uSize, int(hdr.CallCount), *bPtr)
 		return dst[:uSize], nil
