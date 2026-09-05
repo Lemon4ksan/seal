@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/lemon4ksan/foundation/codec/compress/lzma"
 
@@ -130,6 +131,15 @@ func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 
 	if cfg.DefaultMethod == codec.PPMd {
 		wOpts.Method = MethodPPMDDefault
+	}
+
+	switch strings.ToLower(cfg.BytecodeFilter) {
+	case "bcj", "x86":
+		wOpts.Filter = FilterBCJ
+	case "bcj2":
+		wOpts.Filter = FilterBCJ2
+	case "arm":
+		wOpts.Filter = FilterARM
 	}
 
 	// If dest does not implement io.WriteSeeker, buffer into memory to permit StartHeader fixup

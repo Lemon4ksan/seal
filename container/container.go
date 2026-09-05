@@ -109,6 +109,7 @@ type Config struct {
 	SourceDir      string
 	OnFileDone     func(*file.File, error)
 	OnProgress     func(delta int64, currentFile string)
+	BytecodeFilter string
 }
 
 // Container defines the bidirectional serialization interface for archive containers.

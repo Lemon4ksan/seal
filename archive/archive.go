@@ -96,6 +96,7 @@ type Archive struct {
 	sortStrategy   FileSortStrategy
 	conflictPolicy ConflictHandler
 	vfsFS          *vfs.FS
+	bytecodeFilter string
 }
 
 type archiverConfig struct {
@@ -109,6 +110,7 @@ type archiverConfig struct {
 	conflictPolicy ConflictHandler
 	registry       *codec.Registry
 	workers        int
+	bytecodeFilter string
 }
 
 type processConfig struct {
@@ -123,6 +125,7 @@ type processConfig struct {
 	sessionID      string
 	sourceDir      string
 	extensions     []extension.Extension
+	bytecodeFilter string
 }
 
 // New constructs a new universal [Archive] instance with the specified options.
@@ -150,6 +153,8 @@ func New(opts ...option.Option) *Archive {
 			cfg.comment = opt.Text
 		case option.OptWorkers:
 			cfg.workers = opt.Workers
+		case option.OptBytecodeFilter:
+			cfg.bytecodeFilter = opt.Text
 		case option.OptCustom:
 			if opt.Custom != nil {
 				opt.Custom(&cfg)
@@ -167,6 +172,7 @@ func New(opts ...option.Option) *Archive {
 		defaultLevel:   cfg.level,
 		sortStrategy:   cfg.sortStrategy,
 		conflictPolicy: cfg.conflictPolicy,
+		bytecodeFilter: cfg.bytecodeFilter,
 	}
 
 	a.vfsFS = vfs.NewFS(a)
@@ -729,6 +735,8 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 			procCfg.checkpointData = opt.Bytes
 		case option.OptExtension:
 			procCfg.extensions = append(procCfg.extensions, opt.Extensions...)
+		case option.OptBytecodeFilter:
+			procCfg.bytecodeFilter = opt.Text
 		case option.OptCustom:
 			if opt.Custom != nil {
 				opt.Custom(&procCfg)
@@ -846,6 +854,11 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 		}
 	}
 
+	bFilter := a.bytecodeFilter
+	if procCfg.bytecodeFilter != "" {
+		bFilter = procCfg.bytecodeFilter
+	}
+
 	containerCfg := container.Config{
 		Comment:        comment,
 		Password:       password,
@@ -860,6 +873,7 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 		SourceDir:      procCfg.sourceDir,
 		OnFileDone:     onDoneWrapper,
 		OnProgress:     onProgressWrapper,
+		BytecodeFilter: bFilter,
 	}
 
 	return c.WriteArchive(dest, filesCopy, containerCfg)

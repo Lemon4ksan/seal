@@ -150,6 +150,13 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 		var errMu sync.Mutex
 		var globalExtracted int64
 
+		if err := os.MkdirAll(destDir, 0o755); err != nil {
+			return err
+		}
+		var createdDirs sync.Map
+		createdDirs.Store(destDir, struct{}{})
+		createdDirs.Store(filepath.Clean(destDir), struct{}{})
+
 		// Ensure directory hierarchy exists prior to writing leaf files
 		for _, f := range files {
 			if f.IsDir() {
@@ -160,6 +167,8 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 				}
 				if err := os.MkdirAll(targetPath, 0o755); err != nil {
 					errs = append(errs, wrapErr("mkdir", f.Name(), err))
+				} else {
+					createdDirs.Store(targetPath, struct{}{})
 				}
 			}
 		}
@@ -212,7 +221,10 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 					}
 
 					if dir := filepath.Dir(targetPath); dir != "" && dir != "." {
-						_ = os.MkdirAll(dir, 0o755)
+						if _, ok := createdDirs.Load(dir); !ok {
+							_ = os.MkdirAll(dir, 0o755)
+							createdDirs.Store(dir, struct{}{})
+						}
 					}
 
 					rc, err := f.Open()

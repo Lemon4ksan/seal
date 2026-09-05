@@ -5,7 +5,7 @@
 package codec
 
 import (
-	"github.com/lemon4ksan/seal/codec/przm"
+	"github.com/lemon4ksan/przm"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 

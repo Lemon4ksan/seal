@@ -7,6 +7,7 @@ package eon
 import (
 	"bufio"
 	"bytes"
+	"container/list"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -16,8 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lemon4ksan/przm"
 	"github.com/lemon4ksan/seal/codec"
-	"github.com/lemon4ksan/seal/codec/przm"
 	"github.com/lemon4ksan/seal/file"
 )
 
@@ -43,6 +44,23 @@ type ExtentRecord struct {
 	PayloadSize uint64
 }
 
+const (
+	// DefaultMaxCachedChunks defines the maximum number of decompressed chunks
+	// retained in memory (default 4 chunks * 32 MiB = 128 MiB max footprint).
+	DefaultMaxCachedChunks = 4
+)
+
+type chunkCacheEntry struct {
+	chunkIdx uint32
+	data     []byte
+}
+
+type chunkFlight struct {
+	wg  sync.WaitGroup
+	raw []byte
+	err error
+}
+
 // Reader provides random-access traversal and extraction for EON container archives.
 type Reader struct {
 	rAt        io.ReaderAt
@@ -53,8 +71,11 @@ type Reader struct {
 	extents    []ExtentRecord
 	files      []*file.File
 
-	mu         sync.Mutex
-	chunkCache map[uint32][]byte
+	mu              sync.Mutex
+	maxCachedChunks int
+	chunkCache      map[uint32]*list.Element
+	lruList         *list.List
+	inFlight        map[uint32]*chunkFlight
 }
 
 // NewReader constructs a new EON container reader from a random-access source.
@@ -135,13 +156,16 @@ func NewReader(rAt io.ReaderAt, size int64) (*Reader, error) {
 	catalogReader := bufio.NewReader(io.NewSectionReader(rAt, indxOffset+INDXHeaderSize, catalogRemaining))
 
 	r := &Reader{
-		rAt:        rAt,
-		size:       size,
-		blockShift: blockShift,
-		blockSize:  blockSize,
-		chunks:     chunks,
-		extents:    make([]ExtentRecord, 0, totalExtents),
-		chunkCache: make(map[uint32][]byte),
+		rAt:             rAt,
+		size:            size,
+		blockShift:      blockShift,
+		blockSize:       blockSize,
+		chunks:          chunks,
+		extents:         make([]ExtentRecord, 0, totalExtents),
+		maxCachedChunks: DefaultMaxCachedChunks,
+		chunkCache:      make(map[uint32]*list.Element),
+		lruList:         list.New(),
+		inFlight:        make(map[uint32]*chunkFlight),
 	}
 
 	for i := range totalExtents {
@@ -307,14 +331,86 @@ func (r *Reader) BlockSize() int64 {
 	return r.blockSize
 }
 
+// SetMaxCachedChunks adjusts the maximum number of 32 MiB chunks held in LRU memory.
+func (r *Reader) SetMaxCachedChunks(n int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if n <= 0 {
+		n = 1
+	}
+	r.maxCachedChunks = n
+	for r.lruList.Len() > r.maxCachedChunks {
+		oldest := r.lruList.Back()
+		r.lruList.Remove(oldest)
+		delete(r.chunkCache, oldest.Value.(*chunkCacheEntry).chunkIdx)
+	}
+}
+
+// Close releases cached chunk memory.
+func (r *Reader) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	clear(r.chunkCache)
+	r.lruList.Init()
+	return nil
+}
+
 func (r *Reader) decompressChunk(chunkIdx uint32) ([]byte, error) {
 	r.mu.Lock()
-	if cached, ok := r.chunkCache[chunkIdx]; ok {
+	// 1. Check LRU cache
+	if elem, ok := r.chunkCache[chunkIdx]; ok {
+		r.lruList.MoveToFront(elem)
+		data := elem.Value.(*chunkCacheEntry).data
 		r.mu.Unlock()
-		return cached, nil
+		return data, nil
 	}
+
+	// 2. Single flight deduplication: if this chunk is already being decompressed
+	// by another worker, wait for its completion instead of duplicating work.
+	if flight, ok := r.inFlight[chunkIdx]; ok {
+		r.mu.Unlock()
+		flight.wg.Wait()
+		return flight.raw, flight.err
+	}
+
+	flight := &chunkFlight{}
+	flight.wg.Add(1)
+	r.inFlight[chunkIdx] = flight
 	r.mu.Unlock()
 
+	// 3. Decompress chunk outside lock
+	raw, err := r.loadChunk(chunkIdx)
+
+	// 4. Update cache and broadcast to waiters under lock
+	r.mu.Lock()
+	flight.raw = raw
+	flight.err = err
+	delete(r.inFlight, chunkIdx)
+
+	if err == nil {
+		if elem, ok := r.chunkCache[chunkIdx]; ok {
+			r.lruList.MoveToFront(elem)
+			elem.Value.(*chunkCacheEntry).data = raw
+		} else {
+			for r.lruList.Len() >= r.maxCachedChunks && r.lruList.Len() > 0 {
+				oldest := r.lruList.Back()
+				r.lruList.Remove(oldest)
+				delete(r.chunkCache, oldest.Value.(*chunkCacheEntry).chunkIdx)
+			}
+			elem := r.lruList.PushFront(&chunkCacheEntry{
+				chunkIdx: chunkIdx,
+				data:     raw,
+			})
+			r.chunkCache[chunkIdx] = elem
+		}
+	}
+	flight.wg.Done()
+	r.mu.Unlock()
+
+	return raw, err
+}
+
+func (r *Reader) loadChunk(chunkIdx uint32) ([]byte, error) {
 	if int(chunkIdx) >= len(r.chunks) {
 		return nil, errors.New("eon: chunk index out of bounds")
 	}
@@ -337,7 +433,7 @@ func (r *Reader) decompressChunk(chunkIdx uint32) ([]byte, error) {
 		return nil, fmt.Errorf("eon: read compressed chunk payload: %w", err)
 	}
 
-	// Decompress via ZSTD
+	// Decompress via Codec
 	codecID := chnkHdr[8]
 	var raw []byte
 	var err error
@@ -358,10 +454,6 @@ func (r *Reader) decompressChunk(chunkIdx uint32) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("eon: unsupported chunk codec ID %d", codecID)
 	}
-
-	r.mu.Lock()
-	r.chunkCache[chunkIdx] = raw
-	r.mu.Unlock()
 
 	return raw, nil
 }

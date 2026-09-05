@@ -135,3 +135,9 @@ func WithCheckpointData(data []byte) Option {
 func WithExtension(exts ...extension.Extension) Option {
 	return option.WithExtension(exts...)
 }
+
+// WithBytecodeFilter configures the bytecode preprocessing filter (e.g. "bcj", "bcj2", "arm").
+func WithBytecodeFilter(filter string) Option {
+	return option.WithBytecodeFilter(filter)
+}
+

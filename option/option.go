@@ -40,6 +40,7 @@ const (
 	OptSourceDir
 	OptCheckpoint
 	OptExtension
+	OptBytecodeFilter
 )
 
 // ProgressStats delivers real-time throughput and status telemetry during archive operations.
@@ -208,4 +209,9 @@ func WithCheckpointData(data []byte) Option {
 // WithExtension registers one or more metadata extensions with the archive operation.
 func WithExtension(exts ...extension.Extension) Option {
 	return Option{Kind: OptExtension, Extensions: exts}
+}
+
+// WithBytecodeFilter configures the bytecode preprocessing filter (e.g. "bcj", "bcj2", "arm").
+func WithBytecodeFilter(filter string) Option {
+	return Option{Kind: OptBytecodeFilter, Text: filter}
 }

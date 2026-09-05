@@ -91,6 +91,7 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		seal.WithCompression(method, *level),
 		seal.WithPassword(*pwd),
 		seal.WithComment(*comment),
+		seal.WithBytecodeFilter(*filterStr),
 	}
 
 	archiveInstance := seal.NewArchive(opts...)
@@ -120,8 +121,17 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		totalBytes += f.UncompressedSize()
 	}
 
+	displayFilter := *filterStr
+	if method == codec.PRZM {
+		if *filterStr == "none" {
+			displayFilter = "auto (x86-bcj+split)"
+		} else {
+			displayFilter = *filterStr + " (przm-internal)"
+		}
+	}
+
 	fmt.Fprintf(stdout, "Compressing %d entries (%s uncompressed) via %s (Level %d, Filter: %s)...\n",
-		totalFiles, util.FormatBytes(totalBytes), tuikit.Bold(method.String()), *level, *filterStr)
+		totalFiles, util.FormatBytes(totalBytes), tuikit.Bold(method.String()), *level, displayFilter)
 
 	var p *tuikit.Progress
 	if tuikit.ProbeTerminal(stdout) {
@@ -139,6 +149,7 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 	err = seal.UseSink(seal.ToFilePath(*outFile), func(w io.Writer) error {
 		writeOpts := []seal.Option{
 			seal.WithResumable(true),
+			seal.WithBytecodeFilter(*filterStr),
 		}
 		if len(inputs) > 0 {
 			writeOpts = append(writeOpts, seal.WithSourceDir(inputs[0]))

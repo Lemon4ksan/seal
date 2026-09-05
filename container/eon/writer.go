@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lemon4ksan/przm"
 	"github.com/lemon4ksan/seal/codec"
-	"github.com/lemon4ksan/seal/codec/przm"
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/file"
 )
