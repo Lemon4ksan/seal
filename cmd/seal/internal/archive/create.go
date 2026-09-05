@@ -7,23 +7,24 @@ package archive
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	"github.com/lemon4ksan/foundation/argkit"
 	"github.com/lemon4ksan/foundation/tuikit"
 
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/file"
 )
 
-// CreateCmd implements archive creation.
+// CreateCmd implements archive creation with full 7-Zip CLI compatibility (command 'a').
 type CreateCmd struct{}
 
 func (c *CreateCmd) Name() string      { return "create" }
@@ -31,30 +32,44 @@ func (c *CreateCmd) Aliases() []string { return []string{"a", "c", "pack"} }
 func (c *CreateCmd) Synopsis() string {
 	return "Create an archive (EON, 7z, ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2)"
 }
-func (c *CreateCmd) Usage() string { return "seal create [flags] <files...> -o <archive-path>" }
+func (c *CreateCmd) Usage() string {
+	return "seal a [flags] <archive-path> <files...> [-o <archive-path>]"
+}
 
 func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) error {
-	fs := flag.NewFlagSet("create", flag.ContinueOnError)
-	outFile := fs.String("o", "archive.7z", "Output archive destination path")
-	pwd := fs.String("p", "", "Password for encryption")
-	methodStr := fs.String("m", "", "Compression method (lzma2, ppmd, zstd, przm, deflate, gzip, store, cmpsc)")
-	filterStr := fs.String("filter", "none", "Bytecode filter: bcj (x86), arm, none")
-	level := fs.Int("l", 6, "Compression level (1-9)")
-	comment := fs.String("c", "", "Archive comment")
-
-	inputs, err := argkit.ParseInterspersedFlags(fs, args)
+	sz, err := util.ParseSevenZipArgs("a", args)
 	if err != nil {
 		return err
 	}
-	if len(inputs) == 0 {
+
+	outFile := sz.Archive
+	if outFile == "" {
+		outFile = "archive.7z"
+	}
+
+	rawInputs := sz.Items
+	if len(rawInputs) == 0 {
 		return errors.New("no input files or directories specified")
 	}
 
-	cType := util.DetectContainerType(*outFile)
+	// Expand shell wildcard globs if unexpanded by shell (e.g. Windows CMD / PowerShell)
+	var inputs []string
+	for _, input := range rawInputs {
+		if strings.ContainsAny(input, "*?[") {
+			matches, err := filepath.Glob(input)
+			if err == nil && len(matches) > 0 {
+				inputs = append(inputs, matches...)
+				continue
+			}
+		}
+		inputs = append(inputs, input)
+	}
+
+	cType := util.DetectContainerType(outFile)
 	method := codec.Deflate
-	if *methodStr != "" {
-		switch strings.ToLower(*methodStr) {
-		case "store", "none":
+	if sz.Method != "" {
+		switch strings.ToLower(sz.Method) {
+		case "store", "none", "copy":
 			method = codec.Store
 		case "gzip", "gz":
 			method = codec.Gzip
@@ -64,10 +79,12 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 			method = codec.PPMd
 		case "zstd", "zstandard":
 			method = codec.ZStandard
-		case "przm":
+		case "przm", "prism":
 			method = codec.PRZM
 		case "cmpsc", "method16":
 			method = codec.IBMCmpsc
+		case "brotli", "br":
+			method = codec.Brotli
 		}
 	} else {
 		switch cType {
@@ -86,17 +103,27 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		}
 	}
 
+	level := 6
+	if sz.Level >= 0 {
+		level = sz.Level
+	} else if method == codec.PRZM {
+		level = 3
+	}
+
 	opts := []seal.Option{
 		seal.WithContainer(cType),
-		seal.WithCompression(method, *level),
-		seal.WithPassword(*pwd),
-		seal.WithComment(*comment),
-		seal.WithBytecodeFilter(*filterStr),
+		seal.WithCompression(method, level),
+		seal.WithPassword(sz.Password),
+		seal.WithComment(sz.Comment),
+		seal.WithBytecodeFilter(sz.Filter),
+	}
+	if sz.Workers > 0 {
+		opts = append(opts, seal.WithWorkers(sz.Workers))
 	}
 
 	archiveInstance := seal.NewArchive(opts...)
 
-	fmt.Fprintf(stdout, "\nScanning inputs for %s (%s)...\n", tuikit.Bold(*outFile), tuikit.Magenta(cType.String()))
+	fmt.Fprintf(stdout, "\nScanning inputs for %s (%s)...\n", tuikit.Bold(outFile), tuikit.Magenta(cType.String()))
 	var totalFiles, totalBytes int64
 
 	for _, input := range inputs {
@@ -116,22 +143,34 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		}
 	}
 
+	// Apply exclude filters if specified via -x!*.tmp
+	if len(sz.ExcludePatterns) > 0 {
+		archiveInstance.Filter(func(f *file.File) bool {
+			for _, excl := range sz.ExcludePatterns {
+				if util.MatchPattern(excl, f.Name(), sz.Recurse) {
+					return false
+				}
+			}
+			return true
+		})
+	}
+
 	for _, f := range archiveInstance.Files() {
 		totalFiles++
 		totalBytes += f.UncompressedSize()
 	}
 
-	displayFilter := *filterStr
+	displayFilter := sz.Filter
 	if method == codec.PRZM {
-		if *filterStr == "none" {
+		if sz.Filter == "none" || sz.Filter == "" {
 			displayFilter = "auto (x86-bcj+split)"
 		} else {
-			displayFilter = *filterStr + " (przm-internal)"
+			displayFilter = sz.Filter + " (przm-internal)"
 		}
 	}
 
 	fmt.Fprintf(stdout, "Compressing %d entries (%s uncompressed) via %s (Level %d, Filter: %s)...\n",
-		totalFiles, util.FormatBytes(totalBytes), tuikit.Bold(method.String()), *level, displayFilter)
+		totalFiles, util.FormatBytes(totalBytes), tuikit.Bold(method.String()), level, displayFilter)
 
 	var p *tuikit.Progress
 	if tuikit.ProbeTerminal(stdout) {
@@ -145,11 +184,20 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 	}
 
 	start := time.Now()
+	var skippedFiles atomic.Int64
 
-	err = seal.UseSink(seal.ToFilePath(*outFile), func(w io.Writer) error {
+	err = seal.UseSink(seal.ToFilePath(outFile), func(w io.Writer) error {
 		writeOpts := []seal.Option{
 			seal.WithResumable(true),
-			seal.WithBytecodeFilter(*filterStr),
+			seal.WithBytecodeFilter(sz.Filter),
+			seal.WithOnFileDone(func(entryName string, err error) {
+				if err != nil {
+					skippedFiles.Add(1)
+				}
+			}),
+		}
+		if sz.Workers > 0 {
+			writeOpts = append(writeOpts, seal.WithWorkers(sz.Workers))
 		}
 		if len(inputs) > 0 {
 			writeOpts = append(writeOpts, seal.WithSourceDir(inputs[0]))
@@ -170,7 +218,7 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 			box := tuikit.NewBox("Archive Creation Frozen (Checkpoint Saved)", 60).
 				SetStyle(tuikit.BorderRounded).
 				SetIndent(0).
-				AddRow("Target Archive", tuikit.Bold(*outFile)).
+				AddRow("Target Archive", tuikit.Bold(outFile)).
 				AddRow("Interrupted", tuikit.Yellow("Ctrl+C / Cancel received")).
 				AddRow("Integrity", tuikit.Green("Archive is 100% valid & inspectable")).
 				AddRow("Resumption", tuikit.Cyan("Run create again to resume without data loss"))
@@ -178,12 +226,23 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 			fmt.Println()
 			return box.Render(stdout)
 		}
-		_ = os.Remove(*outFile)
+		_ = os.Remove(outFile)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			fmt.Fprintf(stdout, "\n%s Archive creation cancelled by user\n\n", tuikit.BadgeFail())
+			return ctx.Err()
+		}
 		return err
 	}
 
+	// Delete source files if -sdel was specified
+	if sz.DeleteSource {
+		for _, input := range inputs {
+			_ = os.RemoveAll(input)
+		}
+	}
+
 	elapsed := time.Since(start)
-	stat, _ := os.Stat(*outFile)
+	stat, _ := os.Stat(outFile)
 	var compSize int64
 	if stat != nil {
 		compSize = stat.Size()
@@ -198,12 +257,16 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 	box := tuikit.NewBox("Archive Created Successfully", 60).
 		SetStyle(tuikit.BorderRounded).
 		SetIndent(0).
-		AddRow("Output Archive", tuikit.Bold(*outFile)).
+		AddRow("Output Archive", tuikit.Bold(outFile)).
 		AddRow("Entries Count", fmt.Sprintf("%d files", totalFiles)).
 		AddRow("Original Size", util.FormatBytes(totalBytes)).
 		AddRow("Compressed Size", util.FormatBytes(compSize)).
 		AddRow("Compression Ratio", fmt.Sprintf("%.2f%%", ratio)).
 		AddRow("Throughput", fmt.Sprintf("%.2f MB/s (%v)", speed, elapsed))
+
+	if skipped := skippedFiles.Load(); skipped > 0 {
+		box.AddRow("Warnings", tuikit.Yellow(fmt.Sprintf("%d locked files skipped", skipped)))
+	}
 
 	fmt.Println()
 	return box.Render(stdout)

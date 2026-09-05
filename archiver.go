@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -35,6 +36,20 @@ import (
 	"github.com/lemon4ksan/seal/option"
 )
 
+// OverwritePolicy defines file collision behavior during archive extraction.
+type OverwritePolicy int
+
+const (
+	// OverwriteAll overwrites existing target files unconditionally (-aoa).
+	OverwriteAll OverwritePolicy = iota
+	// OverwriteSkip skips extraction of existing target files (-aos).
+	OverwriteSkip
+	// OverwriteRenameNew automatically generates a non-conflicting filename for the newly extracted file (-aou).
+	OverwriteRenameNew
+	// OverwriteRenameExisting renames the existing file on disk before extraction (-aot).
+	OverwriteRenameExisting
+)
+
 type processConfig struct {
 	workers    int
 	password   string
@@ -42,6 +57,32 @@ type processConfig struct {
 	security   option.SecuritySettings
 	onProgress option.ProgressFunc
 	onDone     func(string, error)
+	flat       bool
+	overwrite  OverwritePolicy
+}
+
+// WithFlat configures flat extraction (all files extracted directly into destination directory without subdirectories).
+func WithFlat(flat bool) Option {
+	return Option{
+		Kind: option.OptCustom,
+		Custom: func(target any) {
+			if cfg, ok := target.(*processConfig); ok {
+				cfg.flat = flat
+			}
+		},
+	}
+}
+
+// WithOverwritePolicy sets collision handling policy for existing files during extraction.
+func WithOverwritePolicy(policy OverwritePolicy) Option {
+	return Option{
+		Kind: option.OptCustom,
+		Custom: func(target any) {
+			if cfg, ok := target.(*processConfig); ok {
+				cfg.overwrite = policy
+			}
+		},
+	}
 }
 
 // Archiver provides a configurable multi-container archiving environment with context cancellation and error aggregation.
@@ -158,17 +199,24 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 		createdDirs.Store(filepath.Clean(destDir), struct{}{})
 
 		// Ensure directory hierarchy exists prior to writing leaf files
-		for _, f := range files {
-			if f.IsDir() {
-				targetPath, err := vfs.SafePath(destDir, f.Name())
-				if err != nil {
-					errs = append(errs, wrapErr("extract", f.Name(), err))
-					continue
-				}
-				if err := os.MkdirAll(targetPath, 0o755); err != nil {
-					errs = append(errs, wrapErr("mkdir", f.Name(), err))
-				} else {
-					createdDirs.Store(targetPath, struct{}{})
+		if !procCfg.flat {
+			for _, f := range files {
+				if f.IsDir() {
+					if len(procCfg.filters) > 0 && !generic.All(procCfg.filters, func(filter option.Filter) bool {
+						return filter(f.Name(), f.IsDir())
+					}) {
+						continue
+					}
+					targetPath, err := vfs.SafePath(destDir, f.Name())
+					if err != nil {
+						errs = append(errs, wrapErr("extract", f.Name(), err))
+						continue
+					}
+					if err := os.MkdirAll(targetPath, 0o755); err != nil {
+						errs = append(errs, wrapErr("mkdir", f.Name(), err))
+					} else {
+						createdDirs.Store(targetPath, struct{}{})
+					}
 				}
 			}
 		}
@@ -212,12 +260,35 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 						continue
 					}
 
-					targetPath, err := vfs.SafePath(destDir, f.Name())
+					relName := f.Name()
+					if procCfg.flat {
+						relName = filepath.Base(relName)
+					}
+
+					targetPath, err := vfs.SafePath(destDir, relName)
 					if err != nil {
 						errMu.Lock()
 						errs = append(errs, wrapErr("extract", f.Name(), err))
 						errMu.Unlock()
 						continue
+					}
+
+					// Overwrite policy check
+					if _, statErr := os.Stat(targetPath); statErr == nil {
+						switch procCfg.overwrite {
+						case OverwriteSkip:
+							if procCfg.onDone != nil {
+								procCfg.onDone(f.Name(), nil)
+							}
+							continue
+						case OverwriteRenameNew:
+							targetPath = generateNonConflictingName(targetPath)
+						case OverwriteRenameExisting:
+							renamed := generateNonConflictingName(targetPath)
+							_ = os.Rename(targetPath, renamed)
+						case OverwriteAll:
+							// overwrite
+						}
 					}
 
 					if dir := filepath.Dir(targetPath); dir != "" && dir != "." {
@@ -279,14 +350,28 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 					}
 
 					bufPtr := pool.Get64K()
-					_, copyErr := io.CopyBuffer(w, rc, *bufPtr)
+					ctxR := &ctxReader{ctx: ctx, r: rc}
+					_, copyErr := io.CopyBuffer(w, ctxR, *bufPtr)
 					pool.Put64K(bufPtr)
 					_ = rc.Close()
 					_ = out.Close()
 
-					// Restore file modification time (mtime)
-					if !f.ModTime().IsZero() {
-						_ = os.Chtimes(targetPath, f.ModTime(), f.ModTime())
+					if copyErr != nil {
+						if errors.Is(copyErr, context.Canceled) || errors.Is(copyErr, context.DeadlineExceeded) || ctx.Err() != nil {
+							_ = os.Remove(targetPath)
+							errMu.Lock()
+							errs = append(errs, ctx.Err())
+							errMu.Unlock()
+							return
+						}
+						errMu.Lock()
+						errs = append(errs, wrapErr("write", f.Name(), copyErr))
+						errMu.Unlock()
+					} else {
+						// Restore file modification time (mtime)
+						if !f.ModTime().IsZero() {
+							_ = os.Chtimes(targetPath, f.ModTime(), f.ModTime())
+						}
 					}
 
 					if copyErr != nil {
@@ -503,6 +588,13 @@ func Verify(ctx context.Context, src Source, opts ...Option) error {
 			return err
 		}
 
+		var filters []option.Filter
+		for _, opt := range opts {
+			if opt.Kind == option.OptFilter && opt.Filter != nil {
+				filters = append(filters, opt.Filter)
+			}
+		}
+
 		var errs []error
 		for _, f := range files {
 			if err := ctx.Err(); err != nil {
@@ -511,17 +603,26 @@ func Verify(ctx context.Context, src Source, opts ...Option) error {
 			if f.IsDir() {
 				continue
 			}
+			if len(filters) > 0 && !generic.All(filters, func(flt option.Filter) bool {
+				return flt(f.Name(), f.IsDir())
+			}) {
+				continue
+			}
 			rc, err := f.Open()
 			if err != nil {
 				errs = append(errs, wrapErr("verify", f.Name(), err))
 				continue
 			}
 			bufPtr := pool.Get64K()
-			_, copyErr := io.CopyBuffer(io.Discard, rc, *bufPtr)
+			ctxR := &ctxReader{ctx: ctx, r: rc}
+			_, copyErr := io.CopyBuffer(io.Discard, ctxR, *bufPtr)
 			pool.Put64K(bufPtr)
 			_ = rc.Close()
 
 			if copyErr != nil {
+				if errors.Is(copyErr, context.Canceled) || errors.Is(copyErr, context.DeadlineExceeded) || ctx.Err() != nil {
+					return ctx.Err()
+				}
 				errs = append(errs, wrapErr("verify", f.Name(), copyErr))
 			}
 		}
@@ -856,4 +957,31 @@ func InspectProvenance(ctx context.Context, archivePath string) (*provenance.Inf
 		return nil, err
 	}
 	return info, nil
+}
+
+func generateNonConflictingName(targetPath string) string {
+	dir := filepath.Dir(targetPath)
+	base := filepath.Base(targetPath)
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	idx := 1
+	for {
+		candidate := filepath.Join(dir, fmt.Sprintf("%s_%d%s", stem, idx, ext))
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+		idx++
+	}
+}
+
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (cr *ctxReader) Read(p []byte) (int, error) {
+	if err := cr.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return cr.r.Read(p)
 }

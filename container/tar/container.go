@@ -217,6 +217,9 @@ func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 
 func writeEntries(tw *Writer, files []*file.File, cfg container.Config) error {
 	for i, entry := range files {
+		if cfg.Context != nil && cfg.Context.Err() != nil {
+			return cfg.Context.Err()
+		}
 		cleanName := vfs.CleanPath(entry.Name())
 		typeFlag := TypeReg
 		if entry.IsDir() {
@@ -254,7 +257,7 @@ func writeEntries(tw *Writer, files []*file.File, cfg container.Config) error {
 				if cfg.OnFileDone != nil {
 					cfg.OnFileDone(entry, err)
 				}
-				return err
+				continue
 			}
 			_, writeErr := tw.WritePayload(r)
 			_ = r.Close()

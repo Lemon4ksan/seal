@@ -146,7 +146,7 @@ func (z *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 			if cfg.OnFileDone != nil {
 				cfg.OnFileDone(entry, err)
 			}
-			return totalWritten, err
+			continue
 		}
 
 		err = w.WriteEntry(entry, rc)

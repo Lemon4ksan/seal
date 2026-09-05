@@ -272,12 +272,15 @@ func (a *Archive) AddDir(dirPath string, opts ...option.Option) ([]*file.File, e
 
 	err := fskit.FastWalk(cleanRoot, func(currentPath string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			if d != nil && d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 
 		rel, err := filepath.Rel(cleanRoot, currentPath)
 		if err != nil {
-			return err
+			return nil
 		}
 		if rel == "." {
 			return nil
@@ -286,7 +289,7 @@ func (a *Archive) AddDir(dirPath string, opts ...option.Option) ([]*file.File, e
 		entryName := filepath.ToSlash(rel)
 		info, err := d.Info()
 		if err != nil {
-			return err
+			return nil
 		}
 
 		if d.IsDir() {

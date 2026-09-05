@@ -296,7 +296,11 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 		numWorkers = 32
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	parentCtx := cfg.Context
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
 	jobChan := make(chan *chunkJob, numWorkers*2)
@@ -367,11 +371,11 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 
 						rc, err := task.file.Open()
 						if err != nil {
-							select {
-							case compQueue <- &compChunk{idx: job.idx, err: err}:
-							case <-ctx.Done():
+							// Gracefully skip locked or inaccessible OS files (e.g. active cache, antivirus, locked handles)
+							if cfg.OnFileDone != nil {
+								cfg.OnFileDone(task.file, err)
 							}
-							return
+							continue
 						}
 
 						if task.fileOffset > 0 {
@@ -564,6 +568,9 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 
 	if writerErr != nil {
 		return totalWritten, writerErr
+	}
+	if err := ctx.Err(); err != nil {
+		return totalWritten, err
 	}
 
 	// 3. Central Directory Section

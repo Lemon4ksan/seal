@@ -7,54 +7,114 @@ package archive
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/lemon4ksan/foundation/argkit"
 	"github.com/lemon4ksan/foundation/tuikit"
 
 	"github.com/lemon4ksan/seal"
+	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
 )
 
-// ExtractCmd implements archive extraction.
+// ExtractCmd implements archive extraction with full 7-Zip compatibility (commands 'x' and 'e').
 type ExtractCmd struct{}
 
 func (c *ExtractCmd) Name() string      { return "extract" }
 func (c *ExtractCmd) Aliases() []string { return []string{"x", "e"} }
-func (c *ExtractCmd) Synopsis() string  { return "Extract an archive to destination directory" }
-func (c *ExtractCmd) Usage() string     { return "seal extract [flags] <archive-path> -d <output-dir>" }
+func (c *ExtractCmd) Synopsis() string {
+	return "Extract archive files (x: preserve paths, e: flat extract without directories)"
+}
+func (c *ExtractCmd) Usage() string {
+	return "seal x [flags] <archive-path> [patterns...] -o <output-dir>"
+}
 
 func (c *ExtractCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) error {
-	fs := flag.NewFlagSet("extract", flag.ContinueOnError)
-	destDir := fs.String("d", ".", "Destination extraction directory")
-	pwd := fs.String("p", "", "Decryption password")
+	cmdAlias := "x"
+	if len(os.Args) > 1 {
+		first := strings.ToLower(os.Args[1])
+		if first == "e" || first == "x" {
+			cmdAlias = first
+		}
+	}
 
-	posArgs, err := argkit.ParseInterspersedFlags(fs, args)
+	sz, err := util.ParseSevenZipArgs(cmdAlias, args)
 	if err != nil {
 		return err
 	}
-	if len(posArgs) < 1 {
+
+	if sz.Archive == "" {
 		return errors.New("archive file not specified")
 	}
-	archivePath := posArgs[0]
 
-	fmt.Fprintf(stdout, "\nExtracting %s to %s...\n", tuikit.Bold(archivePath), tuikit.Bold(*destDir))
-	start := time.Now()
+	isFlat := (cmdAlias == "e")
+	destDir := sz.OutputDir
+	if destDir == "" {
+		destDir = "."
+	}
+
+	modeDesc := "with full paths"
+	if isFlat {
+		modeDesc = "flat (stripping directories)"
+	}
+
+	fmt.Fprintf(stdout, "\nExtracting %s to %s (%s)...\n",
+		tuikit.Bold(sz.Archive), tuikit.Bold(destDir), tuikit.Cyan(modeDesc))
+
+	if len(sz.IncludePatterns) > 0 {
+		fmt.Fprintf(stdout, "Filters (include): %s\n", tuikit.Yellow(strings.Join(sz.IncludePatterns, ", ")))
+	}
+	if len(sz.ExcludePatterns) > 0 {
+		fmt.Fprintf(stdout, "Filters (exclude): %s\n", tuikit.Red(strings.Join(sz.ExcludePatterns, ", ")))
+	}
+
+	var policy seal.OverwritePolicy
+	switch sz.Overwrite {
+	case util.OverwriteSkip:
+		policy = seal.OverwriteSkip
+	case util.OverwriteRenameNew:
+		policy = seal.OverwriteRenameNew
+	case util.OverwriteRenameExisting:
+		policy = seal.OverwriteRenameExisting
+	default:
+		policy = seal.OverwriteAll
+	}
 
 	var extractedCount int64
-	archiver := seal.NewArchiver(
-		seal.WithPassword(*pwd),
+	opts := []seal.Option{
+		seal.WithPassword(sz.Password),
+		seal.WithFlat(isFlat),
+		seal.WithOverwritePolicy(policy),
 		seal.WithOnFileDone(func(name string, err error) {
 			if err == nil {
 				atomic.AddInt64(&extractedCount, 1)
 			}
 		}),
-	)
-	err = archiver.Unarchive(ctx, seal.FromFilePath(archivePath), *destDir, seal.WithPassword(*pwd))
+	}
+
+	if sz.Workers > 0 {
+		opts = append(opts, seal.WithWorkers(sz.Workers))
+	}
+
+	if len(sz.IncludePatterns) > 0 || len(sz.ExcludePatterns) > 0 {
+		filterFn := func(entryName string, isDir bool) bool {
+			return util.MatchFilters(entryName, isDir, sz.IncludePatterns, sz.ExcludePatterns, sz.Recurse)
+		}
+		opts = append(opts, seal.WithFilter(filterFn))
+	}
+
+	start := time.Now()
+	archiver := seal.NewArchiver(opts...)
+
+	err = archiver.Unarchive(ctx, seal.FromFilePath(sz.Archive), destDir, opts...)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			fmt.Fprintf(stdout, "\n%s Extraction interrupted by user (context cancelled)\n\n", tuikit.BadgeFail())
+			return ctx.Err()
+		}
 		return err
 	}
 

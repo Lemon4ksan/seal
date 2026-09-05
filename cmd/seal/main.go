@@ -24,10 +24,11 @@ import (
 )
 
 func main() {
-	app := tuikit.NewApp("seal", seal.Version, "🦭 Seal — Universal High-Performance Archiving & Storage Engine",
+	app := tuikit.NewApp("seal", seal.Version, "Universal High-Performance Archiving & Storage Engine",
 		&archive.CreateCmd{},
 		&archive.ExtractCmd{},
 		&archive.ListCmd{},
+		&archive.DeleteCmd{},
 		&archive.CatCmd{},
 		&archive.UpdateCmd{},
 		&archive.VacuumCmd{},
@@ -50,8 +51,8 @@ func main() {
 
 	app.CommandGroups = []tuikit.CommandGroup{
 		{
-			Title:    "Archive Operations",
-			Commands: []string{"create", "extract", "list", "cat", "update", "vacuum"},
+			Title:    "Archive Operations (7-Zip & Modern)",
+			Commands: []string{"create", "extract", "list", "delete", "cat", "update", "vacuum"},
 		},
 		{
 			Title:    "Virtual Filesystem & Cloud",

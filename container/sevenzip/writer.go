@@ -245,9 +245,19 @@ func (p *asyncPrefetchPipe) prefetchLoop() {
 					p.bcjIP += uint32(nr)
 				}
 
-				p.blockChan <- prefetchBlock{
+				block := prefetchBlock{
 					buf:  bufPtr,
 					data: bufSlice[:nr],
+				}
+				if p.ctx != nil {
+					select {
+					case <-p.ctx.Done():
+						pool.Put64K(bufPtr)
+						return
+					case p.blockChan <- block:
+					}
+				} else {
+					p.blockChan <- block
 				}
 			} else {
 				pool.Put64K(bufPtr)
@@ -274,10 +284,21 @@ func (p *asyncPrefetchPipe) prefetchLoop() {
 						p.bcjIP += uint32(nr)
 					}
 
-					p.blockChan <- prefetchBlock{
+					block := prefetchBlock{
 						buf:    bufPtr,
 						is256K: true,
 						data:   bufSlice[:nr],
+					}
+					if p.ctx != nil {
+						select {
+						case <-p.ctx.Done():
+							pool.Put256K(bufPtr)
+							_ = rc.Close()
+							return
+						case p.blockChan <- block:
+						}
+					} else {
+						p.blockChan <- block
 					}
 				} else {
 					pool.Put256K(bufPtr)
