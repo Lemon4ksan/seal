@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lemon4ksan/foundation/generic"
+
 	"github.com/lemon4ksan/seal/extension"
 )
 
@@ -47,15 +49,9 @@ func New(info Info) *Provenance {
 	if info.BuildTime.IsZero() {
 		info.BuildTime = time.Now().UTC()
 	}
-	if info.GoVersion == "" {
-		info.GoVersion = runtime.Version()
-	}
-	if info.OS == "" {
-		info.OS = runtime.GOOS
-	}
-	if info.Arch == "" {
-		info.Arch = runtime.GOARCH
-	}
+	info.GoVersion = generic.Coalesce(info.GoVersion, runtime.Version())
+	info.OS = generic.Coalesce(info.OS, runtime.GOOS)
+	info.Arch = generic.Coalesce(info.Arch, runtime.GOARCH)
 	return &Provenance{info: info}
 }
 

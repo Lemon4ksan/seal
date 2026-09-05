@@ -1,5 +1,5 @@
-github.com/lemon4ksan/foundation v0.0.0-20260828115039-3138d4a24c98 h1:MEwCM0ylNotR7ps143xVMe/p7Dkq+H+FzFzTwMfBLBo=
-github.com/lemon4ksan/foundation v0.0.0-20260828115039-3138d4a24c98/go.mod h1:MsA5LvHlsPmx1MBCumICPaT7D0p3f1B51zpGDIEaTKc=
+github.com/lemon4ksan/foundation v0.0.0-20260904183256-a0c6e94cc4e4 h1:5e9Z5oIPfwuKzOhCvO07eYqC9p7g9m4n9N96btrB3hQ=
+github.com/lemon4ksan/foundation v0.0.0-20260904183256-a0c6e94cc4e4/go.mod h1:iPFy+2SgErcf229N6F5Q/xNXFGVQF/zL4MpqOGxHUDQ=
 github.com/nwaples/rardecode/v2 v2.4.1 h1:F7zNW2LdAuuBThHWXQaiFUGVD/sef299NfWSB1nHAl4=
 github.com/nwaples/rardecode/v2 v2.4.1/go.mod h1:7uz379lSxPe6j9nvzxUZ+n7mnJNgjsRNb6IbvGVHRmw=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=

@@ -17,9 +17,11 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lemon4ksan/foundation/fskit"
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/pathkit"
 
 	"github.com/lemon4ksan/seal/checkpoint"
@@ -70,6 +72,9 @@ const (
 
 // ConflictHandler resolves name collisions during archive merging and entry attachment.
 type ConflictHandler func(existing, incoming *file.File) (ConflictAction, string)
+
+// ErrFileNotFound indicates that the requested file entry was not found in the archive.
+var ErrFileNotFound = fs.ErrNotExist
 
 // DefaultConflictHandler replaces previous entries by default.
 func DefaultConflictHandler(existing, incoming *file.File) (ConflictAction, string) {
@@ -199,9 +204,9 @@ func (a *Archive) Container() container.Type {
 
 // Comment returns the archive comment.
 func (a *Archive) Comment() string {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.comment
+	return generic.WithRGuard(&a.mu, func() string {
+		return a.comment
+	})
 }
 
 // SetComment updates the archive comment.
@@ -563,18 +568,59 @@ func (a *Archive) Filter(pred func(f *file.File) bool) {
 	})
 }
 
+// Find searches for the first entry in the archive satisfying predicate.
+func (a *Archive) Find(predicate func(*file.File) bool) (*file.File, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return generic.Find(a.files, predicate)
+}
+
+// FindAll returns a snapshot of all entries in the archive satisfying predicate.
+func (a *Archive) FindAll(predicate func(*file.File) bool) []*file.File {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return generic.Filter(a.files, predicate)
+}
+
+// ReadTo reads a named entry and unmarshals its content into *T.
+// If unmarshaler is omitted, json.Unmarshal is used by default.
+func ReadTo[T any](a *Archive, name string, unmarshaler ...func([]byte, any) error) (*T, error) {
+	f, ok := a.File(name)
+	if !ok {
+		return nil, ErrFileNotFound
+	}
+	return f.ReadTo[T](unmarshaler...)
+}
+
+// ReadTo reads a named entry and unmarshals its content into *T.
+func (a *Archive) ReadTo[T any](name string, unmarshaler ...func([]byte, any) error) (*T, error) {
+	return ReadTo[T](a, name, unmarshaler...)
+}
+
+// ReadInto reads a named entry and unmarshals its content directly into target.
+func (a *Archive) ReadInto[T any](name string, target *T, unmarshaler ...func([]byte, any) error) error {
+	f, ok := a.File(name)
+	if !ok {
+		return ErrFileNotFound
+	}
+	return f.ReadInto(target, unmarshaler...)
+}
+
 // Tree returns an ASCII visual representation of the archive hierarchy.
 func (a *Archive) Tree() string {
 	files := a.Files()
-	entries := make([]struct {
+	entries := generic.Map(files, func(f *file.File) struct {
 		Name  string
 		IsDir bool
-	}, len(files))
-
-	for i, f := range files {
-		entries[i].Name = f.Name()
-		entries[i].IsDir = f.IsDir()
-	}
+	} {
+		return struct {
+			Name  string
+			IsDir bool
+		}{
+			Name:  f.Name(),
+			IsDir: f.IsDir(),
+		}
+	})
 
 	root := vfs.BuildTree(entries)
 	return vfs.RenderTree(root)
@@ -787,6 +833,19 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 		extBundle = extension.EncodeBundle(extEntries)
 	}
 
+	var onProgressWrapper func(int64, string)
+	if procCfg.onProgress != nil {
+		var processedBytes atomic.Int64
+		onProgressWrapper = func(delta int64, curFile string) {
+			newTotal := processedBytes.Add(delta)
+			procCfg.onProgress(option.ProgressStats{
+				CurrentFile: curFile,
+				TotalRead:   newTotal,
+				TotalFiles:  int64(len(filesCopy)),
+			})
+		}
+	}
+
 	containerCfg := container.Config{
 		Comment:        comment,
 		Password:       password,
@@ -800,6 +859,7 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 		SessionID:      procCfg.sessionID,
 		SourceDir:      procCfg.sourceDir,
 		OnFileDone:     onDoneWrapper,
+		OnProgress:     onProgressWrapper,
 	}
 
 	return c.WriteArchive(dest, filesCopy, containerCfg)

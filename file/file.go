@@ -6,6 +6,7 @@ package file
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/lemon4ksan/foundation/generic"
 
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/internal/pool"
@@ -71,10 +74,7 @@ type File struct {
 // New constructs a standalone [File] entry with initialized defaults.
 // If isDir is omitted or false, a regular file entry is created.
 func New(name string, isDir ...bool) (*File, error) {
-	dir := false
-	if len(isDir) > 0 {
-		dir = isDir[0]
-	}
+	dir := generic.Coalesce(isDir...)
 
 	cleanName := vfs.CleanPath(name)
 	if cleanName == "" {
@@ -443,6 +443,50 @@ func (f *File) String() (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// ReadTo reads and unmarshals the file's uncompressed contents into a new *T.
+// If unmarshaler is omitted, json.Unmarshal is used by default.
+func ReadTo[T any](f *File, unmarshaler ...func([]byte, any) error) (*T, error) {
+	data, err := f.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	var res T
+	unmarshal := json.Unmarshal
+	if len(unmarshaler) > 0 && unmarshaler[0] != nil {
+		unmarshal = unmarshaler[0]
+	}
+	if err := unmarshal(data, &res); err != nil {
+		return nil, fmt.Errorf("file: unmarshal %s: %w", f.Name(), err)
+	}
+	return &res, nil
+}
+
+// ReadInto reads and unmarshals the file's uncompressed contents directly into target.
+func ReadInto[T any](f *File, target *T, unmarshaler ...func([]byte, any) error) error {
+	data, err := f.Bytes()
+	if err != nil {
+		return err
+	}
+	unmarshal := json.Unmarshal
+	if len(unmarshaler) > 0 && unmarshaler[0] != nil {
+		unmarshal = unmarshaler[0]
+	}
+	if err := unmarshal(data, target); err != nil {
+		return fmt.Errorf("file: unmarshal %s: %w", f.Name(), err)
+	}
+	return nil
+}
+
+// ReadTo reads and unmarshals the file's uncompressed contents into a new *T.
+func (f *File) ReadTo[T any](unmarshaler ...func([]byte, any) error) (*T, error) {
+	return ReadTo[T](f, unmarshaler...)
+}
+
+// ReadInto reads and unmarshals the file's uncompressed contents directly into target.
+func (f *File) ReadInto[T any](target *T, unmarshaler ...func([]byte, any) error) error {
+	return ReadInto[T](f, target, unmarshaler...)
 }
 
 // WithData sets an in-memory byte slice as the file content and updates the uncompressed size.

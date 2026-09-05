@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lemon4ksan/foundation/argkit"
 	"github.com/lemon4ksan/foundation/tuikit"
 
 	"github.com/lemon4ksan/seal"
@@ -26,9 +27,9 @@ import (
 type CreateCmd struct{}
 
 func (c *CreateCmd) Name() string      { return "create" }
-func (c *CreateCmd) Aliases() []string { return []string{"a", "c"} }
+func (c *CreateCmd) Aliases() []string { return []string{"a", "c", "pack"} }
 func (c *CreateCmd) Synopsis() string {
-	return "Create an archive (7z, ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2)"
+	return "Create an archive (EON, 7z, ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2)"
 }
 func (c *CreateCmd) Usage() string { return "seal create [flags] <files...> -o <archive-path>" }
 
@@ -36,12 +37,12 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	outFile := fs.String("o", "archive.7z", "Output archive destination path")
 	pwd := fs.String("p", "", "Password for encryption")
-	methodStr := fs.String("m", "", "Compression method (lzma2, ppmd, zstd, deflate, gzip, store, cmpsc)")
+	methodStr := fs.String("m", "", "Compression method (lzma2, ppmd, zstd, przm, deflate, gzip, store, cmpsc)")
 	filterStr := fs.String("filter", "none", "Bytecode filter: bcj (x86), arm, none")
 	level := fs.Int("l", 6, "Compression level (1-9)")
 	comment := fs.String("c", "", "Archive comment")
 
-	inputs, err := tuikit.ParseInterspersedFlags(fs, args)
+	inputs, err := argkit.ParseInterspersedFlags(fs, args)
 	if err != nil {
 		return err
 	}
@@ -63,6 +64,8 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 			method = codec.PPMd
 		case "zstd", "zstandard":
 			method = codec.ZStandard
+		case "przm":
+			method = codec.PRZM
 		case "cmpsc", "method16":
 			method = codec.IBMCmpsc
 		}
@@ -70,6 +73,8 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		switch cType {
 		case container.SevenZip:
 			method = codec.LZMA2
+		case container.Eon:
+			method = codec.PRZM
 		case container.TarGz:
 			method = codec.Gzip
 		case container.TarZst:
@@ -118,6 +123,17 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 	fmt.Fprintf(stdout, "Compressing %d entries (%s uncompressed) via %s (Level %d, Filter: %s)...\n",
 		totalFiles, util.FormatBytes(totalBytes), tuikit.Bold(method.String()), *level, *filterStr)
 
+	var p *tuikit.Progress
+	if tuikit.ProbeTerminal(stdout) {
+		p = tuikit.NewProgress(
+			tuikit.WithWriter(stdout),
+			tuikit.WithPrefix("Compressing"),
+			tuikit.WithTotal(totalBytes),
+			tuikit.WithUnit(tuikit.UnitBytes),
+			tuikit.WithBarWidth(24),
+		)
+	}
+
 	start := time.Now()
 
 	err = seal.UseSink(seal.ToFilePath(*outFile), func(w io.Writer) error {
@@ -127,9 +143,17 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		if len(inputs) > 0 {
 			writeOpts = append(writeOpts, seal.WithSourceDir(inputs[0]))
 		}
+		if p != nil {
+			writeOpts = append(writeOpts, seal.WithProgress(func(stats seal.ProgressStats) {
+				p.SetCurrent(stats.TotalRead)
+			}))
+		}
 		_, err := archiveInstance.WriteTo(ctx, w, writeOpts...)
 		return err
 	})
+	if p != nil {
+		p.Done()
+	}
 	if err != nil {
 		if errors.Is(err, seal.ErrArchiveFrozen) {
 			box := tuikit.NewBox("Archive Creation Frozen (Checkpoint Saved)", 60).

@@ -12,6 +12,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/lemon4ksan/foundation/argkit"
 	"github.com/lemon4ksan/foundation/tuikit"
 
 	"github.com/lemon4ksan/seal"
@@ -29,7 +30,7 @@ func (c *TestCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) e
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	pwd := fs.String("p", "", "Decryption password")
 
-	posArgs, err := tuikit.ParseInterspersedFlags(fs, args)
+	posArgs, err := argkit.ParseInterspersedFlags(fs, args)
 	if err != nil {
 		return err
 	}

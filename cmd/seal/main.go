@@ -16,27 +16,54 @@ import (
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/archive"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/bench"
+	"github.com/lemon4ksan/seal/cmd/seal/internal/cloud"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/forensics"
+	"github.com/lemon4ksan/seal/cmd/seal/internal/prolly"
+	"github.com/lemon4ksan/seal/cmd/seal/internal/security"
 	_ "github.com/lemon4ksan/seal/codec/legacy"
 )
 
 func main() {
-	app := tuikit.NewApp("seal", seal.Version, "🦭 Seal — High-Performance Universal Archiving Engine",
+	app := tuikit.NewApp("seal", seal.Version, "🦭 Seal — Universal High-Performance Archiving & Storage Engine",
 		&archive.CreateCmd{},
 		&archive.ExtractCmd{},
 		&archive.ListCmd{},
 		&archive.CatCmd{},
+		&archive.UpdateCmd{},
+		&archive.VacuumCmd{},
 		&forensics.TestCmd{},
 		&forensics.TreeCmd{},
 		&forensics.InspectCmd{},
 		&forensics.DoctorCmd{},
+		&forensics.MountCmd{},
+		&prolly.SnapshotCmd{},
+		&prolly.LogCmd{},
+		&prolly.DiffCmd{},
+		&cloud.ServeCmd{},
+		&cloud.PushCmd{},
+		&cloud.PullCmd{},
+		&security.KeygenCmd{},
+		&security.VaultCmd{},
+		&security.KeyCmd{},
 		&bench.BenchCmd{},
 	)
 
 	app.CommandGroups = []tuikit.CommandGroup{
 		{
 			Title:    "Archive Operations",
-			Commands: []string{"create", "extract", "list", "cat"},
+			Commands: []string{"create", "extract", "list", "cat", "update", "vacuum"},
+		},
+		{
+			Title:    "Virtual Filesystem & Cloud",
+			Commands: []string{"mount", "serve", "push", "pull"},
+		},
+		{
+			Title:    "Git-like Versioning & Snapshots",
+			Commands: []string{"snapshot", "log", "diff"},
+		},
+		{
+			Title:    "Enterprise Security & Vaults",
+			Commands: []string{"keygen", "vault", "key"},
 		},
 		{
 			Title:    "Integrity, Forensics & Repair",

@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lemon4ksan/foundation/argkit"
 	"github.com/lemon4ksan/foundation/tuikit"
 
 	"github.com/lemon4ksan/seal"
@@ -31,7 +32,7 @@ func (c *ExtractCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer
 	destDir := fs.String("d", ".", "Destination extraction directory")
 	pwd := fs.String("p", "", "Decryption password")
 
-	posArgs, err := tuikit.ParseInterspersedFlags(fs, args)
+	posArgs, err := argkit.ParseInterspersedFlags(fs, args)
 	if err != nil {
 		return err
 	}

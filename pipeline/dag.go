@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"github.com/lemon4ksan/foundation/generic"
 )
 
 // Splitter splits a single input stream into N separate output streams.
@@ -202,10 +204,9 @@ func (dag *ForkJoinDAG) ExecuteContext(ctx context.Context, src io.Reader, dest 
 		return err
 	}
 
-	mergeSources := make([]io.Reader, len(branchBufs))
-	for i, b := range branchBufs {
-		mergeSources[i] = b
-	}
+	mergeSources := generic.Map(branchBufs, func(b *bytes.Buffer) io.Reader {
+		return b
+	})
 
 	return dag.merger.Merge(mergeSources, dest)
 }

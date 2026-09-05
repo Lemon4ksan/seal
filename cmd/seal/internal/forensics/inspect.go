@@ -10,14 +10,17 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/lemon4ksan/foundation/argkit"
 	"github.com/lemon4ksan/foundation/tuikit"
 
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
 	"github.com/lemon4ksan/seal/container"
+	"github.com/lemon4ksan/seal/container/eon"
 	"github.com/lemon4ksan/seal/container/sevenzip"
 	"github.com/lemon4ksan/seal/container/zip"
 )
@@ -35,7 +38,7 @@ func (c *InspectCmd) Usage() string { return "seal inspect [flags] <archive-path
 func (c *InspectCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) error {
 	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
 	pwd := fs.String("p", "", "Decryption password")
-	posArgs, err := tuikit.ParseInterspersedFlags(fs, args)
+	posArgs, err := argkit.ParseInterspersedFlags(fs, args)
 	if err != nil {
 		return err
 	}
@@ -59,8 +62,49 @@ func (c *InspectCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) 
 	if cType == container.SevenZip {
 		return inspectSevenZip(f, stat.Size(), archivePath, *pwd, stdout)
 	}
+	if cType == container.Eon {
+		return inspectEon(f, stat.Size(), archivePath, stdout)
+	}
 
 	return inspectZip(f, stat.Size(), archivePath, stdout)
+}
+
+func inspectEon(rAt io.ReaderAt, size int64, archivePath string, stdout io.Writer) error {
+	r, err := eon.NewReader(rAt, size)
+	if err != nil {
+		return err
+	}
+
+	chunks := r.Chunks()
+	extents := r.Extents()
+	files := r.Entries()
+
+	var totalUncomp, totalComp uint64
+	for _, ch := range chunks {
+		totalUncomp += uint64(ch.UncompressedSize)
+		totalComp += uint64(ch.CompressedSize)
+	}
+
+	ratio := 0.0
+	if totalUncomp > 0 {
+		ratio = float64(totalComp) / float64(totalUncomp) * 100.0
+	}
+
+	box := tuikit.NewBox("Seal EON Container Inspector", 70).
+		SetStyle(tuikit.BorderRounded).
+		SetIndent(0).
+		AddRow("File Name", tuikit.Bold(filepath.Base(archivePath))).
+		AddRow("File Size", util.FormatBytes(size)).
+		AddRow("Container Format", tuikit.Cyan("EON (Modern High-Performance Solid)")).
+		AddRow("Block Alignment", fmt.Sprintf("%d bytes (%d-bit shift)", r.BlockSize(), bits.TrailingZeros64(uint64(r.BlockSize())))).
+		AddRow("Chunks Count", fmt.Sprintf("%d physical chunk(s)", len(chunks))).
+		AddRow("Catalog Extents", fmt.Sprintf("%d extent(s) / %d file(s)", len(extents), len(files))).
+		AddRow("Total Uncompressed", util.FormatBytes(int64(totalUncomp))).
+		AddRow("Total Compressed", util.FormatBytes(int64(totalComp))).
+		AddRow("Global Ratio", fmt.Sprintf("%.2f%% (%.2fx reduction)", ratio, 100.0/max(ratio, 0.01)))
+
+	fmt.Println()
+	return box.Render(stdout)
 }
 
 func inspectZip(rAt io.ReaderAt, size int64, archivePath string, stdout io.Writer) error {

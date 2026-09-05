@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/lemon4ksan/foundation/argkit"
 	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/tuikit"
 
@@ -42,7 +43,7 @@ func (c *DoctorCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) e
 	rebuildCD := fs.Bool("rebuild-cd", false, "Force linear signature scan to reconstruct Central Directory (ZIP)")
 	noSanitize := fs.Bool("no-sanitize", false, "Disable Zip Slip path sanitization")
 
-	posArgs, err := tuikit.ParseInterspersedFlags(fs, args)
+	posArgs, err := argkit.ParseInterspersedFlags(fs, args)
 	if err != nil {
 		return err
 	}

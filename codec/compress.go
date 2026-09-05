@@ -103,6 +103,8 @@ func Decompress(encoding string, src, dst []byte) ([]byte, error) {
 		return Inflate(src, dst)
 	case "lzma2", "7z":
 		return Unlzma2(src, dst)
+	case "przm":
+		return Unprzm(src, dst)
 	case "identity", "":
 		if cap(dst) < len(src) {
 			dst = make([]byte, len(src))
@@ -125,6 +127,8 @@ func Decompress(encoding string, src, dst []byte) ([]byte, error) {
 		return Inflate(src, dst)
 	case "lzma2", "7z":
 		return Unlzma2(src, dst)
+	case "przm":
+		return Unprzm(src, dst)
 	case "identity", "":
 		if cap(dst) < len(src) {
 			dst = make([]byte, len(src))
@@ -255,6 +259,8 @@ func Compress(encoding string, src, dst []byte, level ...int) ([]byte, error) {
 		return CompressZstd(src, dst, lvl)
 	case "lzma2", "7z":
 		return CompressLZMA2(src, dst, lvl)
+	case "przm":
+		return CompressPRZM(src, dst, lvl)
 	case "identity", "":
 		if cap(dst) < len(src) {
 			dst = make([]byte, len(src))

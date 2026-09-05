@@ -12,7 +12,8 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
-	"sync"
+
+	"github.com/lemon4ksan/foundation/generic"
 
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/file"
@@ -107,6 +108,7 @@ type Config struct {
 	SessionID      string
 	SourceDir      string
 	OnFileDone     func(*file.File, error)
+	OnProgress     func(delta int64, currentFile string)
 }
 
 // Container defines the bidirectional serialization interface for archive containers.
@@ -127,24 +129,16 @@ type Container interface {
 // Factory constructs a new [Container] instance.
 type Factory func() Container
 
-var (
-	registryMu sync.RWMutex
-	registry   = make(map[Type]Factory)
-)
+var registry generic.ConcurrentMap[Type, Factory]
 
 // Register registers a container factory for the specified container type.
 func Register(t Type, factory Factory) {
-	registryMu.Lock()
-	defer registryMu.Unlock()
-	registry[t] = factory
+	registry.Store(t, factory)
 }
 
 // Get constructs a registered [Container] implementation for the requested type.
 func Get(t Type) (Container, error) {
-	registryMu.RLock()
-	factory, ok := registry[t]
-	registryMu.RUnlock()
-
+	factory, ok := registry.Load(t)
 	if !ok {
 		return nil, fmt.Errorf("container: unsupported container type %q", t)
 	}

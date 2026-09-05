@@ -59,15 +59,8 @@ func NewWriterOptions(w io.Writer, opts WriterOptions) *Writer {
 		ws = s
 	}
 
-	method := opts.DefaultMethod
-	if method == 0 {
-		method = codec.Deflate
-	}
-
-	level := opts.DefaultLevel
-	if level == 0 {
-		level = codec.DefaultCompression
-	}
+	method := generic.Coalesce(opts.DefaultMethod, codec.Deflate)
+	level := generic.Coalesce(opts.DefaultLevel, codec.DefaultCompression)
 
 	return &Writer{
 		dest:           w,

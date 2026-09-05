@@ -7,6 +7,8 @@ package option
 import (
 	"path"
 	"strings"
+
+	"github.com/lemon4ksan/foundation/generic"
 )
 
 // Filter represents a predicate function to selectively include or exclude archive entries.
@@ -14,15 +16,13 @@ type Filter func(entryName string, isDir bool) bool
 
 // FilterOnly retains only entries that match one of the specified paths.
 func FilterOnly(names ...string) Filter {
-	lookup := make(map[string]struct{}, len(names))
-	for _, n := range names {
-		clean := strings.TrimPrefix(path.Clean(strings.ReplaceAll(n, "\\", "/")), "/")
-		lookup[clean] = struct{}{}
-	}
+	cleanNames := generic.Map(names, func(n string) string {
+		return strings.TrimPrefix(path.Clean(strings.ReplaceAll(n, "\\", "/")), "/")
+	})
+	lookup := generic.NewSet(cleanNames...)
 	return func(entryName string, isDir bool) bool {
 		clean := strings.TrimPrefix(path.Clean(strings.ReplaceAll(entryName, "\\", "/")), "/")
-		_, ok := lookup[clean]
-		return ok
+		return lookup.Has(clean)
 	}
 }
 
@@ -61,19 +61,19 @@ func FilterExcludeDir(dirPath string) Filter {
 }
 
 // DefaultStoreExtensions contains file extensions that are pre-compressed and should not undergo re-compression.
-var DefaultStoreExtensions = map[string]struct{}{
-	"7z": {}, "aar": {}, "ace": {}, "apk": {}, "arc": {}, "arj": {},
-	"br": {}, "bz2": {}, "cab": {}, "deb": {}, "dmg": {}, "epub": {},
-	"gz": {}, "jar": {}, "lz4": {}, "lzma": {}, "lzo": {}, "rar": {},
-	"rpm": {}, "tar": {}, "tgz": {}, "war": {}, "xz": {}, "zip": {},
-	"zst": {},
+var DefaultStoreExtensions = generic.NewSet(
+	"7z", "aar", "ace", "apk", "arc", "arj",
+	"br", "bz2", "cab", "deb", "dmg", "epub",
+	"gz", "jar", "lz4", "lzma", "lzo", "rar",
+	"rpm", "tar", "tgz", "war", "xz", "zip",
+	"zst",
 	// Media Files
-	"mp4": {}, "mkv": {}, "avi": {}, "mov": {}, "webm": {},
-	"jpg": {}, "jpeg": {}, "png": {}, "gif": {}, "webp": {},
-	"mp3": {}, "ogg": {}, "flac": {},
+	"mp4", "mkv", "avi", "mov", "webm",
+	"jpg", "jpeg", "png", "gif", "webp",
+	"mp3", "ogg", "flac",
 	// Compressed Documents
-	"pdf": {}, "docx": {}, "xlsx": {}, "pptx": {},
-}
+	"pdf", "docx", "xlsx", "pptx",
+)
 
 // IsPreCompressedExtension reports whether the given filename extension belongs to an already compressed format.
 func IsPreCompressedExtension(filename string) bool {
@@ -82,6 +82,5 @@ func IsPreCompressedExtension(filename string) bool {
 		return false
 	}
 	cleanExt := strings.ToLower(strings.TrimPrefix(ext, "."))
-	_, ok := DefaultStoreExtensions[cleanExt]
-	return ok
+	return DefaultStoreExtensions.Has(cleanExt)
 }

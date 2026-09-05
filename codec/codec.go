@@ -36,6 +36,7 @@ const (
 	PPMd      Method = 98  // PPMd (Prediction by Partial Matching)
 	Brotli    Method = 99  // Brotli (RFC 7932)
 	Snappy    Method = 100 // Snappy framing
+	PRZM      Method = 101 // PRZM (PrismLZ structured dictionary compression)
 )
 
 // String returns the human-readable identifier of the compression method.
@@ -71,6 +72,8 @@ func (m Method) String() string {
 		return "Brotli"
 	case Snappy:
 		return "Snappy"
+	case PRZM:
+		return "PRZM"
 	default:
 		return "Unknown"
 	}

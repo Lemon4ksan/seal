@@ -12,7 +12,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/lemon4ksan/foundation/tuikit"
+	"github.com/lemon4ksan/foundation/argkit"
 
 	"github.com/lemon4ksan/seal"
 )
@@ -27,7 +27,7 @@ func (c *TreeCmd) Usage() string     { return "seal tree <archive-path>" }
 
 func (c *TreeCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) error {
 	fs := flag.NewFlagSet("tree", flag.ContinueOnError)
-	posArgs, err := tuikit.ParseInterspersedFlags(fs, args)
+	posArgs, err := argkit.ParseInterspersedFlags(fs, args)
 	if err != nil {
 		return err
 	}

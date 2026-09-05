@@ -86,6 +86,7 @@ const (
 	CodecOpenZL uint8 = 0x02
 	CodecLZMA2  uint8 = 0x03
 	CodecBrotli uint8 = 0x04
+	CodecPRZM   uint8 = 0x05
 )
 
 // Namespace registry allocations.

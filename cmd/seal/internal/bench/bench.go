@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/lemon4ksan/foundation/argkit"
 	"github.com/lemon4ksan/foundation/tuikit"
 
 	"github.com/lemon4ksan/seal"
@@ -33,7 +34,7 @@ func (c *BenchCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) 
 	filesCount := fs.Int("files", 100, "Number of generated entries")
 	workers := fs.Int("j", runtime.NumCPU(), "Worker concurrency")
 
-	if _, err := tuikit.ParseInterspersedFlags(fs, args); err != nil {
+	if _, err := argkit.ParseInterspersedFlags(fs, args); err != nil {
 		return err
 	}
 

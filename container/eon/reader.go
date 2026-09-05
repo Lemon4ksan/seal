@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/seal/codec"
+	"github.com/lemon4ksan/seal/codec/przm"
 	"github.com/lemon4ksan/seal/file"
 )
 
@@ -252,21 +253,31 @@ func NewReader(rAt io.ReaderAt, size int64) (*Reader, error) {
 
 			// Lazy content accessor
 			cIdx := chunkIdx
+			cCount := chunkCount
 			cOffset := chunkOffset
 			pSize := payloadSize
 			f.WithOpenFunc(func() (io.ReadCloser, error) {
 				if isDir || pSize == 0 {
 					return io.NopCloser(bytes.NewReader(nil)), nil
 				}
-				raw, err := r.decompressChunk(cIdx)
-				if err != nil {
-					return nil, err
+				if cCount <= 1 {
+					raw, err := r.decompressChunk(cIdx)
+					if err != nil {
+						return nil, err
+					}
+					if cOffset+pSize > uint64(len(raw)) {
+						return nil, io.ErrUnexpectedEOF
+					}
+					slice := raw[cOffset : cOffset+pSize]
+					return io.NopCloser(bytes.NewReader(slice)), nil
 				}
-				if cOffset+pSize > uint64(len(raw)) {
-					return nil, io.ErrUnexpectedEOF
-				}
-				slice := raw[cOffset : cOffset+pSize]
-				return io.NopCloser(bytes.NewReader(slice)), nil
+				return &multiChunkReader{
+					r:           r,
+					startChunk:  cIdx,
+					numChunks:   int(cCount),
+					startOffset: cOffset,
+					totalSize:   pSize,
+				}, nil
 			})
 
 			r.files = append(r.files, f)
@@ -284,6 +295,16 @@ func (r *Reader) Entries() []*file.File {
 // Extents returns all raw universal extents across all namespaces.
 func (r *Reader) Extents() []ExtentRecord {
 	return r.extents
+}
+
+// Chunks returns the CTOC chunk records.
+func (r *Reader) Chunks() []CTOCEntry {
+	return r.chunks
+}
+
+// BlockSize returns the logical sector block size in bytes.
+func (r *Reader) BlockSize() int64 {
+	return r.blockSize
 }
 
 func (r *Reader) decompressChunk(chunkIdx uint32) ([]byte, error) {
@@ -329,6 +350,11 @@ func (r *Reader) decompressChunk(chunkIdx uint32) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("eon: decompress zstd chunk: %w", err)
 		}
+	case CodecPRZM:
+		raw, err = przm.Decompress(compressedBytes)
+		if err != nil {
+			return nil, fmt.Errorf("eon: decompress przm chunk: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("eon: unsupported chunk codec ID %d", codecID)
 	}
@@ -338,4 +364,52 @@ func (r *Reader) decompressChunk(chunkIdx uint32) ([]byte, error) {
 	r.mu.Unlock()
 
 	return raw, nil
+}
+
+type multiChunkReader struct {
+	r           *Reader
+	startChunk  uint32
+	numChunks   int
+	startOffset uint64
+	totalSize   uint64
+	curChunkRel int
+	curSlice    []byte
+	bytesRead   uint64
+}
+
+func (m *multiChunkReader) Read(p []byte) (int, error) {
+	if m.bytesRead >= m.totalSize {
+		return 0, io.EOF
+	}
+	for len(m.curSlice) == 0 {
+		if m.curChunkRel >= m.numChunks {
+			return 0, io.EOF
+		}
+		raw, err := m.r.decompressChunk(m.startChunk + uint32(m.curChunkRel))
+		if err != nil {
+			return 0, err
+		}
+		if m.curChunkRel == 0 {
+			if m.startOffset > uint64(len(raw)) {
+				return 0, io.ErrUnexpectedEOF
+			}
+			m.curSlice = raw[m.startOffset:]
+		} else {
+			m.curSlice = raw
+		}
+		rem := m.totalSize - m.bytesRead
+		if uint64(len(m.curSlice)) > rem {
+			m.curSlice = m.curSlice[:rem]
+		}
+		m.curChunkRel++
+	}
+
+	n := copy(p, m.curSlice)
+	m.curSlice = m.curSlice[n:]
+	m.bytesRead += uint64(n)
+	return n, nil
+}
+
+func (m *multiChunkReader) Close() error {
+	return nil
 }

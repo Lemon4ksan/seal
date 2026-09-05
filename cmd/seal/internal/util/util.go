@@ -16,6 +16,8 @@ import (
 func DetectContainerType(path string) container.Type {
 	lower := strings.ToLower(path)
 	switch {
+	case strings.HasSuffix(lower, ".eon"):
+		return container.Eon
 	case strings.HasSuffix(lower, ".7z"):
 		return container.SevenZip
 	case strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".tgz"):

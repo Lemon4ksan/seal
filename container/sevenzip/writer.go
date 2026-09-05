@@ -19,6 +19,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/codec/compress/lzma"
 	"github.com/lemon4ksan/foundation/codec/filter/bcj"
+	"github.com/lemon4ksan/foundation/generic"
 
 	"github.com/lemon4ksan/seal/checkpoint"
 	"github.com/lemon4ksan/seal/codec/bcj2"
@@ -91,9 +92,7 @@ func NewWriter(w io.Writer, opts ...lzma.Options) *Writer {
 
 // NewWriterWithOptions constructs a new 7z Writer with detailed WriterOptions.
 func NewWriterWithOptions(w io.Writer, opts WriterOptions) *Writer {
-	if opts.Method == 0 {
-		opts.Method = MethodLZMA2Default
-	}
+	opts.Method = generic.Coalesce(opts.Method, MethodLZMA2Default)
 	return &Writer{
 		w:          w,
 		options:    opts,

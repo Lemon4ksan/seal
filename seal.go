@@ -7,6 +7,8 @@ package seal
 import (
 	"fmt"
 
+	"github.com/lemon4ksan/foundation/generic"
+
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/container/eon"
@@ -59,11 +61,9 @@ func DefaultContainer(t ContainerType) (Container, error) {
 // If no container engine is explicitly provided, it defaults to [container.Zip].
 func NewArchive(opts ...Option) *Archive {
 	var explicitEngine container.Container
-	for _, opt := range opts {
-		if opt.Kind == option.OptContainer {
-			if eng, err := DefaultContainer(opt.Container); err == nil {
-				explicitEngine = eng
-			}
+	if opt, ok := generic.Find(opts, func(o Option) bool { return o.Kind == option.OptContainer }); ok {
+		if eng, err := DefaultContainer(opt.Container); err == nil {
+			explicitEngine = eng
 		}
 	}
 

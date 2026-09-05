@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -164,12 +165,9 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 		}
 
 		// Dispatch regular files and symlinks across worker pool for parallel disk writes
-		var nonDirFiles []*File
-		for _, f := range files {
-			if !f.IsDir() {
-				nonDirFiles = append(nonDirFiles, f)
-			}
-		}
+		nonDirFiles := generic.Filter(files, func(f *File) bool {
+			return !f.IsDir()
+		})
 
 		numWorkers := procCfg.workers
 		if numWorkers <= 0 {
@@ -199,17 +197,10 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 					f := nonDirFiles[idx]
 
 					// Evaluate inclusion filters
-					if len(procCfg.filters) > 0 {
-						include := true
-						for _, filter := range procCfg.filters {
-							if !filter(f.Name(), f.IsDir()) {
-								include = false
-								break
-							}
-						}
-						if !include {
-							continue
-						}
+					if len(procCfg.filters) > 0 && !generic.All(procCfg.filters, func(filter option.Filter) bool {
+						return filter(f.Name(), f.IsDir())
+					}) {
+						continue
 					}
 
 					targetPath, err := vfs.SafePath(destDir, f.Name())
@@ -380,6 +371,73 @@ func ReadFile(ctx context.Context, src Source, targetFile string, opts ...Option
 func (a *Archiver) ReadFile(ctx context.Context, src Source, targetFile string, opts ...Option) ([]byte, error) {
 	allOpts := slices.Concat(a.containerOptions, opts)
 	return ReadFile(ctx, src, targetFile, allOpts...)
+}
+
+// ReadTo reads an individual named file from an archive and unmarshals its content into *T.
+// If unmarshaler is omitted, json.Unmarshal is used by default.
+func ReadTo[T any](ctx context.Context, src Source, targetFile string, unmarshaler ...func([]byte, any) error) (*T, error) {
+	data, err := ReadFile(ctx, src, targetFile)
+	if err != nil {
+		return nil, err
+	}
+	var res T
+	unmarshal := json.Unmarshal
+	if len(unmarshaler) > 0 && unmarshaler[0] != nil {
+		unmarshal = unmarshaler[0]
+	}
+	if err := unmarshal(data, &res); err != nil {
+		return nil, fmt.Errorf("seal: unmarshal %s: %w", targetFile, err)
+	}
+	return &res, nil
+}
+
+// ReadInto reads an individual named file from an archive and unmarshals its content directly into target.
+func ReadInto[T any](ctx context.Context, src Source, targetFile string, target *T, unmarshaler ...func([]byte, any) error) error {
+	data, err := ReadFile(ctx, src, targetFile)
+	if err != nil {
+		return err
+	}
+	unmarshal := json.Unmarshal
+	if len(unmarshaler) > 0 && unmarshaler[0] != nil {
+		unmarshal = unmarshaler[0]
+	}
+	if err := unmarshal(data, target); err != nil {
+		return fmt.Errorf("seal: unmarshal %s: %w", targetFile, err)
+	}
+	return nil
+}
+
+// ReadTo reads an individual named file from an archive and unmarshals its content into *T.
+func (a *Archiver) ReadTo[T any](ctx context.Context, src Source, targetFile string, unmarshaler ...func([]byte, any) error) (*T, error) {
+	data, err := a.ReadFile(ctx, src, targetFile)
+	if err != nil {
+		return nil, err
+	}
+	var res T
+	unmarshal := json.Unmarshal
+	if len(unmarshaler) > 0 && unmarshaler[0] != nil {
+		unmarshal = unmarshaler[0]
+	}
+	if err := unmarshal(data, &res); err != nil {
+		return nil, fmt.Errorf("seal: unmarshal %s: %w", targetFile, err)
+	}
+	return &res, nil
+}
+
+// ReadInto reads an individual named file from an archive and unmarshals its content directly into target.
+func (a *Archiver) ReadInto[T any](ctx context.Context, src Source, targetFile string, target *T, unmarshaler ...func([]byte, any) error) error {
+	data, err := a.ReadFile(ctx, src, targetFile)
+	if err != nil {
+		return err
+	}
+	unmarshal := json.Unmarshal
+	if len(unmarshaler) > 0 && unmarshaler[0] != nil {
+		unmarshal = unmarshaler[0]
+	}
+	if err := unmarshal(data, target); err != nil {
+		return fmt.Errorf("seal: unmarshal %s: %w", targetFile, err)
+	}
+	return nil
 }
 
 // Verify checks the integrity of all file entries and checksums within an archive.
@@ -604,6 +662,24 @@ func GetExtension(ctx context.Context, archivePath string, id extension.ID) ([]b
 	return nil, extension.ErrExtensionNotFound
 }
 
+// GetExtensionTo extracts a single extension payload from the archive and unmarshals it into *T.
+// If unmarshaler is omitted, json.Unmarshal is used by default.
+func GetExtensionTo[T any](ctx context.Context, archivePath string, id extension.ID, unmarshaler ...func([]byte, any) error) (*T, error) {
+	data, err := GetExtension(ctx, archivePath, id)
+	if err != nil {
+		return nil, err
+	}
+	var res T
+	unmarshal := json.Unmarshal
+	if len(unmarshaler) > 0 && unmarshaler[0] != nil {
+		unmarshal = unmarshaler[0]
+	}
+	if err := unmarshal(data, &res); err != nil {
+		return nil, fmt.Errorf("seal: unmarshal extension %s: %w", id, err)
+	}
+	return &res, nil
+}
+
 // CanResume inspects an archive file and returns whether an embedded stealth checkpoint is present.
 func CanResume(ctx context.Context, archivePath string) (*checkpoint.State, bool, error) {
 	data, err := GetExtension(ctx, archivePath, "seal.checkpoint")
@@ -760,13 +836,12 @@ func VerifySignature(ctx context.Context, archivePath string, pubKey ed25519.Pub
 
 // InspectProvenance extracts embedded build passport and VCS supply-chain metadata from an archive.
 func InspectProvenance(ctx context.Context, archivePath string) (*provenance.Info, error) {
-	data, err := GetExtension(ctx, archivePath, provenance.ExtensionID)
+	info, err := GetExtensionTo[provenance.Info](ctx, archivePath, provenance.ExtensionID)
 	if err != nil {
 		if errors.Is(err, extension.ErrExtensionNotFound) {
 			return nil, ErrProvenanceNotFound
 		}
 		return nil, err
 	}
-
-	return provenance.DecodeInfo(data)
+	return info, nil
 }

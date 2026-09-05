@@ -41,6 +41,9 @@ func NewRegistry() *Registry {
 	r.RegisterCompressor(LZMA, NewLZMACompressor)
 	r.RegisterDecompressor(LZMA, NewLZMADecompressor)
 
+	r.RegisterCompressor(PRZM, NewPRZMCompressor)
+	r.RegisterDecompressor(PRZM, NewPRZMDecompressor)
+
 	return r
 }
 

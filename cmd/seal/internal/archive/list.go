@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/lemon4ksan/foundation/argkit"
 	"github.com/lemon4ksan/foundation/tuikit"
 
 	"github.com/lemon4ksan/seal"
@@ -29,7 +30,7 @@ func (c *ListCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) e
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	pwd := fs.String("p", "", "Decryption password")
 
-	posArgs, err := tuikit.ParseInterspersedFlags(fs, args)
+	posArgs, err := argkit.ParseInterspersedFlags(fs, args)
 	if err != nil {
 		return err
 	}

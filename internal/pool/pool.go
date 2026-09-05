@@ -8,7 +8,8 @@ package pool
 import (
 	"hash/crc32"
 	"io"
-	"sync"
+
+	"github.com/lemon4ksan/foundation/generic"
 )
 
 const (
@@ -23,35 +24,27 @@ const (
 )
 
 var (
-	pool32K = sync.Pool{
-		New: func() any {
-			b := make([]byte, BufferSize32K)
-			return &b
-		},
-	}
-	pool64K = sync.Pool{
-		New: func() any {
-			b := make([]byte, BufferSize64K)
-			return &b
-		},
-	}
-	pool128K = sync.Pool{
-		New: func() any {
-			b := make([]byte, BufferSize128K)
-			return &b
-		},
-	}
-	pool256K = sync.Pool{
-		New: func() any {
-			b := make([]byte, BufferSize256K)
-			return &b
-		},
-	}
+	pool32K = generic.NewPool(func() *[]byte {
+		b := make([]byte, BufferSize32K)
+		return &b
+	})
+	pool64K = generic.NewPool(func() *[]byte {
+		b := make([]byte, BufferSize64K)
+		return &b
+	})
+	pool128K = generic.NewPool(func() *[]byte {
+		b := make([]byte, BufferSize128K)
+		return &b
+	})
+	pool256K = generic.NewPool(func() *[]byte {
+		b := make([]byte, BufferSize256K)
+		return &b
+	})
 )
 
 // Get32K borrows a 32 KB slice from the memory pool.
 func Get32K() *[]byte {
-	return pool32K.Get().(*[]byte)
+	return pool32K.Get()
 }
 
 // Put32K returns a 32 KB slice to the memory pool.
@@ -64,7 +57,7 @@ func Put32K(b *[]byte) {
 
 // Get64K borrows a 64 KB slice from the memory pool.
 func Get64K() *[]byte {
-	return pool64K.Get().(*[]byte)
+	return pool64K.Get()
 }
 
 // Put64K returns a 64 KB slice to the memory pool.
@@ -77,7 +70,7 @@ func Put64K(b *[]byte) {
 
 // Get128K borrows a 128 KB slice from the memory pool.
 func Get128K() *[]byte {
-	return pool128K.Get().(*[]byte)
+	return pool128K.Get()
 }
 
 // Put128K returns a 128 KB slice to the memory pool.
@@ -90,7 +83,7 @@ func Put128K(b *[]byte) {
 
 // Get256K borrows a 256 KB slice from the memory pool.
 func Get256K() *[]byte {
-	return pool256K.Get().(*[]byte)
+	return pool256K.Get()
 }
 
 // Put256K returns a 256 KB slice to the memory pool.
@@ -139,15 +132,13 @@ func (c *CRCReader) Reset(r io.Reader) {
 	}
 }
 
-var crcReaderPool = sync.Pool{
-	New: func() any {
-		return &CRCReader{table: crc32.IEEETable}
-	},
-}
+var crcReaderPool = generic.NewPool(func() *CRCReader {
+	return &CRCReader{table: crc32.IEEETable}
+})
 
 // GetCRCReader borrows a re-initialized [CRCReader] wrapping the provided stream.
 func GetCRCReader(r io.Reader) *CRCReader {
-	cr := crcReaderPool.Get().(*CRCReader)
+	cr := crcReaderPool.Get()
 	cr.Reset(r)
 	return cr
 }
