@@ -342,7 +342,7 @@ func isCandidateTDA(src []byte) bool {
 	return zeroCount >= (sampleLen*15)/100 || repWords >= 2
 }
 
-// Compress encodes src into PRZM format according to PRZM-SPEC-0.1.
+// Compress encodes src into PRZM format according to PRZM-SPEC-0.5.
 func Compress(src []byte, level int) ([]byte, error) {
 	uSize := len(src)
 	if uSize == 0 {

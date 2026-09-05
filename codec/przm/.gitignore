@@ -3,13 +3,17 @@
 *.olean
 *.ilean
 *.c
+!c/*.c
+!c/*.h
 
-# Go build & test artifacts
+# Go & C build artifacts
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+*.a
+*.o
 *.test
 *.out
 *.prof

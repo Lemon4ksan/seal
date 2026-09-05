@@ -476,7 +476,7 @@ The 1-byte `CodecID` in the Chunk Header determines payload decompression:
 | `0x03` | LZMA2 | 7-Zip LZMA2 dictionary coder |
 | `0x04` | BROTLI | Brotli compression format (RFC 7932) |
 | `0x05` | LZ4 | LZ4 framed streaming compression |
-| `0x06` | PRZM | PRZM structured dictionary compression (PRZM-SPEC-0.1) |
+| `0x06` | PRZM | PRZM Unified Multi-Dimensional Manifold Compression (PRZM-SPEC-0.5) |
 
 ## 5. Delta Update and Append Protocol
 

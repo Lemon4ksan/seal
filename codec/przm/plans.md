@@ -1,6 +1,6 @@
 # Research Plan: PRZM Algorithmic Evolution (v0.2 - v0.5)
 
-This document establishes the formal mathematical development plan for the PRZM compression architecture from v0.1 through v0.5 in accordance with [goal.md](/goal.md) and [PRZM_SPEC.md](file:///d:/CodingProjects/seal/docs/eon/PRZM_SPEC.md).
+This document establishes the formal mathematical development plan for the PRZM compression architecture from v0.1 through v0.5 in accordance with [goal.md](/goal.md) and [PRZM_SPEC.md](file:///d:/CodingProjects/seal/docs/PRZM_SPEC.md).
 
 ## Executive Summary & Phase Status
 

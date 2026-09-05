@@ -9,7 +9,7 @@ import (
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 
-// PRZMCodec implements the PRZM (PrismLZ) structured dictionary compression format (PRZM-SPEC-0.1).
+// PRZMCodec implements the PRZM (PrismLZ) structured dictionary compression format (PRZM-SPEC-0.5).
 type PRZMCodec struct{}
 
 // ID returns [spec.CodecPRZM] (0x06).

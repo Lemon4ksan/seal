@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package przm implements the PRZM (PrismLZ) structured dictionary compression format (PRZM-SPEC-0.1).
+// Package przm implements the PRZM (PrismLZ) structured dictionary compression format (PRZM-SPEC-0.5).
 package przm
 
 import (
@@ -18,7 +18,7 @@ const (
 	MaxBlockSize int    = 16 * 1024 * 1024 // 16 MiB max frame size
 )
 
-// Frame configuration bitmasks (PRZM-SPEC-0.1 Section 2.2).
+// Frame configuration bitmasks (PRZM-SPEC-0.5 Section 3.2).
 const (
 	FlagStride       uint8 = 0x01 // Bit 0: Stride parameter present
 	FlagDeltaMask    uint8 = 0x02 // Bit 1: Delta residual mask channel present
@@ -27,17 +27,17 @@ const (
 	FlagDictRef      uint8 = 0x10 // Bit 4: External dictionary reference present
 	FlagBCJSplit     uint8 = 0x20 // Bit 5: x86 BCJ displacement splitting applied
 	FlagBCJ          uint8 = 0x40 // Bit 6: x86_64 BCJ relative address filter applied
-	FlagNibble       uint8 = 0x80 // Bit 7: Section 4 encoded via SIMD Nibble-Plane Splitting
+	FlagNibble       uint8 = 0x80 // Bit 7: Section 4 encoded via SIMD Nibble-Plane Splitting or V-ANS
 )
 
-// Well-known dictionary identifiers (PRZM-SPEC-0.1 FlagDictRef).
+// Well-known dictionary identifiers (PRZM-SPEC-0.5 FlagDictRef).
 const (
 	DictIDNone uint32 = 0
 	DictIDJSON uint32 = 1 // Structured web service JSON logs & APIs
 	DictIDCode uint32 = 2 // Source code (Go, C, JS, Rust)
 )
 
-// Opcode categories (PRZM-SPEC-0.1 Section 4.1).
+// Opcode categories (PRZM-SPEC-0.5 Section 3).
 const (
 	OpcodeCatRepeat   uint8 = 0x00 // 00: Repeat Match (Locality Queue)
 	OpcodeCatStride   uint8 = 0x40 // 01: Stride Match (m * S)
@@ -46,7 +46,7 @@ const (
 	OpcodeCatMask     uint8 = 0xC0
 )
 
-// Fused Opcode Constants (PRZM-SPEC-0.1 Fused Engine)
+// Fused Opcode Constants (PRZM-SPEC-0.5 Fused Engine)
 const (
 	OpcodeMaskFusedRepeat  uint8 = 0x80
 	OpcodeFlagFusedRepeat  uint8 = 0x00
