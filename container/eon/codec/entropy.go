@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lemon4ksan/foundation/codec"
+	"github.com/lemon4ksan/foundation/codec/entropy"
 	"github.com/lemon4ksan/foundation/fskit"
 )
 
@@ -16,10 +16,10 @@ import (
 var IsIncompressibleName = fskit.IsIncompressibleExtension
 
 // ShannonEntropy calculates the entropy of the byte sample in bits per byte (0.0 to 8.0).
-var ShannonEntropy = codec.ShannonEntropy
+var ShannonEntropy = entropy.ShannonEntropy
 
 // IsIncompressibleSample returns true if the sample has entropy >= 7.92 bits/byte.
-var IsIncompressibleSample = codec.IsIncompressibleSample
+var IsIncompressibleSample = entropy.IsIncompressibleSample
 
 // IsTensorName checks if a filename extension corresponds to ML weights, model checkpoints, or float arrays.
 func IsTensorName(name string) bool {

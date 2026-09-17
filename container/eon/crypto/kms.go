@@ -7,7 +7,7 @@ package crypto
 import (
 	"context"
 
-	"github.com/lemon4ksan/foundation/cryptokit/kms"
+	"github.com/lemon4ksan/foundation/crypto/kms"
 )
 
 // KMSClient defines the interface for envelope encryption key management services (Vault, HSM, mock KMS).

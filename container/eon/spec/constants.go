@@ -173,12 +173,18 @@ const (
 
 // Standard chunk filter identifiers.
 const (
-	FilterIDShuffle  uint8 = 0x01
-	FilterIDBCJX86   uint8 = 0x02
-	FilterIDBCJARM64 uint8 = 0x03
-	FilterIDDelta    uint8 = 0x04
-	FilterIDCustom   uint8 = 0x80 // Filters >= 0x80 are reserved for third-party custom filters
+	FilterIDShuffle     uint8 = 0x01
+	FilterIDBCJX86      uint8 = 0x02
+	FilterIDBCJARM64    uint8 = 0x03
+	FilterIDDelta       uint8 = 0x04
+	FilterIDGlobalLRGGF uint8 = 0x05
+	FilterIDCustom      uint8 = 0x80 // Filters >= 0x80 are reserved for third-party custom filters
 )
+
+// GlobalLRGGFPayload represents the parameters for FilterIDGlobalLRGGF.
+type GlobalLRGGFPayload struct {
+	DictChunkIndex uint32
+}
 
 // Compression codec identifiers.
 const (

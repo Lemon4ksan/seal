@@ -29,6 +29,20 @@ func ExecuteProgramSIMD(prog *VMProgram, ctx *VMContext, streamData [][]byte, st
 		regsHi[r] = zeroVec
 	}
 
+	var skipAdvances []int
+	for i, inst := range prog.Instructions {
+		op, _, _, _, _ := inst.Decode()
+		if op == OpSKIP_CHUNK {
+			for k := i + 1; k < numInsts; k++ {
+				opSkip, _, _, _, immSkip := prog.Instructions[k].Decode()
+				if opSkip == OpLOADSTREAM {
+					skipAdvances = append(skipAdvances, immSkip)
+				}
+			}
+			break
+		}
+	}
+
 	for *outPtr+VMRegSize <= uSize {
 		for i := 0; i < numInsts; i++ {
 			op, dstReg, s1, s2, imm := prog.Instructions[i].Decode()
@@ -72,6 +86,33 @@ func ExecuteProgramSIMD(prog *VMProgram, ctx *VMContext, streamData [][]byte, st
 			case OpGFMUL:
 				regsLo[dstReg] = regsLo[s1].GaloisFieldMul(regsLo[s2])
 				regsHi[dstReg] = regsHi[s1].GaloisFieldMul(regsHi[s2])
+
+			case OpCMP_EQ:
+				maskLo := regsLo[s1].Equal(regsLo[s2])
+				maskHi := regsHi[s1].Equal(regsHi[s2])
+				ff := archsimd.BroadcastUint8x32(0xFF)
+				regsLo[dstReg] = ff.Masked(maskLo)
+				regsHi[dstReg] = ff.Masked(maskHi)
+
+			case OpSKIP_CHUNK:
+				if regsLo[s1].IsZero() && regsHi[s1].IsZero() {
+					p := *outPtr
+					rem := uSize - p
+					skipSize := VMRegSize
+					if rem < VMRegSize {
+						skipSize = rem
+					}
+
+					// dst is zero-initialized by make(), no need to explicitly zero it
+					*outPtr += skipSize
+
+					for _, streamIdx := range skipAdvances {
+						if streamIdx >= 0 && streamIdx < len(streamData) {
+							streamPtrs[streamIdx] += skipSize
+						}
+					}
+					break // Break out of inner instructions loop
+				}
 
 			case OpEMIT:
 				p := *outPtr

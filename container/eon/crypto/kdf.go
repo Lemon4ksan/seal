@@ -10,7 +10,7 @@ import (
 	"fmt"
 
 	"github.com/lemon4ksan/seal/container/eon/spec"
-	"github.com/lemon4ksan/foundation/cryptokit/kdf"
+	"github.com/lemon4ksan/foundation/crypto/kdf"
 )
 
 // DeriveKey derives a 256-bit Key Encryption Key (KEK) using the designated slot KDF mechanism.

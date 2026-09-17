@@ -43,6 +43,8 @@ const (
 	OpMOV        Opcode = 0x0A // Z_d = Z_s1
 	OpADD        Opcode = 0x0B // Z_d[i] = Z_s1[i] + Z_s2[i] (mod 256)
 	OpSUB        Opcode = 0x0C // Z_d[i] = Z_s1[i] - Z_s2[i] (mod 256)
+	OpCMP_EQ     Opcode = 0x0D // Compare Eq: Z_d[i] = (Z_s1[i] == Z_s2[i]) ? 0xFF : 0x00
+	OpSKIP_CHUNK Opcode = 0x0E // Skip chunk if Z_s1 is all zeros
 )
 
 // VMInstruction is a packed 32-bit Turing-incomplete vector instruction:
@@ -168,6 +170,49 @@ func ExecuteProgramScalar(prog *VMProgram, ctx *VMContext, streamData [][]byte, 
 					ctx.Regs[dstReg][j] = ctx.Regs[s1][j] - ctx.Regs[s2][j]
 				}
 
+			case OpCMP_EQ:
+				for j := 0; j < VMRegSize; j++ {
+					if ctx.Regs[s1][j] == ctx.Regs[s2][j] {
+						ctx.Regs[dstReg][j] = 0xFF
+					} else {
+						ctx.Regs[dstReg][j] = 0x00
+					}
+				}
+
+			case OpSKIP_CHUNK:
+				allZeros := true
+				for j := 0; j < VMRegSize; j++ {
+					if ctx.Regs[s1][j] != 0 {
+						allZeros = false
+						break
+					}
+				}
+				if allZeros {
+					// Skip chunk by incrementing outPtr and all stream pointers
+					p := *outPtr
+					rem := uSize - p
+					skipSize := VMRegSize
+					if rem < VMRegSize {
+						skipSize = rem
+					}
+					// dst is allocated with make([]byte, ...) so it's already zeroed! No need to write 0s.
+					*outPtr += skipSize
+					
+					// We must advance stream pointers for all remaining LOADSTREAM instructions in the loop
+					// To optimize scalar fallback, we just do it inline here.
+					for k := i + 1; k < numInsts; k++ {
+						opSkip, _, _, _, immSkip := prog.Instructions[k].Decode()
+						if opSkip == OpLOADSTREAM {
+							streamIdx := immSkip
+							if streamIdx >= 0 && streamIdx < len(streamData) {
+								streamPtrs[streamIdx] += skipSize
+							}
+						}
+					}
+					// Break out of the instruction loop, proceed to next chunk
+					break
+				}
+
 			case OpEMIT:
 				p := *outPtr
 				rem := uSize - p
@@ -236,13 +281,39 @@ func SynthesizeMicroprogram(schema *SynthesizedSchema, src []byte) (*VMProgram, 
 	// Z3: Index / permutation register
 	var insts []VMInstruction
 
+	// Predicate Subgraph: Pushdown skipping
+	if schema.PredicateColIdx >= 0 && schema.PredicateColIdx < len(schema.ColumnToCluster) {
+		predClusterIdx := schema.ColumnToCluster[schema.PredicateColIdx]
+		insts = append(insts, EncodeInstruction(OpEXPAND, 2, 0, 0, int(schema.PredicateVal))) // Z2 = PredicateVal
+		insts = append(insts, EncodeInstruction(OpLOADSTREAM, 1, 0, 0, predClusterIdx))       // Z1 = Load(Stream[predClusterIdx])
+		insts = append(insts, EncodeInstruction(OpCMP_EQ, 3, 1, 2, 0))                        // Z3 = (Z1 == Z2) ? 0xFF : 0x00
+		insts = append(insts, EncodeInstruction(OpSKIP_CHUNK, 0, 3, 0, 0))                    // Skip if Z3 is all zeros
+	}
+
 	// We load each cluster stream and place bytes into their column slots
 	// For simplicity and extreme throughput:
 	// If stride == 64:
 	// Stream 0..K are loaded and interleaved into Z0, then emitted!
+	hasPredicate := schema.PredicateColIdx >= 0 && schema.PredicateColIdx < len(schema.ColumnToCluster)
+	
+	if hasPredicate {
+		// The predicate cluster is already loaded into Z1 by the predicate subgraph.
+		// We MUST process it first so it doesn't get overwritten by subsequent OpLOADSTREAMs into Z1.
+		insts = append(insts, EncodeInstruction(OpMOV, 0, 1, 0, 0)) // Z0 = Z1
+	}
+
+	isFirst := !hasPredicate
 	for cIdx := range schema.Clusters {
+		if hasPredicate && cIdx == schema.ColumnToCluster[schema.PredicateColIdx] {
+			continue // Already processed above
+		}
 		insts = append(insts, EncodeInstruction(OpLOADSTREAM, 1, 0, 0, cIdx)) // Z1 = Load(Stream[cIdx])
-		insts = append(insts, EncodeInstruction(OpXOR, 0, 0, 1, 0))           // Z0 ^= Z1
+		if isFirst {
+			insts = append(insts, EncodeInstruction(OpMOV, 0, 1, 0, 0)) // Z0 = Z1
+			isFirst = false
+		} else {
+			insts = append(insts, EncodeInstruction(OpXOR, 0, 0, 1, 0)) // Z0 ^= Z1
+		}
 	}
 	insts = append(insts, EncodeInstruction(OpEMIT, 0, 0, 0, 0)) // Emit Z0
 
@@ -277,8 +348,9 @@ func VMEncode(src []byte, schema *SynthesizedSchema) ([]byte, error) {
 		totalSize += len(s)
 	}
 
-	// Fail-safe economic gate: if frame exceeds uncompressed size, fallback to raw
-	if totalSize >= n {
+	// Fail-safe economic gate: if it's unstructured data without a predicate, fallback to raw to save header bytes.
+	// For structured data or queries, we keep the VM program because downstream V-ANS will compress the payload.
+	if len(schema.Clusters) <= 1 && schema.PredicateColIdx < 0 {
 		rawFrame := make([]byte, 8+n)
 		rawFrame[0] = vmMagic0
 		rawFrame[1] = vmMagic1

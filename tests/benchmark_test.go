@@ -12,7 +12,7 @@ import (
 	"github.com/lemon4ksan/foundation/codec/compress/gzip"
 	"github.com/lemon4ksan/foundation/codec/compress/lzma"
 	"github.com/lemon4ksan/foundation/codec/filter/bcj"
-	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testing/assert"
 	"github.com/lemon4ksan/seal/codec/ppmd"
 )
 

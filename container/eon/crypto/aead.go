@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/lemon4ksan/seal/container/eon/spec"
-	"github.com/lemon4ksan/foundation/cryptokit/aead"
+	"github.com/lemon4ksan/foundation/crypto/aead"
 )
 
 // NewAEAD instantiates the standard AEAD cipher for the given algorithm ID and 256-bit key.

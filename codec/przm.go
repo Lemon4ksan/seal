@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/lemon4ksan/seal/codec/przm"
+	"github.com/lemon4ksan/przm"
 )
 
 // CompressPRZM compresses src using the PRZM (PrismLZ) structured dictionary compression format.

@@ -40,6 +40,8 @@ type SynthesizedSchema struct {
 	Clusters        []ChannelCluster
 	ColumnToCluster []int
 	Confidence      float64
+	PredicateColIdx int
+	PredicateVal    byte
 }
 
 var (
@@ -351,6 +353,7 @@ func SynthesizeStructure(src []byte) (*SynthesizedSchema, error) {
 			Clusters:        []ChannelCluster{cluster},
 			ColumnToCluster: []int{0},
 			Confidence:      0.0,
+			PredicateColIdx: -1,
 		}, nil
 	}
 
@@ -442,5 +445,6 @@ func SynthesizeStructure(src []byte) (*SynthesizedSchema, error) {
 		Clusters:        clusters,
 		ColumnToCluster: colToCluster,
 		Confidence:      conf,
+		PredicateColIdx: -1,
 	}, nil
 }

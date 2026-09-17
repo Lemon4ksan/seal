@@ -26,7 +26,7 @@ import (
 	"github.com/lemon4ksan/seal/container/eon/objstore"
 	"github.com/lemon4ksan/seal/container/eon/prolly"
 	"github.com/lemon4ksan/seal/container/eon/spec"
-	"github.com/lemon4ksan/foundation/cryptokit/shamir"
+	"github.com/lemon4ksan/foundation/crypto/shamir"
 )
 
 // ReaderOption configures container reader behavior.
