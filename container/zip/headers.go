@@ -12,7 +12,7 @@ import (
 	"io/fs"
 	"strings"
 
-	"github.com/lemon4ksan/foundation/binkit"
+	"github.com/lemon4ksan/foundation/encoding/bin"
 
 	"github.com/lemon4ksan/seal/internal/sys"
 )
@@ -41,7 +41,7 @@ func ReadLocalFileHeader(src io.Reader) (LocalFileHeader, error) {
 	}
 
 	var entry LocalFileHeader
-	if err := binkit.UnmarshalLE(buf[:], &entry); err != nil {
+	if err := bin.UnmarshalLE(buf[:], &entry); err != nil {
 		return LocalFileHeader{}, fmt.Errorf("unmarshal local file header: %w", err)
 	}
 
@@ -63,13 +63,13 @@ func ReadLocalFileHeader(src io.Reader) (LocalFileHeader, error) {
 	return entry, nil
 }
 
-// AppendBytes serializes the LocalFileHeader record into buf using binkit.Writer.
+// AppendBytes serializes the LocalFileHeader record into buf using bin.Writer.
 func (h LocalFileHeader) AppendBytes(buf []byte) []byte {
 	needed := 30 + int(h.FilenameLength) + int(h.ExtraFieldLength)
-	w := binkit.NewWriter(buf, needed)
+	w := bin.NewWriter(buf, needed)
 	w.U32LE(LocalFileHeaderSignature)
-	buf, _ = binkit.MarshalLE(&h, w.Bytes())
-	w = binkit.NewWriter(buf)
+	buf, _ = bin.MarshalLE(&h, w.Bytes())
+	w = bin.NewWriter(buf)
 	w.RawString(h.Filename).Raw(h.ExtraField)
 	return w.Bytes()
 }
@@ -105,7 +105,7 @@ func ReadCentralDirEntry(src io.Reader) (CentralDirectory, error) {
 	}
 
 	var entry CentralDirectory
-	if err := binkit.UnmarshalLE(buf[:], &entry); err != nil {
+	if err := bin.UnmarshalLE(buf[:], &entry); err != nil {
 		return CentralDirectory{}, fmt.Errorf("unmarshal central directory: %w", err)
 	}
 
@@ -135,13 +135,13 @@ func ReadCentralDirEntry(src io.Reader) (CentralDirectory, error) {
 	return entry, nil
 }
 
-// AppendBytes serializes the CentralDirectory record into buf using binkit.Writer.
+// AppendBytes serializes the CentralDirectory record into buf using bin.Writer.
 func (d CentralDirectory) AppendBytes(buf []byte) []byte {
 	needed := 46 + int(d.FilenameLength) + int(d.ExtraFieldLength) + int(d.FileCommentLength)
-	w := binkit.NewWriter(buf, needed)
+	w := bin.NewWriter(buf, needed)
 	w.U32LE(CentralDirectorySignature)
-	buf, _ = binkit.MarshalLE(&d, w.Bytes())
-	w = binkit.NewWriter(buf)
+	buf, _ = bin.MarshalLE(&d, w.Bytes())
+	w = bin.NewWriter(buf)
 	w.RawString(d.Filename).Raw(d.ExtraField).RawString(d.Comment)
 	return w.Bytes()
 }
@@ -166,7 +166,7 @@ func ReadEOCD(src io.Reader) (EOCD, error) {
 	}
 
 	var end EOCD
-	if err := binkit.UnmarshalLE(buf[:], &end); err != nil {
+	if err := bin.UnmarshalLE(buf[:], &end); err != nil {
 		return EOCD{}, fmt.Errorf("unmarshal EOCD: %w", err)
 	}
 
@@ -194,10 +194,10 @@ func EncodeEOCD(entriesNum int, centralDirSize, centralDirOffset int64, comment 
 		CommentLength:                   uint16(commentLen),
 	}
 
-	w := binkit.NewWriter(nil, 22+commentLen)
+	w := bin.NewWriter(nil, 22+commentLen)
 	w.U32LE(EOCDSignature)
-	buf, _ := binkit.MarshalLE(&eocd, w.Bytes())
-	w = binkit.NewWriter(buf)
+	buf, _ := bin.MarshalLE(&eocd, w.Bytes())
+	w = bin.NewWriter(buf)
 	w.RawString(comment[:commentLen])
 	return w.Bytes()
 }
@@ -223,7 +223,7 @@ func ReadZip64EOCD(src io.Reader) (Zip64EOCD, error) {
 	}
 
 	var entry Zip64EOCD
-	if err := binkit.UnmarshalLE(buf[:], &entry); err != nil {
+	if err := bin.UnmarshalLE(buf[:], &entry); err != nil {
 		return Zip64EOCD{}, fmt.Errorf("unmarshal Zip64 EOCD: %w", err)
 	}
 	return entry, nil
@@ -243,9 +243,9 @@ func EncodeZip64EOCDRecord(entriesNum int, centralDirSize, centralDirOffset int6
 		CentralDirOffset:                uint64(centralDirOffset),
 	}
 
-	w := binkit.NewWriter(nil, 56)
+	w := bin.NewWriter(nil, 56)
 	w.U32LE(Zip64EOCDSignature)
-	buf, _ := binkit.MarshalLE(&rec, w.Bytes())
+	buf, _ := bin.MarshalLE(&rec, w.Bytes())
 	return buf
 }
 
@@ -264,7 +264,7 @@ func ReadZip64EOCDLocator(src io.Reader) (Zip64EOCDLocator, error) {
 	}
 
 	var entry Zip64EOCDLocator
-	if err := binkit.UnmarshalLE(buf[:], &entry); err != nil {
+	if err := bin.UnmarshalLE(buf[:], &entry); err != nil {
 		return Zip64EOCDLocator{}, fmt.Errorf("unmarshal Zip64 EOCD locator: %w", err)
 	}
 	return entry, nil
@@ -278,16 +278,16 @@ func EncodeZip64EOCDLocator(eocdOffset int64) []byte {
 		TotalNumberOfDisks:          1,
 	}
 
-	w := binkit.NewWriter(nil, 20)
+	w := bin.NewWriter(nil, 20)
 	w.U32LE(Zip64EOCDLocatorSignature)
-	buf, _ := binkit.MarshalLE(&loc, w.Bytes())
+	buf, _ := bin.MarshalLE(&loc, w.Bytes())
 	return buf
 }
 
 // ParseExtraFields decomposes raw extra field bytes into a map keyed by 16-bit header tags.
 func ParseExtraFields(extra []byte) map[uint16][]byte {
 	m := make(map[uint16][]byte)
-	r := binkit.NewReader(extra)
+	r := bin.NewReader(extra)
 	for r.Remaining() >= 4 {
 		tag := r.U16LE()
 		size := int(r.U16LE())
@@ -303,7 +303,7 @@ func ParseExtraFields(extra []byte) map[uint16][]byte {
 
 // EncodeZip64ExtraField encodes variable-sized 64-bit offsets and sizes for Central Directory.
 func EncodeZip64ExtraField(buf []byte, uncompSize, compSize, headerOffset int64) []byte {
-	w := binkit.NewWriter(buf, 28)
+	w := bin.NewWriter(buf, 28)
 	w.U16LE(Zip64ExtraFieldTag)
 
 	// Reserve 2 bytes for payload size (updated below)
@@ -329,7 +329,7 @@ func EncodeZip64ExtraField(buf []byte, uncompSize, compSize, headerOffset int64)
 
 // EncodeZip64LocalExtraField encodes fixed-size 64-bit sizes for Local File Headers.
 func EncodeZip64LocalExtraField(uncompSize, compSize int64) []byte {
-	w := binkit.NewWriter(nil, 20)
+	w := bin.NewWriter(nil, 20)
 	w.U16LE(Zip64ExtraFieldTag).
 		U16LE(16). // Size of payload
 		U64LE(uint64(uncompSize)).
@@ -340,7 +340,7 @@ func EncodeZip64LocalExtraField(uncompSize, compSize int64) []byte {
 // EncodeDataDescriptor formats a 16-byte standard or 24-byte ZIP64 Data Descriptor.
 func EncodeDataDescriptor(crc uint32, compSize, uncompSize int64) []byte {
 	if uint64(compSize) > MaxUint32 || uint64(uncompSize) > MaxUint32 {
-		w := binkit.NewWriter(nil, 24)
+		w := bin.NewWriter(nil, 24)
 		w.U32LE(DataDescriptorSignature).
 			U32LE(crc).
 			U64LE(uint64(compSize)).
@@ -348,7 +348,7 @@ func EncodeDataDescriptor(crc uint32, compSize, uncompSize int64) []byte {
 		return w.Bytes()
 	}
 
-	w := binkit.NewWriter(nil, 16)
+	w := bin.NewWriter(nil, 16)
 	w.U32LE(DataDescriptorSignature).
 		U32LE(crc).
 		U32LE(uint32(compSize)).
@@ -413,7 +413,7 @@ func EncodeAESExtraField(compMethod uint16, strength ...byte) []byte {
 	if len(strength) > 0 && strength[0] != 0 {
 		st = strength[0]
 	}
-	w := binkit.NewWriter(nil, 11)
+	w := bin.NewWriter(nil, 11)
 	w.U16LE(AESEncryptionTag).
 		U16LE(7).
 		U16LE(0x0002). // Vendor Version AE-2

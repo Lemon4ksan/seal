@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/lemon4ksan/foundation/binkit"
+	"github.com/lemon4ksan/foundation/encoding/bin"
 
 	"github.com/lemon4ksan/seal/crypto"
 )
@@ -43,7 +43,7 @@ func ReadArchiveExtraData(src io.Reader) (ArchiveExtraData, error) {
 
 // EncodeArchiveExtraData serializes the Archive Extra Data record.
 func EncodeArchiveExtraData(extra []byte) []byte {
-	w := binkit.NewWriter(nil, 8+len(extra))
+	w := bin.NewWriter(nil, 8+len(extra))
 	w.U32LE(ArchiveExtraDataSignature).
 		U32LE(uint32(len(extra))).
 		Raw(extra)
@@ -69,7 +69,7 @@ func ParseStrongEncryptionHeader(data []byte) (StrongEncryptionHeader, bool) {
 	if len(data) < 8 {
 		return StrongEncryptionHeader{}, false
 	}
-	r := binkit.NewReader(data)
+	r := bin.NewReader(data)
 	h := StrongEncryptionHeader{
 		FormatVersion: r.U16LE(),
 		AlgId:         r.U16LE(),
@@ -100,7 +100,7 @@ func ParseStrongEncryptionHeader(data []byte) (StrongEncryptionHeader, bool) {
 // EncodeStrongEncryptionHeader formats Tag 0x0017 Strong Encryption extra field.
 func EncodeStrongEncryptionHeader(algId, bitLen uint16, erdData, vData []byte, vCRC uint32) []byte {
 	dataLen := 2 + 2 + 2 + 2 + 2 + len(erdData) + 4 + 2 + len(vData) + 4
-	w := binkit.NewWriter(nil, 4+dataLen)
+	w := bin.NewWriter(nil, 4+dataLen)
 	w.U16LE(TagStrongEncryptHeader).
 		U16LE(uint16(dataLen)).
 		U16LE(3).      // FormatVersion = 3

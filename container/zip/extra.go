@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lemon4ksan/foundation/binkit"
+	"github.com/lemon4ksan/foundation/encoding/bin"
 
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/internal/sys"
@@ -168,7 +168,7 @@ func ParseExtendedTimestamp(data []byte) (mtime, atime, ctime time.Time, ok bool
 	}
 
 	flags := data[0]
-	r := binkit.NewReader(data[1:])
+	r := bin.NewReader(data[1:])
 
 	if flags&ExtTimeModTimePresent != 0 && r.Remaining() >= 4 {
 		mtime = time.Unix(int64(r.U32LE()), 0).UTC()
@@ -212,7 +212,7 @@ func EncodeExtendedTimestamp(mtime, atime, ctime time.Time, isCentralDir bool) [
 	}
 
 	dataSize := 1 + numTimes*4
-	w := binkit.NewWriter(nil, 4+dataSize)
+	w := bin.NewWriter(nil, 4+dataSize)
 	w.U16LE(TagExtendedTimestamp).
 		U16LE(uint16(dataSize)).
 		U8(flags)
@@ -278,7 +278,7 @@ func ParseUnicodePath(data []byte, rawName string) (string, bool) {
 func EncodeUnicodePath(utf8Name, rawName string) []byte {
 	rawCRC := crc32.ChecksumIEEE([]byte(rawName))
 	dataLen := 5 + len(utf8Name)
-	w := binkit.NewWriter(nil, 4+dataLen)
+	w := bin.NewWriter(nil, 4+dataLen)
 	w.U16LE(TagInfoZipUnicodePath).
 		U16LE(uint16(dataLen)).
 		U8(1).
@@ -325,7 +325,7 @@ func ParseUnicodeComment(data []byte, rawComment string) (string, bool) {
 func EncodeUnicodeComment(utf8Comment, rawComment string) []byte {
 	rawCRC := crc32.ChecksumIEEE([]byte(rawComment))
 	dataLen := 5 + len(utf8Comment)
-	w := binkit.NewWriter(nil, 4+dataLen)
+	w := bin.NewWriter(nil, 4+dataLen)
 	w.U16LE(TagInfoZipUnicodeComment).
 		U16LE(uint16(dataLen)).
 		U8(1).
@@ -359,7 +359,7 @@ func ParseNTFSExtraField(data []byte) sys.Metadata {
 	if len(data) < 32 {
 		return sys.Metadata{}
 	}
-	r := binkit.NewReader(data)
+	r := bin.NewReader(data)
 	r.Skip(8) // reserved(4) + attrTag(2) + attrSize(2)
 	return sys.Metadata{
 		LastWriteTime:  r.U64LE(),
@@ -370,7 +370,7 @@ func ParseNTFSExtraField(data []byte) sys.Metadata {
 
 // EncodeNTFSExtraField formats high-precision FILETIMEs into tag 0x000A.
 func EncodeNTFSExtraField(metadata sys.Metadata) []byte {
-	w := binkit.NewWriter(nil, 36)
+	w := bin.NewWriter(nil, 36)
 	w.U16LE(TagNTFS).
 		U16LE(32).
 		U32LE(0).
@@ -413,7 +413,7 @@ func ParseInfoZipUIDGID(data []byte) (uid, gid uint32, ok bool) {
 	if 2+uidSize > len(data) {
 		return 0, 0, false
 	}
-	rUID := binkit.NewReader(data[2 : 2+uidSize])
+	rUID := bin.NewReader(data[2 : 2+uidSize])
 	switch uidSize {
 	case 1:
 		uid = uint32(rUID.U8())
@@ -432,7 +432,7 @@ func ParseInfoZipUIDGID(data []byte) (uid, gid uint32, ok bool) {
 	if pos+gidSize > len(data) {
 		return 0, 0, false
 	}
-	rGID := binkit.NewReader(data[pos : pos+gidSize])
+	rGID := bin.NewReader(data[pos : pos+gidSize])
 	switch gidSize {
 	case 1:
 		gid = uint32(rGID.U8())
@@ -447,7 +447,7 @@ func ParseInfoZipUIDGID(data []byte) (uid, gid uint32, ok bool) {
 
 // EncodeInfoZipUIDGID formats Info-ZIP 0x7875 UID/GID extra field.
 func EncodeInfoZipUIDGID(uid, gid uint32) []byte {
-	w := binkit.NewWriter(nil, 4+1+1+4+1+4)
+	w := bin.NewWriter(nil, 4+1+1+4+1+4)
 	w.U16LE(TagInfoZipUIDGID).
 		U16LE(11).
 		U8(1).
@@ -470,7 +470,7 @@ func (h *zip64ExtraHandler) Parse(payload []byte, _ *file.File, ctx *HeaderConte
 	if ctx == nil {
 		return nil
 	}
-	r := binkit.NewReader(payload)
+	r := bin.NewReader(payload)
 	if ctx.Uncompressed != nil && *ctx.Uncompressed == int64(MaxUint32) && r.Remaining() >= 8 {
 		*ctx.Uncompressed = int64(r.U64LE())
 	}
@@ -491,7 +491,7 @@ func (h *zip64ExtraHandler) Parse(payload []byte, _ *file.File, ctx *HeaderConte
 func EncodeDataStreamAlignment(alignment uint16, paddingCount int) []byte {
 	dataSize := 2 + max(paddingCount, 0)
 
-	w := binkit.NewWriter(nil, 4+dataSize)
+	w := bin.NewWriter(nil, 4+dataSize)
 	w.U16LE(TagDataStreamAlignment).
 		U16LE(uint16(dataSize)).
 		U16LE(alignment & 0x7fff)
