@@ -19,3 +19,5 @@ replace (
 	github.com/lemon4ksan/foundation => ../foundation
 	github.com/lemon4ksan/przm => ../przm
 )
+
+replace github.com/lemon4ksan/sein => ../server/sein

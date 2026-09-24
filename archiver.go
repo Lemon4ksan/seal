@@ -21,7 +21,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lemon4ksan/foundation/generic"
-	"github.com/lemon4ksan/foundation/vfs"
+	"github.com/lemon4ksan/seal/vfs"
 
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/checkpoint"

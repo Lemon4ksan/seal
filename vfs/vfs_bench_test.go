@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/lemon4ksan/foundation/pathkit"
-
 	"github.com/lemon4ksan/seal/vfs"
 )
 

@@ -14,7 +14,7 @@ import (
 
 	"github.com/lemon4ksan/seal/container/eon/catalog"
 	"github.com/lemon4ksan/seal/container/eon/spec"
-	"github.com/lemon4ksan/foundation/vfs"
+	"github.com/lemon4ksan/seal/vfs"
 )
 
 // FSReader exposes the minimal reader interface required by the VFS layer.

@@ -13,7 +13,7 @@ import (
 	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/crypto"
 	"github.com/lemon4ksan/seal/container/eon/spec"
-	"github.com/lemon4ksan/foundation/crypto/shamir"
+	"github.com/lemon4ksan/seal/crypto/shamir"
 )
 
 func TestSecurity_ShamirEndToEnd(t *testing.T) {

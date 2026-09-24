@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/lemon4ksan/foundation/argkit"
-	"github.com/lemon4ksan/foundation/crypto/shamir"
+	"github.com/lemon4ksan/seal/crypto/shamir"
 
 	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
