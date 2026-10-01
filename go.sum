@@ -1,5 +1,7 @@
 github.com/klauspost/compress v1.20.0 h1:a3C1ke2ohxFymNlb2HWAHjDeKCI90scRskErZkR0ezA=
 github.com/klauspost/compress v1.20.0/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
+github.com/lemon4ksan/mach v0.0.0-20260924165838-4be719b602ef h1:wW4Jy/Nxs94GgO7Y5qL3GWjI2MPrG+FxAVPd0lv3iAo=
+github.com/lemon4ksan/mach v0.0.0-20260924165838-4be719b602ef/go.mod h1:1dlEN10qlEEAA4QAk9Hs8go4/BY3iaO6NOm05XN8/0g=
 github.com/nwaples/rardecode/v2 v2.4.1 h1:F7zNW2LdAuuBThHWXQaiFUGVD/sef299NfWSB1nHAl4=
 github.com/nwaples/rardecode/v2 v2.4.1/go.mod h1:7uz379lSxPe6j9nvzxUZ+n7mnJNgjsRNb6IbvGVHRmw=
 golang.org/x/crypto v0.57.0 h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=
@@ -8,3 +10,5 @@ golang.org/x/net v0.59.0 h1:5zfYln+w5XCxwrnMMJPufRgNoXEaGxl0wo5GqPXyues=
 golang.org/x/net v0.59.0/go.mod h1:2DA/G1UfVbCpQPeWTmMPGY7Cs2PkBkwu743bVX5PIVg=
 golang.org/x/sys v0.48.0 h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=
 golang.org/x/sys v0.48.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
+golang.org/x/text v0.42.0 h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=
+golang.org/x/text v0.42.0/go.mod h1:ojzP1Z+2QtioaF8DTtO8K5q7JWVVYwZKenzujK0Zd0E=
