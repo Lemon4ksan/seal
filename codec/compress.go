@@ -45,41 +45,41 @@ var (
 )
 
 var (
-	zstdDecoderStorage = pool.NewPerPStorage(func() *zstd.Decoder {
+	zstdDecoderStorage = pool.NewPerCorePool(func() *zstd.Decoder {
 		dec, _ := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true))
 		return dec
 	})
 
-	gzipReaderStorage = pool.NewPerPStorage(func() *gzip.Reader {
+	gzipReaderStorage = pool.NewPerCorePool(func() *gzip.Reader {
 		return new(gzip.Reader)
 	})
 
-	flateReaderStorage = pool.NewPerPStorage(func() flate.Resetter {
+	flateReaderStorage = pool.NewPerCorePool(func() flate.Resetter {
 		return flate.NewReader(nil).(flate.Resetter)
 	})
 
-	bytesReaderStorage = pool.NewPerPStorage(func() *bytes.Reader {
+	bytesReaderStorage = pool.NewPerCorePool(func() *bytes.Reader {
 		return bytes.NewReader(nil)
 	})
 
-	byteBufferStorage = pool.NewPerPStorage(func() *bytes.Buffer {
+	byteBufferStorage = pool.NewPerCorePool(func() *bytes.Buffer {
 		return bytes.NewBuffer(make([]byte, 0, 4096))
 	})
 
-	gzipWriterStorage = pool.NewPerPStorage(func() *gzip.Writer {
+	gzipWriterStorage = pool.NewPerCorePool(func() *gzip.Writer {
 		return gzip.NewWriter(io.Discard)
 	})
 
-	flateWriterStorage = pool.NewPerPStorage(func() *flate.Writer {
+	flateWriterStorage = pool.NewPerCorePool(func() *flate.Writer {
 		w, _ := flate.NewWriter(io.Discard, flate.DefaultCompression)
 		return w
 	})
 
-	brotliReaderStorage = pool.NewPerPStorage(func() *brotli.Reader {
+	brotliReaderStorage = pool.NewPerCorePool(func() *brotli.Reader {
 		return brotli.NewReader(bytes.NewReader(nil))
 	})
 
-	brotliWriterStorage = pool.NewPerPStorage(func() *brotli.Writer {
+	brotliWriterStorage = pool.NewPerCorePool(func() *brotli.Writer {
 		return brotli.NewWriterLevel(io.Discard, 6)
 	})
 )
