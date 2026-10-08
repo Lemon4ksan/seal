@@ -33,7 +33,23 @@ func (c *CreateCmd) Synopsis() string {
 	return "Create an archive (EON, 7z, ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2)"
 }
 func (c *CreateCmd) Usage() string {
-	return "seal a [flags] <archive-path> <files...> [-o <archive-path>]"
+	return `seal a [flags] <archive-path> <files...> [-o <archive-path>]
+
+Flags (7-Zip Compatible):
+  -mx=<0..9>       Set compression level (0 = Store, 1 = Fastest, 9 = Ultra)
+  -m=<method>      Set compression method (lzma2, zstd, przm, brotli, gzip, deflate, store)
+  -p<password>     Encrypt the archive with a password
+  -w<dir>          Set working directory for temporary files
+  -mmt=<N>         Set number of CPU threads to use (default: auto)
+  -sdel            Delete source files after successful compression
+  -x!<pattern>     Exclude files matching pattern (e.g. -x!*.tmp)
+  -r               Recurse into subdirectories (default: on)
+
+Examples:
+  seal a backup.eon ./docs ./images
+  seal a -mx=9 -m=zstd archive.tar.zst ./data
+  seal c -pSecretPassword secure.7z ./confidential
+`
 }
 
 func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) error {
@@ -271,3 +287,4 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 	fmt.Println()
 	return box.Render(stdout)
 }
+

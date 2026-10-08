@@ -29,7 +29,19 @@ func (c *ExtractCmd) Synopsis() string {
 	return "Extract archive files (x: preserve paths, e: flat extract without directories)"
 }
 func (c *ExtractCmd) Usage() string {
-	return "seal x [flags] <archive-path> [patterns...] -o <output-dir>"
+	return `seal x [flags] <archive-path> [include-patterns...]
+
+Flags (7-Zip Compatible):
+  -o<dir>          Set output directory (default: current directory)
+  -p<password>     Provide password for encrypted archives
+  -y               Assume Yes on all queries (overwrite without prompt)
+  -mmt=<N>         Set number of CPU threads to use (default: auto)
+
+Examples:
+  seal x backup.eon
+  seal x archive.7z -o./extracted
+  seal e -pSecretPassword secure.zip
+`
 }
 
 func (c *ExtractCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) error {
@@ -122,3 +134,4 @@ func (c *ExtractCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer
 		tuikit.BadgePass(), time.Since(start), extractedCount)
 	return nil
 }
+
