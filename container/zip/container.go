@@ -15,7 +15,9 @@ import (
 )
 
 // Engine implements [container.Container] for the PKWARE ZIP archive format.
-type Engine struct{}
+type Engine struct {
+	TextDecoder TextDecoder
+}
 
 // New constructs a new ZIP [container.Container] engine.
 func New() container.Container {
@@ -25,6 +27,11 @@ func New() container.Container {
 // NewEngine constructs a new concrete [*Engine] instance.
 func NewEngine() *Engine {
 	return &Engine{}
+}
+
+// SetTextDecoder configures the fallback text decoder for non-UTF8 archive strings.
+func (z *Engine) SetTextDecoder(dec TextDecoder) {
+	z.TextDecoder = dec
 }
 
 // Type returns [container.Zip].
@@ -43,7 +50,12 @@ func (z *Engine) OpenCatalog(
 		return nil, "", errors.New("zip: invalid random-access reader or size")
 	}
 
-	zr, err := NewReader(rAt, size, password, reg)
+	var opts []ReaderOption
+	if z.TextDecoder != nil {
+		opts = append(opts, WithTextDecoder(z.TextDecoder))
+	}
+
+	zr, err := NewReader(rAt, size, password, reg, opts...)
 	if err != nil {
 		return nil, "", err
 	}
@@ -61,7 +73,12 @@ func (z *Engine) ScanStream(
 		return nil, "", errors.New("zip: nil stream reader")
 	}
 
-	sr := NewStreamReader(r, password, reg)
+	var opts []ReaderOption
+	if z.TextDecoder != nil {
+		opts = append(opts, WithTextDecoder(z.TextDecoder))
+	}
+
+	sr := NewStreamReader(r, password, reg, opts...)
 
 	var files []*file.File
 	for {

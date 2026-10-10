@@ -60,6 +60,7 @@ type SevenZipArgs struct {
 	SolidExplicit   bool
 	SolidSize       int64
 	SolidExtension  bool
+	Encoding        string
 }
 
 // ParseSevenZipArgs parses raw command-line arguments using 7-Zip switch conventions.
@@ -193,6 +194,29 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 			// GPU Acceleration: -gpu
 			if lower == "-gpu" {
 				s.GPUAcceleration = true
+				continue
+			}
+
+			// Code page / Encoding: -mcp[=<codepage>] or -mcp:<codepage> or --encoding[=<enc>] or -encoding[=...]
+			if strings.HasPrefix(lower, "-mcp") || strings.HasPrefix(lower, "--encoding") || strings.HasPrefix(lower, "-encoding") || strings.HasPrefix(lower, "-charset") {
+				var val string
+				if strings.HasPrefix(lower, "--encoding") {
+					val = arg[10:]
+				} else if strings.HasPrefix(lower, "-encoding") {
+					val = arg[9:]
+				} else if strings.HasPrefix(lower, "-charset") {
+					val = arg[8:]
+				} else {
+					val = arg[4:]
+				}
+				val = strings.TrimPrefix(val, "=")
+				val = strings.TrimPrefix(val, ":")
+				if val != "" {
+					s.Encoding = val
+				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+					i++
+					s.Encoding = rawArgs[i]
+				}
 				continue
 			}
 

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -36,6 +36,7 @@ Flags (7-Zip Compatible):
   -p<password>     Provide password for encrypted archives
   -y               Assume Yes on all queries (overwrite without prompt)
   -mmt=<N>         Set number of CPU threads to use (default: auto)
+  -mcp=<codepage>  Set code page / character encoding for non-UTF8 archives (e.g. 866, 1251, shift_jis)
 
 Examples:
   seal x backup.eon
@@ -116,6 +117,10 @@ func (c *ExtractCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer
 			return util.MatchFilters(entryName, isDir, sz.IncludePatterns, sz.ExcludePatterns, sz.Recurse)
 		}
 		opts = append(opts, seal.WithFilter(filterFn))
+	}
+
+	if sz.Encoding != "" {
+		opts = append(opts, seal.WithEncoding(sz.Encoding))
 	}
 
 	start := time.Now()

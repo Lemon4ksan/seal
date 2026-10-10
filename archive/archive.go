@@ -103,6 +103,7 @@ type Archive struct {
 	solid          bool
 	solidSize      int64
 	solidExtension bool
+	textDecoder    func(string) string
 }
 
 type archiverConfig struct {
@@ -120,6 +121,7 @@ type archiverConfig struct {
 	solid          bool
 	solidSize      int64
 	solidExtension bool
+	textDecoder    func(string) string
 }
 
 type processConfig struct {
@@ -174,6 +176,10 @@ func New(opts ...option.Option) *Archive {
 			cfg.solidSize = opt.SolidSize
 		case option.OptSolidExtension:
 			cfg.solidExtension = opt.SolidExtension
+		case option.OptEncoding:
+			if opt.TextDecoder != nil {
+				cfg.textDecoder = opt.TextDecoder
+			}
 		case option.OptCustom:
 			if opt.Custom != nil {
 				opt.Custom(&cfg)
@@ -195,6 +201,7 @@ func New(opts ...option.Option) *Archive {
 		solid:          cfg.solid,
 		solidSize:      cfg.solidSize,
 		solidExtension: cfg.solidExtension,
+		textDecoder:    cfg.textDecoder,
 	}
 
 	a.vfsFS = vfs.NewFS(a)
@@ -691,6 +698,10 @@ func (a *Archive) Load(rAt io.ReaderAt, size int64, engines ...container.Contain
 		)
 	}
 
+	if aware, ok := c.(interface{ SetTextDecoder(func(string) string) }); ok && a.textDecoder != nil {
+		aware.SetTextDecoder(a.textDecoder)
+	}
+
 	files, comment, err := c.OpenCatalog(rAt, size, a.password, a.registry)
 	if err != nil {
 		return nil, err
@@ -727,6 +738,10 @@ func (a *Archive) LoadFromReader(r io.Reader, engines ...container.Container) ([
 		return nil, errors.New(
 			"archive: no container engine specified; pass an engine or configure WithEngine(zip.New())",
 		)
+	}
+
+	if aware, ok := c.(interface{ SetTextDecoder(func(string) string) }); ok && a.textDecoder != nil {
+		aware.SetTextDecoder(a.textDecoder)
 	}
 
 	files, comment, err := c.ScanStream(r, a.password, a.registry)

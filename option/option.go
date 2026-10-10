@@ -43,6 +43,7 @@ const (
 	OptBytecodeFilter
 	OptSolid
 	OptSolidExtension
+	OptEncoding
 )
 
 // ProgressStats delivers real-time throughput and status telemetry during archive operations.
@@ -85,6 +86,8 @@ type Option struct {
 	Solid          bool
 	SolidSize      int64
 	SolidExtension bool
+	Encoding       string
+	TextDecoder    func(string) string
 }
 
 // IsZero reports whether the option is an uninitialized zero value.
@@ -234,4 +237,14 @@ func WithSolid(solid bool, size ...int64) Option {
 // WithSolidExtension configures whether solid blocks should be split/grouped by file extension.
 func WithSolidExtension(enabled bool) Option {
 	return Option{Kind: OptSolidExtension, SolidExtension: enabled}
+}
+
+// WithEncoding sets the character encoding/codepage for non-UTF8 archive metadata.
+func WithEncoding(enc string) Option {
+	return Option{Kind: OptEncoding, Encoding: enc, Text: enc}
+}
+
+// WithTextDecoder sets an explicit fallback TextDecoder for non-UTF8 archive metadata.
+func WithTextDecoder(dec func(string) string) Option {
+	return Option{Kind: OptEncoding, TextDecoder: dec}
 }

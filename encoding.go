@@ -5,12 +5,24 @@
 package seal
 
 import (
+	"fmt"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
+
+	"github.com/lemon4ksan/seal/internal/sys"
+	"github.com/lemon4ksan/seal/text/encoding"
+	"github.com/lemon4ksan/seal/text/encoding/charmap"
+	"github.com/lemon4ksan/seal/text/encoding/htmlindex"
 )
 
 // TextDecoder defines a function converting encoded legacy strings into standard UTF-8.
 type TextDecoder func(string) string
+
+// TextEncoder defines a function converting UTF-8 strings into encoded legacy bytes/strings.
+type TextEncoder func(string) (string, error)
 
 // DecodeText converts filename or comment metadata to UTF-8 using flags and heuristic fallbacks.
 func DecodeText(data string, isUTF8Flag bool, fallback TextDecoder) string {
@@ -26,81 +38,183 @@ func DecodeText(data string, isUTF8Flag bool, fallback TextDecoder) string {
 		return fallback(data)
 	}
 
-	return DecodeCP437(data)
+	return DefaultTextDecoder()(data)
 }
 
 // DecodeCP866 converts CP866 (Cyrillic DOS) legacy string to UTF-8.
 func DecodeCP866(s string) string {
-	var sb strings.Builder
-	sb.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		sb.WriteRune(cp866Table[s[i]])
+	res, err := charmap.CodePage866.NewDecoder().String(s)
+	if err != nil {
+		return s
 	}
-	return sb.String()
+	return res
 }
 
 // DecodeCP437 converts CP437 (US DOS) legacy string to UTF-8.
 func DecodeCP437(s string) string {
-	var sb strings.Builder
-	sb.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		sb.WriteRune(cp437Table[s[i]])
+	res, err := charmap.CodePage437.NewDecoder().String(s)
+	if err != nil {
+		return s
 	}
-	return sb.String()
+	return res
 }
 
-var cp866Table = [256]rune{
-	// 0x00 - 0x7F ASCII
-	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-	0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
-	0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
-	0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f,
-	0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
-	0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
-	0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f,
-	0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f,
-	// 0x80 - 0xFF CP866 Cyrillic
-	0x0410, 0x0411, 0x0412, 0x0413, 0x0414, 0x0415, 0x0416, 0x0417,
-	0x0418, 0x0419, 0x041A, 0x041B, 0x041C, 0x041D, 0x041E, 0x041F,
-	0x0420, 0x0421, 0x0422, 0x0423, 0x0424, 0x0425, 0x0426, 0x0427,
-	0x0428, 0x0429, 0x042A, 0x042B, 0x042C, 0x042D, 0x042E, 0x042F,
-	0x0430, 0x0431, 0x0432, 0x0433, 0x0434, 0x0435, 0x0436, 0x0437,
-	0x0438, 0x0439, 0x043A, 0x043B, 0x043C, 0x043D, 0x043E, 0x043F,
-	0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556,
-	0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510,
-	0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F,
-	0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
-	0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B,
-	0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
-	0x0440, 0x0441, 0x0442, 0x0443, 0x0444, 0x0445, 0x0446, 0x0447,
-	0x0448, 0x0449, 0x044A, 0x044B, 0x044C, 0x044D, 0x044E, 0x044F,
-	0x0401, 0x0451, 0x0404, 0x0454, 0x0407, 0x0457, 0x040E, 0x045E,
-	0x00B0, 0x2219, 0x00B7, 0x221A, 0x2116, 0x00A4, 0x25A0, 0x00A0,
+// LookupEncoding resolves a character encoding by name, IANA tag, or numeric code page identifier.
+func LookupEncoding(name string) (encoding.Encoding, error) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return nil, fmt.Errorf("encoding: empty encoding name")
+	}
+
+	// Direct aliases and common code page mappings
+	switch name {
+	case "866", "cp866", "ibm866", "ibm-866", "csibm866":
+		return charmap.CodePage866, nil
+	case "437", "cp437", "ibm437", "ibm-437", "csibm437":
+		return charmap.CodePage437, nil
+	case "850", "cp850", "ibm850", "ibm-850":
+		return charmap.CodePage850, nil
+	case "852", "cp852", "ibm852", "ibm-852":
+		return charmap.CodePage852, nil
+	case "855", "cp855", "ibm855", "ibm-855":
+		return charmap.CodePage855, nil
+	case "932", "cp932", "sjis", "shift_jis", "shift-jis", "ms932":
+		return htmlindex.Get("shift_jis")
+	case "936", "cp936", "gbk", "ms936":
+		return htmlindex.Get("gbk")
+	case "949", "cp949", "euckr", "euc-kr", "ms949":
+		return htmlindex.Get("euc-kr")
+	case "950", "cp950", "big5", "ms950":
+		return htmlindex.Get("big5")
+	case "1251", "cp1251", "windows-1251", "win-1251":
+		return charmap.Windows1251, nil
+	case "1252", "cp1252", "windows-1252", "win-1252":
+		return charmap.Windows1252, nil
+	case "1250", "cp1250", "windows-1250":
+		return charmap.Windows1250, nil
+	case "1253", "cp1253", "windows-1253":
+		return charmap.Windows1253, nil
+	case "1254", "cp1254", "windows-1254":
+		return charmap.Windows1254, nil
+	case "1255", "cp1255", "windows-1255":
+		return charmap.Windows1255, nil
+	case "1256", "cp1256", "windows-1256":
+		return charmap.Windows1256, nil
+	case "1257", "cp1257", "windows-1257":
+		return charmap.Windows1257, nil
+	case "1258", "cp1258", "windows-1258":
+		return charmap.Windows1258, nil
+	case "koi8-r", "koi8r":
+		return charmap.KOI8R, nil
+	case "koi8-u", "koi8u":
+		return charmap.KOI8U, nil
+	case "iso-8859-1", "latin1":
+		return charmap.ISO8859_1, nil
+	case "iso-8859-5":
+		return charmap.ISO8859_5, nil
+	case "utf-8", "utf8":
+		return encoding.Nop, nil
+	}
+
+	// If numeric code page like "1251" or "cp1251"
+	if strings.HasPrefix(name, "cp") {
+		numPart := strings.TrimPrefix(name, "cp")
+		if _, err := strconv.Atoi(numPart); err == nil {
+			if enc, err := LookupEncoding(numPart); err == nil {
+				return enc, nil
+			}
+			if enc, err := htmlindex.Get("windows-" + numPart); err == nil {
+				return enc, nil
+			}
+		}
+	}
+
+	// Try standard htmlindex lookup
+	return htmlindex.Get(name)
 }
 
-var cp437Table = [256]rune{
-	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-	0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
-	0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
-	0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f,
-	0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
-	0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
-	0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f,
-	0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f,
-	0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7,
-	0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
-	0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9,
-	0x00FF, 0x00D6, 0x00DC, 0x00A2, 0x00A3, 0x00A5, 0x20A7, 0x0192,
-	0x00E1, 0x00ED, 0x00F3, 0x00FA, 0x00F1, 0x00D1, 0x00AA, 0x00BA,
-	0x00BF, 0x2310, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB,
-	0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556,
-	0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510,
-	0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F,
-	0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
-	0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B,
-	0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
-	0x03B1, 0x00DF, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x00B5, 0x03C4,
-	0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x03C6, 0x03B5, 0x2229,
-	0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248,
-	0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0,
+// DecoderByName returns a [TextDecoder] for the named character encoding or code page.
+func DecoderByName(name string) (TextDecoder, error) {
+	enc, err := LookupEncoding(name)
+	if err != nil {
+		return nil, err
+	}
+	if enc == encoding.Nop {
+		return func(s string) string { return s }, nil
+	}
+
+	return func(s string) string {
+		dec := enc.NewDecoder()
+		res, err := dec.String(s)
+		if err != nil {
+			return s
+		}
+		return res
+	}, nil
+}
+
+// EncoderByName returns a [TextEncoder] converting UTF-8 strings into the target character encoding.
+func EncoderByName(name string) (TextEncoder, error) {
+	enc, err := LookupEncoding(name)
+	if err != nil {
+		return nil, err
+	}
+	if enc == encoding.Nop {
+		return func(s string) (string, error) { return s, nil }, nil
+	}
+
+	return func(s string) (string, error) {
+		encoder := enc.NewEncoder()
+		return encoder.String(s)
+	}, nil
+}
+
+var (
+	defaultDecoderOnce sync.Once
+	defaultDecoder     TextDecoder
+)
+
+// DefaultTextDecoder returns the host system's recommended fallback decoder for non-UTF8 strings.
+// On Windows, it detects the active OEM code page (e.g. CP866 on Cyrillic locales, CP932 on Japanese).
+// On non-Windows platforms, it inspects locale environment variables or defaults to CP437 per PKWARE spec.
+func DefaultTextDecoder() TextDecoder {
+	defaultDecoderOnce.Do(func() {
+		// 1. Check Windows OEM Code Page
+		if oem := sys.GetOEMCP(); oem > 0 && oem != 437 {
+			if dec, err := DecoderByName(strconv.Itoa(int(oem))); err == nil {
+				defaultDecoder = dec
+				return
+			}
+		}
+
+		// 2. Check Unix locale environment variables
+		for _, env := range []string{"LC_ALL", "LC_CTYPE", "LANG"} {
+			if val := os.Getenv(env); val != "" {
+				// e.g. "ru_RU.CP1251" or "ja_JP.SJIS"
+				if dot := strings.Index(val, "."); dot >= 0 {
+					charset := val[dot+1:]
+					if at := strings.Index(charset, "@"); at >= 0 {
+						charset = charset[:at]
+					}
+					if dec, err := DecoderByName(charset); err == nil {
+						defaultDecoder = dec
+						return
+					}
+				}
+				// e.g. "ru_RU" -> windows-1251
+				defCharset := htmlindex.LanguageDefault(val)
+				if defCharset != "" && defCharset != "windows-1252" {
+					if dec, err := DecoderByName(defCharset); err == nil {
+						defaultDecoder = dec
+						return
+					}
+				}
+			}
+		}
+
+		// 3. PKWARE ZIP default
+		defaultDecoder = DecodeCP437
+	})
+
+	return defaultDecoder
 }

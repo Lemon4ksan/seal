@@ -152,3 +152,10 @@ func TestArchive_EONRoundtrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "EON Universal Extent Payload 42", string(b))
 }
+
+func TestArchive_WithEncoding(t *testing.T) {
+	t.Parallel()
+	arc := seal.NewArchive(seal.WithEncoding("cp866"))
+	require.NotNil(t, arc)
+}
+

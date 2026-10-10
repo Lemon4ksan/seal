@@ -14,6 +14,23 @@ import (
 // DefaultHostSystem represents the default host system for the Windows runtime.
 const DefaultHostSystem = HostSystemFAT
 
+var (
+	kernel32     = syscall.NewLazyDLL("kernel32.dll")
+	procGetOEMCP = kernel32.NewProc("GetOEMCP")
+)
+
+// GetOEMCP returns the active Windows OEM code page identifier.
+func GetOEMCP() uint32 {
+	if procGetOEMCP.Find() != nil {
+		return 437
+	}
+	r, _, _ := procGetOEMCP.Call()
+	if r == 0 {
+		return 437
+	}
+	return uint32(r)
+}
+
 // GetFileMetadata extracts low-level NTFS timestamps from Windows file info.
 func GetFileMetadata(stat os.FileInfo) Metadata {
 	s, ok := stat.Sys().(*syscall.Win32FileAttributeData)

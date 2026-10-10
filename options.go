@@ -152,3 +152,17 @@ func WithSolidExtension(enabled bool) Option {
 	return option.WithSolidExtension(enabled)
 }
 
+// WithEncoding specifies the character encoding/codepage for non-UTF-8 archive metadata (e.g. "cp866", "shift_jis", "windows-1251").
+func WithEncoding(name string) Option {
+	opt := option.WithEncoding(name)
+	if dec, err := DecoderByName(name); err == nil {
+		opt.TextDecoder = dec
+	}
+	return opt
+}
+
+// WithTextDecoder attaches an explicit fallback text decoder function for non-UTF-8 metadata.
+func WithTextDecoder(dec TextDecoder) Option {
+	return option.WithTextDecoder(dec)
+}
+

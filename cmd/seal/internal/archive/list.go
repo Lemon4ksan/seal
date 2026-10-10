@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -35,7 +35,11 @@ func (c *ListCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) e
 		return errors.New("archive file not specified")
 	}
 
-	archiver := seal.NewArchiver(seal.WithPassword(sz.Password))
+	opts := []seal.Option{seal.WithPassword(sz.Password)}
+	if sz.Encoding != "" {
+		opts = append(opts, seal.WithEncoding(sz.Encoding))
+	}
+	archiver := seal.NewArchiver(opts...)
 	entries, err := archiver.GetEntries(ctx, seal.FromFilePath(sz.Archive))
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {

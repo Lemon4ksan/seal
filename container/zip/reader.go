@@ -14,6 +14,7 @@ import (
 	"iter"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lemon4ksan/foundation/silicon/endian"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/internal/sys"
+	"github.com/lemon4ksan/seal/text/encoding/charmap"
 	"github.com/lemon4ksan/seal/vfs"
 )
 
@@ -88,19 +90,34 @@ func OpenFromArchive(f *file.File, rAt io.ReaderAt, size int64, reg *codec.Regis
 	}, nil
 }
 
+// TextDecoder defines a function converting encoded legacy strings into standard UTF-8.
+type TextDecoder = func(string) string
+
+// ReaderOption configures a ZIP reader instance.
+type ReaderOption func(*Reader)
+
+// WithTextDecoder attaches a fallback decoder for non-UTF-8 filenames and comments.
+func WithTextDecoder(dec TextDecoder) ReaderOption {
+	return func(r *Reader) {
+		r.textDecoder = dec
+	}
+}
+
 // Reader provides random-access read and inspection over a ZIP archive.
 type Reader struct {
-	rAt      io.ReaderAt
-	size     int64
-	entries  []*file.File
-	byName   map[string]*file.File
-	comment  string
-	password string
-	registry *codec.Registry
+	rAt         io.ReaderAt
+	size        int64
+	entries     []*file.File
+	byName      map[string]*file.File
+	comment     string
+	rawComment  string
+	password    string
+	registry    *codec.Registry
+	textDecoder TextDecoder
 }
 
 // NewReader initializes a random-access ZIP archive reader.
-func NewReader(rAt io.ReaderAt, size int64, password string, reg *codec.Registry) (*Reader, error) {
+func NewReader(rAt io.ReaderAt, size int64, password string, reg *codec.Registry, opts ...ReaderOption) (*Reader, error) {
 	if reg == nil {
 		reg = codec.DefaultRegistry
 	}
@@ -113,10 +130,33 @@ func NewReader(rAt io.ReaderAt, size int64, password string, reg *codec.Registry
 		registry: reg,
 	}
 
+	for _, opt := range opts {
+		if opt != nil {
+			opt(zr)
+		}
+	}
+
 	if err := zr.init(); err != nil {
 		return nil, err
 	}
 	return zr, nil
+}
+
+func (zr *Reader) decodeText(s string, isUTF8 bool) string {
+	if isUTF8 || s == "" {
+		return s
+	}
+	if utf8.ValidString(s) {
+		return s
+	}
+	if zr.textDecoder != nil {
+		return zr.textDecoder(s)
+	}
+	res, err := charmap.CodePage437.NewDecoder().String(s)
+	if err != nil {
+		return s
+	}
+	return res
 }
 
 func (zr *Reader) init() error {
@@ -124,7 +164,12 @@ func (zr *Reader) init() error {
 	if err != nil {
 		return err
 	}
-	zr.comment = end.Comment
+	zr.rawComment = end.Comment
+	if strings.Contains(end.Comment, "SEXT") || strings.Contains(end.Comment, checkpoint.Magic) {
+		zr.comment = end.Comment
+	} else {
+		zr.comment = zr.decodeText(end.Comment, false)
+	}
 
 	entriesCount := uint64(end.EntriesNum)
 	cdSize := int64(end.CentralDirSize)
@@ -207,24 +252,32 @@ func (zr *Reader) Comment() string {
 
 // Checkpoint returns the embedded checkpoint payload if present in the archive comment.
 func (zr *Reader) Checkpoint() ([]byte, bool) {
-	if strings.Contains(zr.comment, checkpoint.Magic) {
-		start := strings.Index(zr.comment, "{")
-		end := strings.LastIndex(zr.comment, "}")
+	comment := zr.rawComment
+	if comment == "" {
+		comment = zr.comment
+	}
+	if strings.Contains(comment, checkpoint.Magic) {
+		start := strings.Index(comment, "{")
+		end := strings.LastIndex(comment, "}")
 		if start >= 0 && end > start {
-			return []byte(zr.comment[start : end+1]), true
+			return []byte(comment[start : end+1]), true
 		}
-		return []byte(zr.comment), true
+		return []byte(comment), true
 	}
 	return nil, false
 }
 
 // ExtensionData returns the embedded extension bundle bytes if present in the archive comment.
 func (zr *Reader) ExtensionData() ([]byte, bool) {
-	if strings.Contains(zr.comment, "SEXT") {
-		idx := strings.Index(zr.comment, "SEXT")
-		return []byte(zr.comment[idx:]), true
+	comment := zr.rawComment
+	if comment == "" {
+		comment = zr.comment
 	}
-	if strings.Contains(zr.comment, checkpoint.Magic) {
+	if strings.Contains(comment, "SEXT") {
+		idx := strings.Index(comment, "SEXT")
+		return []byte(comment[idx:]), true
+	}
+	if strings.Contains(comment, checkpoint.Magic) {
 		return zr.Checkpoint()
 	}
 	return nil, false
@@ -236,7 +289,9 @@ func (zr *Reader) ExtractEntry(entry *file.File) (io.ReadCloser, error) {
 }
 
 func (zr *Reader) createEntry(cd CentralDirectory, sfxOffset int64) *file.File {
-	cleanName := vfs.CleanPath(cd.Filename)
+	isUTF8 := (cd.GeneralPurposeBitFlag & FlagLanguageEncodingUTF8) != 0
+	cleanName := vfs.CleanPath(zr.decodeText(cd.Filename, isUTF8))
+	entryComment := zr.decodeText(cd.Comment, isUTF8)
 	mode := ParseFileMode(cd)
 	modTime := dosDateTimeToTime(cd.LastModFileDate, cd.LastModFileTime)
 	method := codec.Method(cd.CompressionMethod)
@@ -262,7 +317,7 @@ func (zr *Reader) createEntry(cd CentralDirectory, sfxOffset int64) *file.File {
 
 	entry := file.NewArchiveFile(
 		cleanName,
-		cd.Comment,
+		entryComment,
 		uncompSize,
 		compSize,
 		localOffset,
@@ -331,15 +386,16 @@ func (zr *Reader) findDataOffset(localOffset int64) (int64, error) {
 
 // StreamReader enables sequential streaming parsing of ZIP streams without seek capability.
 type StreamReader struct {
-	br       *bufio.Reader
-	registry *codec.Registry
-	password string
-	curr     *streamEntryReader
-	eof      bool
+	br          *bufio.Reader
+	registry    *codec.Registry
+	password    string
+	curr        *streamEntryReader
+	eof         bool
+	textDecoder TextDecoder
 }
 
 // NewStreamReader constructs a sequential streaming ZIP parser.
-func NewStreamReader(r io.Reader, password string, reg *codec.Registry) *StreamReader {
+func NewStreamReader(r io.Reader, password string, reg *codec.Registry, opts ...ReaderOption) *StreamReader {
 	if reg == nil {
 		reg = codec.DefaultRegistry
 	}
@@ -347,11 +403,36 @@ func NewStreamReader(r io.Reader, password string, reg *codec.Registry) *StreamR
 	if !ok {
 		br = bufio.NewReader(r)
 	}
-	return &StreamReader{
+	sr := &StreamReader{
 		br:       br,
 		registry: reg,
 		password: password,
 	}
+	var dummy Reader
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&dummy)
+		}
+	}
+	sr.textDecoder = dummy.textDecoder
+	return sr
+}
+
+func (sr *StreamReader) decodeText(s string, isUTF8 bool) string {
+	if isUTF8 || s == "" {
+		return s
+	}
+	if utf8.ValidString(s) {
+		return s
+	}
+	if sr.textDecoder != nil {
+		return sr.textDecoder(s)
+	}
+	res, err := charmap.CodePage437.NewDecoder().String(s)
+	if err != nil {
+		return s
+	}
+	return res
 }
 
 // Next advances to the next entry in the streaming archive.
@@ -408,7 +489,8 @@ func (sr *StreamReader) Next() (*file.File, io.Reader, error) {
 	localOffset := int64(0)
 
 	modTime := dosDateTimeToTime(lfh.LastModFileDate, lfh.LastModFileTime)
-	cleanName := vfs.CleanPath(lfh.Filename)
+	isUTF8 := (lfh.GeneralPurposeBitFlag & FlagLanguageEncodingUTF8) != 0
+	cleanName := vfs.CleanPath(sr.decodeText(lfh.Filename, isUTF8))
 	isDir := strings.HasSuffix(cleanName, "/")
 
 	entry := file.NewArchiveFile(

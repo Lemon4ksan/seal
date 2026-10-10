@@ -143,3 +143,28 @@ func TestParseSevenZipArgs_SolidFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestParseSevenZipArgs_Encoding(t *testing.T) {
+	tests := []struct {
+		args     []string
+		expected string
+	}{
+		{[]string{"x", "legacy.zip", "-mcp=866"}, "866"},
+		{[]string{"x", "legacy.zip", "-mcp:cp866"}, "cp866"},
+		{[]string{"x", "legacy.zip", "-mcp", "1251"}, "1251"},
+		{[]string{"x", "legacy.zip", "--encoding=shift_jis"}, "shift_jis"},
+		{[]string{"x", "legacy.zip", "--encoding", "gbk"}, "gbk"},
+		{[]string{"x", "legacy.zip", "-charset=big5"}, "big5"},
+	}
+
+	for _, tc := range tests {
+		sz, err := ParseSevenZipArgs(tc.args[0], tc.args[1:])
+		if err != nil {
+			t.Fatalf("ParseSevenZipArgs failed for %v: %v", tc.args, err)
+		}
+		if sz.Encoding != tc.expected {
+			t.Errorf("args %v: expected encoding %q, got %q", tc.args, tc.expected, sz.Encoding)
+		}
+	}
+}
+

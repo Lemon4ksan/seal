@@ -9,6 +9,11 @@ package sys
 // DefaultHostSystem represents the default host system for non-Windows platforms.
 const DefaultHostSystem = HostSystemUNIX
 
+// GetOEMCP returns 0 on non-Windows platforms.
+func GetOEMCP() uint32 {
+	return 0
+}
+
 // unixNanoToWinFiletime converts Unix epoch timestamps into Windows FILETIME (100-nanosecond intervals since 1601).
 func unixNanoToWinFiletime(sec int64, nsec int64) uint64 {
 	// Seconds between 1601-01-01 and 1970-01-01 (UTC).
