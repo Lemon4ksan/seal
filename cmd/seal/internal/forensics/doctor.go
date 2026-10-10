@@ -15,7 +15,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/argkit"
 	"github.com/lemon4ksan/foundation/generic"
-	"github.com/lemon4ksan/foundation/tuikit"
+	"github.com/lemon4ksan/cli/tuikit"
 
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
 	"github.com/lemon4ksan/seal/container"

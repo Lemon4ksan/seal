@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lemon4ksan/foundation/tuikit"
+	"github.com/lemon4ksan/cli/tuikit"
 
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"

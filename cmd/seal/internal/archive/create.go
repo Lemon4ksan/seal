@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lemon4ksan/foundation/tuikit"
+	"github.com/lemon4ksan/cli/tuikit"
 
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
@@ -41,6 +41,7 @@ Flags (7-Zip Compatible):
   -p<password>     Encrypt the archive with a password
   -w<dir>          Set working directory for temporary files
   -mmt=<N>         Set number of CPU threads to use (default: auto)
+  -gpu             Enable NVIDIA GPU hardware LZ77 acceleration (PRZM only)
   -sdel            Delete source files after successful compression
   -x!<pattern>     Exclude files matching pattern (e.g. -x!*.tmp)
   -r               Recurse into subdirectories (default: on)
@@ -56,6 +57,12 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 	sz, err := util.ParseSevenZipArgs("a", args)
 	if err != nil {
 		return err
+	}
+	
+	if sz.GPUAcceleration {
+		os.Setenv("PRZM_GPU", "1")
+	} else {
+		os.Setenv("PRZM_GPU", "")
 	}
 
 	outFile := sz.Archive
@@ -178,10 +185,14 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 
 	displayFilter := sz.Filter
 	if method == codec.PRZM {
+		gpuStr := ""
+		if sz.GPUAcceleration {
+			gpuStr = " + NVIDIA CUDA"
+		}
 		if sz.Filter == "none" || sz.Filter == "" {
-			displayFilter = "auto (x86-bcj+split)"
+			displayFilter = "auto (x86-bcj+split" + gpuStr + ")"
 		} else {
-			displayFilter = sz.Filter + " (przm-internal)"
+			displayFilter = sz.Filter + " (przm-internal" + gpuStr + ")"
 		}
 	}
 

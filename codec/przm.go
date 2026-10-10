@@ -1,7 +1,3 @@
-// Copyright (c) 2026 Lemon4ksan All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package codec
 
 import (
@@ -9,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/lemon4ksan/przm"
 )
@@ -19,7 +16,13 @@ func CompressPRZM(src, dst []byte, level ...int) ([]byte, error) {
 	if len(level) > 0 {
 		lvl = level[0]
 	}
-	compressed, err := przm.Compress(src, lvl)
+	
+	opts := []przm.Option{}
+	if os.Getenv("PRZM_GPU") == "1" {
+		opts = append(opts, przm.WithGPUAcceleration())
+	}
+	
+	compressed, err := przm.CompressWithOptions(src, przm.CompressOptions{Level: lvl}, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +67,11 @@ func (c *PRZMCompressor) Compress(src io.Reader, dest io.Writer) (int64, error) 
 	if err != nil {
 		return 0, err
 	}
-	compressed, err := przm.Compress(raw, c.level)
+	opts := []przm.Option{}
+	if os.Getenv("PRZM_GPU") == "1" {
+		opts = append(opts, przm.WithGPUAcceleration())
+	}
+	compressed, err := przm.CompressWithOptions(raw, przm.CompressOptions{Level: c.level}, opts...)
 	if err != nil {
 		return 0, err
 	}

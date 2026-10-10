@@ -55,6 +55,7 @@ type SevenZipArgs struct {
 	Filter          string
 	Comment         string
 	Items           []string
+	GPUAcceleration bool
 }
 
 // ParseSevenZipArgs parses raw command-line arguments using 7-Zip switch conventions.
@@ -182,6 +183,12 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 				} else if w, err := strconv.Atoi(val); err == nil {
 					s.Workers = w
 				}
+				continue
+			}
+
+			// GPU Acceleration: -gpu
+			if lower == "-gpu" {
+				s.GPUAcceleration = true
 				continue
 			}
 
