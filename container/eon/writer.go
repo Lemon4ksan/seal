@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"io"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -77,17 +78,26 @@ type extentMeta struct {
 
 // WriteArchive serializes the slice of files into an EON container archive stream.
 func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64, error) {
+	if cfg.Solid {
+		if cfg.SolidSize > 0 {
+			ew.targetSize = uint32(min(cfg.SolidSize, 1<<30))
+		} else {
+			ew.targetSize = 64 * 1024 * 1024
+		}
+		files = file.SortByExtension(files)
+	}
+
 	if cfg.DefaultMethod == codec.PRZM {
 		ew.codecID = CodecPRZM
 		if cfg.DefaultLevel > 0 {
 			ew.codecLevel = cfg.DefaultLevel
 		}
-		if ew.targetSize == DefaultChunkTargetSize || ew.targetSize > 4*1024*1024 {
+		if !cfg.Solid && (ew.targetSize == DefaultChunkTargetSize || ew.targetSize > 4*1024*1024) {
 			ew.targetSize = 4 * 1024 * 1024
 		}
 	} else if cfg.DefaultMethod == codec.Store {
 		ew.codecID = CodecStore
-		if ew.targetSize == DefaultChunkTargetSize || ew.targetSize > 4*1024*1024 {
+		if !cfg.Solid && (ew.targetSize == DefaultChunkTargetSize || ew.targetSize > 4*1024*1024) {
 			ew.targetSize = 4 * 1024 * 1024
 		}
 	} else if cfg.DefaultMethod == codec.LZMA2 || cfg.DefaultMethod == codec.ZStandard {
@@ -95,7 +105,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 		if cfg.DefaultLevel > 0 {
 			ew.codecLevel = cfg.DefaultLevel
 		}
-		if ew.targetSize == DefaultChunkTargetSize || ew.targetSize > 4*1024*1024 {
+		if !cfg.Solid && (ew.targetSize == DefaultChunkTargetSize || ew.targetSize > 4*1024*1024) {
 			ew.targetSize = 4 * 1024 * 1024
 		}
 	}
@@ -174,6 +184,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 	curJob := &chunkJob{idx: 0}
 	var curJobSize int64
 	var currentChunkIdx uint32
+	var curJobExt string
 
 	for _, f := range files {
 		cleanName := strings.TrimPrefix(f.Name(), "/")
@@ -211,6 +222,16 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 			continue
 		}
 
+		ext := strings.ToLower(filepath.Ext(cleanName))
+		if cfg.SolidExtension && curJobSize > 0 && curJobExt != "" && ext != curJobExt {
+			jobs = append(jobs, curJob)
+			currentChunkIdx++
+			curJob = &chunkJob{idx: currentChunkIdx}
+			curJobSize = 0
+			curJobExt = ""
+		}
+		curJobExt = ext
+
 		if curJobSize+fSize <= targetChunkSize {
 			curJob.tasks = append(curJob.tasks, fileChunkTask{
 				file:       f,
@@ -229,6 +250,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 				currentChunkIdx++
 				curJob = &chunkJob{idx: currentChunkIdx}
 				curJobSize = 0
+				curJobExt = ""
 			}
 		} else {
 			if curJobSize > 0 {
@@ -236,6 +258,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 				currentChunkIdx++
 				curJob = &chunkJob{idx: currentChunkIdx}
 				curJobSize = 0
+				curJobExt = ""
 			}
 
 			if fSize <= targetChunkSize {
@@ -251,6 +274,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 					isLast:     true,
 				})
 				curJobSize += fSize
+				curJobExt = ext
 			} else {
 				remaining := fSize
 				fileOff := int64(0)
@@ -277,6 +301,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 					currentChunkIdx++
 					curJob = &chunkJob{idx: currentChunkIdx}
 					curJobSize = 0
+					curJobExt = ""
 				}
 			}
 		}

@@ -141,3 +141,14 @@ func WithBytecodeFilter(filter string) Option {
 	return option.WithBytecodeFilter(filter)
 }
 
+// WithSolid enables or disables solid archiving, with an optional maximum solid block size in bytes.
+// If size is omitted or <= 0, container-default solid block sizes (e.g. 64 MiB for EON) are used.
+func WithSolid(solid bool, size ...int64) Option {
+	return option.WithSolid(solid, size...)
+}
+
+// WithSolidExtension configures whether solid blocks should be split/grouped by file extension.
+func WithSolidExtension(enabled bool) Option {
+	return option.WithSolidExtension(enabled)
+}
+

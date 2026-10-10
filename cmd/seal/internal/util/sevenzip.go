@@ -56,6 +56,10 @@ type SevenZipArgs struct {
 	Comment         string
 	Items           []string
 	GPUAcceleration bool
+	Solid           bool
+	SolidExplicit   bool
+	SolidSize       int64
+	SolidExtension  bool
 }
 
 // ParseSevenZipArgs parses raw command-line arguments using 7-Zip switch conventions.
@@ -189,6 +193,47 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 			// GPU Acceleration: -gpu
 			if lower == "-gpu" {
 				s.GPUAcceleration = true
+				continue
+			}
+
+			// Solid mode: -ms[=on|off|e|f|<size>] or -solid[=on|off|e|<size>] or --solid[=...]
+			if strings.HasPrefix(lower, "-ms") || strings.HasPrefix(lower, "-solid") || strings.HasPrefix(lower, "--solid") || lower == "--no-solid" {
+				if lower == "--no-solid" {
+					s.Solid = false
+					s.SolidExplicit = true
+					continue
+				}
+				val := ""
+				if strings.HasPrefix(lower, "--solid") {
+					val = strings.TrimPrefix(lower, "--solid")
+				} else if strings.HasPrefix(lower, "-solid") {
+					val = strings.TrimPrefix(lower, "-solid")
+				} else {
+					val = strings.TrimPrefix(lower, "-ms")
+				}
+				val = strings.TrimPrefix(val, "=")
+				val = strings.TrimPrefix(val, ":")
+				s.SolidExplicit = true
+				if val == "" || val == "on" || val == "+" {
+					s.Solid = true
+				} else if val == "off" || val == "-" {
+					s.Solid = false
+				} else if val == "e" {
+					s.Solid = true
+					s.SolidExtension = true
+				} else if val == "f" {
+					s.Solid = true
+					s.SolidSize = 1 << 30 // 1 GiB full solid block
+				} else {
+					s.Solid = true
+					if strings.Contains(val, "e") {
+						s.SolidExtension = true
+						val = strings.ReplaceAll(val, "e", "")
+					}
+					if sz, err := ParseByteSize(val); err == nil && sz > 0 {
+						s.SolidSize = sz
+					}
+				}
 				continue
 			}
 

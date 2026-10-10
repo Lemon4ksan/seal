@@ -48,3 +48,32 @@ func FormatBytes(b int64) string {
 	}
 	return fmt.Sprintf("%.2f %cib", float64(b)/float64(div), "KMGTPE"[exp])
 }
+
+// ParseByteSize parses human-readable byte sizes like "64m", "256m", "1g", "32k", or "1048576" into bytes.
+func ParseByteSize(s string) (int64, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return 0, fmt.Errorf("empty byte size")
+	}
+	multiplier := int64(1)
+	if strings.HasSuffix(s, "g") || strings.HasSuffix(s, "gb") || strings.HasSuffix(s, "gib") {
+		multiplier = 1024 * 1024 * 1024
+		s = strings.TrimRight(s, "gib")
+	} else if strings.HasSuffix(s, "m") || strings.HasSuffix(s, "mb") || strings.HasSuffix(s, "mib") {
+		multiplier = 1024 * 1024
+		s = strings.TrimRight(s, "mib")
+	} else if strings.HasSuffix(s, "k") || strings.HasSuffix(s, "kb") || strings.HasSuffix(s, "kib") {
+		multiplier = 1024
+		s = strings.TrimRight(s, "kib")
+	} else if strings.HasSuffix(s, "b") {
+		s = strings.TrimSuffix(s, "b")
+	}
+
+	var val int64
+	_, err := fmt.Sscanf(s, "%d", &val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid byte size %q: %w", s, err)
+	}
+	return val * multiplier, nil
+}
+

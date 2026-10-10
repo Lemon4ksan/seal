@@ -51,6 +51,9 @@ const (
 
 	// SortSizeDesc sorts entries by uncompressed size (largest first).
 	SortSizeDesc
+
+	// SortExtensionAsc sorts entries stably by extension group, extension, and filename.
+	SortExtensionAsc
 )
 
 // ConflictAction represents a name collision resolution policy.
@@ -97,6 +100,9 @@ type Archive struct {
 	conflictPolicy ConflictHandler
 	vfsFS          *vfs.FS
 	bytecodeFilter string
+	solid          bool
+	solidSize      int64
+	solidExtension bool
 }
 
 type archiverConfig struct {
@@ -111,6 +117,9 @@ type archiverConfig struct {
 	registry       *codec.Registry
 	workers        int
 	bytecodeFilter string
+	solid          bool
+	solidSize      int64
+	solidExtension bool
 }
 
 type processConfig struct {
@@ -126,6 +135,11 @@ type processConfig struct {
 	sourceDir      string
 	extensions     []extension.Extension
 	bytecodeFilter string
+	hasSolid       bool
+	solid          bool
+	solidSize      int64
+	hasSolidExt    bool
+	solidExtension bool
 }
 
 // New constructs a new universal [Archive] instance with the specified options.
@@ -155,6 +169,11 @@ func New(opts ...option.Option) *Archive {
 			cfg.workers = opt.Workers
 		case option.OptBytecodeFilter:
 			cfg.bytecodeFilter = opt.Text
+		case option.OptSolid:
+			cfg.solid = opt.Solid
+			cfg.solidSize = opt.SolidSize
+		case option.OptSolidExtension:
+			cfg.solidExtension = opt.SolidExtension
 		case option.OptCustom:
 			if opt.Custom != nil {
 				opt.Custom(&cfg)
@@ -173,6 +192,9 @@ func New(opts ...option.Option) *Archive {
 		sortStrategy:   cfg.sortStrategy,
 		conflictPolicy: cfg.conflictPolicy,
 		bytecodeFilter: cfg.bytecodeFilter,
+		solid:          cfg.solid,
+		solidSize:      cfg.solidSize,
+		solidExtension: cfg.solidExtension,
 	}
 
 	a.vfsFS = vfs.NewFS(a)
@@ -227,6 +249,23 @@ func (a *Archive) SetPassword(pwd string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.password = pwd
+}
+
+// Solid reports whether solid archiving mode is active.
+func (a *Archive) Solid() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.solid
+}
+
+// SetSolid configures solid archiving mode on the archive with an optional solid block size.
+func (a *Archive) SetSolid(solid bool, size ...int64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.solid = solid
+	if len(size) > 0 {
+		a.solidSize = size[0]
+	}
 }
 
 // AddFile reads an OS file from disk, normalizes its path, and attaches it as an archive entry.
@@ -740,6 +779,13 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 			procCfg.extensions = append(procCfg.extensions, opt.Extensions...)
 		case option.OptBytecodeFilter:
 			procCfg.bytecodeFilter = opt.Text
+		case option.OptSolid:
+			procCfg.hasSolid = true
+			procCfg.solid = opt.Solid
+			procCfg.solidSize = opt.SolidSize
+		case option.OptSolidExtension:
+			procCfg.hasSolidExt = true
+			procCfg.solidExtension = opt.SolidExtension
 		case option.OptCustom:
 			if opt.Custom != nil {
 				opt.Custom(&procCfg)
@@ -756,7 +802,18 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 	sortStrat := a.sortStrategy
 	c := a.container
 	reg := a.registry
+	solid := a.solid
+	solidSize := a.solidSize
+	solidExtension := a.solidExtension
 	a.mu.RUnlock()
+
+	if procCfg.hasSolid {
+		solid = procCfg.solid
+		solidSize = procCfg.solidSize
+	}
+	if procCfg.hasSolidExt {
+		solidExtension = procCfg.solidExtension
+	}
 
 	if c == nil {
 		return 0, errors.New(
@@ -796,6 +853,12 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 			filesCopy,
 			func(a, b *file.File) int { return cmp.Compare(b.UncompressedSize(), a.UncompressedSize()) },
 		)
+	case SortExtensionAsc:
+		filesCopy = file.SortByExtension(filesCopy)
+	default:
+		if solid {
+			filesCopy = file.SortByExtension(filesCopy)
+		}
 	}
 
 	var onDoneWrapper func(*file.File, error)
@@ -877,6 +940,9 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 		OnFileDone:     onDoneWrapper,
 		OnProgress:     onProgressWrapper,
 		BytecodeFilter: bFilter,
+		Solid:          solid,
+		SolidSize:      solidSize,
+		SolidExtension: solidExtension,
 	}
 
 	return c.WriteArchive(dest, filesCopy, containerCfg)

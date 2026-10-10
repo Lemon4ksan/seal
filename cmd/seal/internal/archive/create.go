@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -42,12 +42,15 @@ Flags (7-Zip Compatible):
   -w<dir>          Set working directory for temporary files
   -mmt=<N>         Set number of CPU threads to use (default: auto)
   -gpu             Enable NVIDIA GPU hardware LZ77 acceleration (PRZM only)
+  -ms[=...]        Set solid archive mode (e.g. -ms, -ms=on, -ms=off, -ms=64m, -ms=e)
+  -solid[=...]     Alias for -ms (e.g. -solid, -solid=256m)
   -sdel            Delete source files after successful compression
   -x!<pattern>     Exclude files matching pattern (e.g. -x!*.tmp)
   -r               Recurse into subdirectories (default: on)
 
 Examples:
   seal a backup.eon ./docs ./images
+  seal a -ms=64m -m=przm -mx=1 archive.eon ./gamedata
   seal a -mx=9 -m=zstd archive.tar.zst ./data
   seal c -pSecretPassword secure.7z ./confidential
 `
@@ -133,12 +136,21 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		level = 3
 	}
 
+	isSolid := false
+	if sz.SolidExplicit {
+		isSolid = sz.Solid
+	} else if cType == container.SevenZip {
+		isSolid = true
+	}
+
 	opts := []seal.Option{
 		seal.WithContainer(cType),
 		seal.WithCompression(method, level),
 		seal.WithPassword(sz.Password),
 		seal.WithComment(sz.Comment),
 		seal.WithBytecodeFilter(sz.Filter),
+		seal.WithSolid(isSolid, sz.SolidSize),
+		seal.WithSolidExtension(sz.SolidExtension),
 	}
 	if sz.Workers > 0 {
 		opts = append(opts, seal.WithWorkers(sz.Workers))
@@ -196,8 +208,22 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		}
 	}
 
-	fmt.Fprintf(stdout, "Compressing %d entries (%s uncompressed) via %s (Level %d, Filter: %s)...\n",
-		totalFiles, util.FormatBytes(totalBytes), tuikit.Bold(method.String()), level, displayFilter)
+	solidStr := "off"
+	if isSolid {
+		if sz.SolidSize > 0 {
+			solidStr = util.FormatBytes(sz.SolidSize)
+		} else if cType == container.Eon {
+			solidStr = "64 MiB"
+		} else {
+			solidStr = "on"
+		}
+		if sz.SolidExtension {
+			solidStr += " (per-ext)"
+		}
+	}
+
+	fmt.Fprintf(stdout, "Compressing %d entries (%s uncompressed) via %s (Level %d, Filter: %s, Solid: %s)...\n",
+		totalFiles, util.FormatBytes(totalBytes), tuikit.Bold(method.String()), level, displayFilter, tuikit.Cyan(solidStr))
 
 	var p *tuikit.Progress
 	if tuikit.ProbeTerminal(stdout) {
@@ -217,6 +243,8 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		writeOpts := []seal.Option{
 			seal.WithResumable(true),
 			seal.WithBytecodeFilter(sz.Filter),
+			seal.WithSolid(isSolid, sz.SolidSize),
+			seal.WithSolidExtension(sz.SolidExtension),
 			seal.WithOnFileDone(func(entryName string, err error) {
 				if err != nil {
 					skippedFiles.Add(1)

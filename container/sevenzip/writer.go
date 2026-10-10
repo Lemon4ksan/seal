@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -11,9 +11,6 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
-	"path/filepath"
-	"slices"
-	"strings"
 	"sync"
 	"unicode/utf16"
 
@@ -368,42 +365,6 @@ func (p *asyncPrefetchPipe) Read(b []byte) (int, error) {
 	}
 }
 
-func extensionGroup(ext string) int {
-	switch ext {
-	case ".txt", ".json", ".xml", ".html", ".htm", ".css", ".js", ".ts", ".jsx", ".tsx",
-		".go", ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".cs", ".py", ".rs", ".java",
-		".md", ".log", ".yaml", ".yml", ".ini", ".cfg", ".conf", ".toml", ".sql", ".bat", ".cmd", ".ps1", ".sh":
-		return 0 // Code & Text
-
-	case ".exe",
-		".dll",
-		".sys",
-		".node",
-		".so",
-		".dylib",
-		".pdb",
-		".lib",
-		".obj",
-		".o",
-		".a",
-		".ocx",
-		".bin",
-		".dat",
-		".rsrc":
-		return 1 // Executables & Binaries
-
-	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".rtf", ".csv", ".tsv":
-		return 2 // Documents
-
-	case ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico", ".svg", ".bmp", ".mp3", ".wav", ".ogg", ".flac",
-		".mp4", ".mkv", ".avi", ".mov", ".zip", ".gz", ".xz", ".7z", ".tar", ".bz2", ".zst", ".rar", ".iso":
-		return 3 // Media & Compressed
-
-	default:
-		return 4 // Other
-	}
-}
-
 // WriteArchive serializes files into a standard 7-Zip archive with streaming constant memory.
 func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	initWritten, err := writeSignatureSlot(zw.w)
@@ -411,7 +372,7 @@ func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 		return 0, err
 	}
 
-	sortedFiles := sortFilesForSolid(files)
+	sortedFiles := file.SortByExtension(files)
 
 	payload, err := zw.compressSolidPayload(sortedFiles)
 	if err != nil {
@@ -448,33 +409,6 @@ func writeSignatureSlot(w io.Writer) (int64, error) {
 
 	n, err := w.Write(sigAndStart[:])
 	return int64(n), err
-}
-
-func sortFilesForSolid(files []*file.File) []*file.File {
-	sortedFiles := make([]*file.File, len(files))
-	copy(sortedFiles, files)
-	slices.SortStableFunc(sortedFiles, func(a, b *file.File) int {
-		if a.IsDir() != b.IsDir() {
-			if a.IsDir() {
-				return -1
-			}
-			return 1
-		}
-		extA := strings.ToLower(filepath.Ext(a.Name()))
-		extB := strings.ToLower(filepath.Ext(b.Name()))
-
-		grpA := extensionGroup(extA)
-		grpB := extensionGroup(extB)
-		if grpA != grpB {
-			return grpA - grpB
-		}
-
-		if extA != extB {
-			return strings.Compare(extA, extB)
-		}
-		return strings.Compare(a.Name(), b.Name())
-	})
-	return sortedFiles
 }
 
 type solidPayload struct {

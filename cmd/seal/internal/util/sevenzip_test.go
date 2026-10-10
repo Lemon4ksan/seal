@@ -103,3 +103,43 @@ func TestMatchPattern(t *testing.T) {
 		t.Errorf("expected docs/test.tmp to be excluded by *.tmp")
 	}
 }
+
+func TestParseSevenZipArgs_SolidFlags(t *testing.T) {
+	tests := []struct {
+		args       []string
+		wantSolid  bool
+		wantSize   int64
+		wantExt    bool
+		wantExp    bool
+	}{
+		{args: []string{"a.eon", "f", "-ms"}, wantSolid: true, wantExp: true},
+		{args: []string{"a.eon", "f", "-ms=on"}, wantSolid: true, wantExp: true},
+		{args: []string{"a.eon", "f", "-ms=off"}, wantSolid: false, wantExp: true},
+		{args: []string{"a.eon", "f", "-ms=e"}, wantSolid: true, wantExt: true, wantExp: true},
+		{args: []string{"a.eon", "f", "-ms=f"}, wantSolid: true, wantSize: 1 << 30, wantExp: true},
+		{args: []string{"a.eon", "f", "-ms=64m"}, wantSolid: true, wantSize: 64 * 1024 * 1024, wantExp: true},
+		{args: []string{"a.eon", "f", "-solid"}, wantSolid: true, wantExp: true},
+		{args: []string{"a.eon", "f", "-solid=off"}, wantSolid: false, wantExp: true},
+		{args: []string{"a.eon", "f", "--solid=256mb"}, wantSolid: true, wantSize: 256 * 1024 * 1024, wantExp: true},
+		{args: []string{"a.eon", "f", "--no-solid"}, wantSolid: false, wantExp: true},
+	}
+
+	for _, tc := range tests {
+		sz, err := ParseSevenZipArgs("a", tc.args)
+		if err != nil {
+			t.Fatalf("ParseSevenZipArgs failed for %v: %v", tc.args, err)
+		}
+		if sz.Solid != tc.wantSolid {
+			t.Errorf("args %v: Solid got %v, want %v", tc.args, sz.Solid, tc.wantSolid)
+		}
+		if sz.SolidExplicit != tc.wantExp {
+			t.Errorf("args %v: SolidExplicit got %v, want %v", tc.args, sz.SolidExplicit, tc.wantExp)
+		}
+		if sz.SolidSize != tc.wantSize {
+			t.Errorf("args %v: SolidSize got %d, want %d", tc.args, sz.SolidSize, tc.wantSize)
+		}
+		if sz.SolidExtension != tc.wantExt {
+			t.Errorf("args %v: SolidExtension got %v, want %v", tc.args, sz.SolidExtension, tc.wantExt)
+		}
+	}
+}

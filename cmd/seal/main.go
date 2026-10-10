@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -32,6 +32,7 @@ func main() {
 		&archive.CatCmd{},
 		&archive.UpdateCmd{},
 		&archive.VacuumCmd{},
+		&archive.SFXCmd{},
 		&forensics.TestCmd{},
 		&forensics.TreeCmd{},
 		&forensics.InspectCmd{},
@@ -52,7 +53,7 @@ func main() {
 	app.CommandGroups = []tuikit.CommandGroup{
 		{
 			Title:    "Archive Operations (7-Zip & Modern)",
-			Commands: []string{"create", "extract", "list", "delete", "cat", "update", "vacuum"},
+			Commands: []string{"create", "extract", "list", "delete", "cat", "update", "vacuum", "sfx"},
 		},
 		{
 			Title:    "Virtual Filesystem & Cloud",

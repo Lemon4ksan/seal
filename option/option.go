@@ -41,6 +41,8 @@ const (
 	OptCheckpoint
 	OptExtension
 	OptBytecodeFilter
+	OptSolid
+	OptSolidExtension
 )
 
 // ProgressStats delivers real-time throughput and status telemetry during archive operations.
@@ -75,11 +77,14 @@ type Option struct {
 	Progress   ProgressFunc
 	Custom     func(any)
 	OnDone     func(entryName string, err error)
-	Resumable  bool
-	SourceDir  string
-	SessionID  string
-	Bytes      []byte
-	Extensions []extension.Extension
+	Resumable      bool
+	SourceDir      string
+	SessionID      string
+	Bytes          []byte
+	Extensions     []extension.Extension
+	Solid          bool
+	SolidSize      int64
+	SolidExtension bool
 }
 
 // IsZero reports whether the option is an uninitialized zero value.
@@ -214,4 +219,19 @@ func WithExtension(exts ...extension.Extension) Option {
 // WithBytecodeFilter configures the bytecode preprocessing filter (e.g. "bcj", "bcj2", "arm").
 func WithBytecodeFilter(filter string) Option {
 	return Option{Kind: OptBytecodeFilter, Text: filter}
+}
+
+// WithSolid enables or disables solid archiving, with an optional maximum solid block size in bytes.
+// If size is omitted or <= 0, the container default solid size (e.g. 64 MiB for EON) is used.
+func WithSolid(solid bool, size ...int64) Option {
+	var sz int64
+	if len(size) > 0 {
+		sz = size[0]
+	}
+	return Option{Kind: OptSolid, Solid: solid, SolidSize: sz}
+}
+
+// WithSolidExtension configures whether solid blocks should be split/grouped by file extension.
+func WithSolidExtension(enabled bool) Option {
+	return Option{Kind: OptSolidExtension, SolidExtension: enabled}
 }

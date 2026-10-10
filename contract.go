@@ -114,11 +114,12 @@ const (
 
 // Serialization sorting strategy constants.
 const (
-	SortDefault  = archive.SortDefault
-	SortNameAsc  = archive.SortNameAsc
-	SortNameDesc = archive.SortNameDesc
-	SortSizeAsc  = archive.SortSizeAsc
-	SortSizeDesc = archive.SortSizeDesc
+	SortDefault      = archive.SortDefault
+	SortNameAsc      = archive.SortNameAsc
+	SortNameDesc     = archive.SortNameDesc
+	SortSizeAsc      = archive.SortSizeAsc
+	SortSizeDesc     = archive.SortSizeDesc
+	SortExtensionAsc = archive.SortExtensionAsc
 )
 
 // Exported sentinel domain errors.

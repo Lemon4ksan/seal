@@ -65,6 +65,7 @@ type chunkFlight struct {
 type Reader struct {
 	rAt        io.ReaderAt
 	size       int64
+	baseOffset int64
 	blockShift uint8
 	blockSize  int64
 	chunks     []CTOCEntry
@@ -95,10 +96,25 @@ func NewReader(rAt io.ReaderAt, size int64) (*Reader, error) {
 
 	centralDirOffset := binary.LittleEndian.Uint64(trailer[0:8])
 	archiveStartOffset := binary.LittleEndian.Uint64(trailer[16:24])
+	baseOffset := int64(archiveStartOffset)
+
+	// If archiveStartOffset == 0, check if offset 0 has MagicHeaderLE
+	if baseOffset == 0 {
+		var magicBuf [4]byte
+		if _, err := rAt.ReadAt(magicBuf[:], 0); err == nil && binary.LittleEndian.Uint32(magicBuf[:]) != MagicHeaderLE {
+			// Auto-detect SFX/SMX stub offset by checking block boundaries
+			for off := int64(512); off < size-TrailerSize; off += 512 {
+				if _, err := rAt.ReadAt(magicBuf[:], off); err == nil && binary.LittleEndian.Uint32(magicBuf[:]) == MagicHeaderLE {
+					baseOffset = off
+					break
+				}
+			}
+		}
+	}
 
 	// 2. Read 32-byte Archive Header
 	var header [HeaderSize]byte
-	if _, err := rAt.ReadAt(header[:], int64(archiveStartOffset)); err != nil {
+	if _, err := rAt.ReadAt(header[:], baseOffset); err != nil {
 		return nil, fmt.Errorf("eon: read header: %w", err)
 	}
 	if binary.LittleEndian.Uint32(header[0:4]) != MagicHeaderLE {
@@ -113,7 +129,8 @@ func NewReader(rAt io.ReaderAt, size int64) (*Reader, error) {
 
 	// 3. Read Chunk Table of Contents (CTOC)
 	var ctocHdr [CTOCHeaderSize]byte
-	if _, err := rAt.ReadAt(ctocHdr[:], int64(centralDirOffset)); err != nil {
+	ctocOffset := baseOffset + int64(centralDirOffset)
+	if _, err := rAt.ReadAt(ctocHdr[:], ctocOffset); err != nil {
 		return nil, fmt.Errorf("eon: read ctoc header: %w", err)
 	}
 	if binary.LittleEndian.Uint32(ctocHdr[0:4]) != MagicCTOCLE {
@@ -124,7 +141,7 @@ func NewReader(rAt io.ReaderAt, size int64) (*Reader, error) {
 	chunks := make([]CTOCEntry, totalChunks)
 	if totalChunks > 0 {
 		ctocData := make([]byte, totalChunks*CTOCEntrySize)
-		ctocDataOffset := int64(centralDirOffset) + CTOCHeaderSize
+		ctocDataOffset := ctocOffset + CTOCHeaderSize
 		if _, err := rAt.ReadAt(ctocData, ctocDataOffset); err != nil {
 			return nil, fmt.Errorf("eon: read ctoc entries: %w", err)
 		}
@@ -139,7 +156,7 @@ func NewReader(rAt io.ReaderAt, size int64) (*Reader, error) {
 	}
 
 	// 4. Read Extent Catalog (INDX)
-	indxOffset := int64(centralDirOffset) + CTOCHeaderSize + int64(totalChunks)*CTOCEntrySize
+	indxOffset := ctocOffset + CTOCHeaderSize + int64(totalChunks)*CTOCEntrySize
 	var indxHdr [INDXHeaderSize]byte
 	if _, err := rAt.ReadAt(indxHdr[:], indxOffset); err != nil {
 		return nil, fmt.Errorf("eon: read indx header: %w", err)
@@ -158,6 +175,7 @@ func NewReader(rAt io.ReaderAt, size int64) (*Reader, error) {
 	r := &Reader{
 		rAt:             rAt,
 		size:            size,
+		baseOffset:      baseOffset,
 		blockShift:      blockShift,
 		blockSize:       blockSize,
 		chunks:          chunks,
@@ -316,6 +334,11 @@ func (r *Reader) Entries() []*file.File {
 	return r.files
 }
 
+// Files aliases Entries returning all mapped POSIX VFS files.
+func (r *Reader) Files() []*file.File {
+	return r.files
+}
+
 // Extents returns all raw universal extents across all namespaces.
 func (r *Reader) Extents() []ExtentRecord {
 	return r.extents
@@ -416,7 +439,7 @@ func (r *Reader) loadChunk(chunkIdx uint32) ([]byte, error) {
 	}
 	ctoc := r.chunks[chunkIdx]
 
-	diskOffset := int64(ctoc.BlockIndex) << r.blockShift
+	diskOffset := r.baseOffset + (int64(ctoc.BlockIndex) << r.blockShift)
 
 	// Read 64-byte Chunk Header
 	var chnkHdr [ChunkHeaderSize]byte
