@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Lemon4ksan All rights reserved.
+﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -13,7 +13,7 @@ import (
 	"io"
 
 	"github.com/lemon4ksan/foundation/borrow"
-	"github.com/lemon4ksan/foundation/codec/compress/zstd"
+	"github.com/lemon4ksan/seal/codec/compress/zstd"
 )
 
 // UnzstdDCZ decompresses a Dictionary-Compressed Zstandard payload (RFC 9842 §5)

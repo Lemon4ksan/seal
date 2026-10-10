@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Lemon4ksan All rights reserved.
+﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/lemon4ksan/foundation/codec/compress/lzma"
-	"github.com/lemon4ksan/foundation/codec/filter/bcj"
-	"github.com/lemon4ksan/foundation/codec/filter/delta"
+	"github.com/lemon4ksan/seal/codec/compress/lzma"
+	"github.com/lemon4ksan/seal/codec/filter/bcj"
+	"github.com/lemon4ksan/seal/codec/filter/delta"
 
 	"github.com/lemon4ksan/seal/codec/bcj2"
 	"github.com/lemon4ksan/seal/codec/ppmd"

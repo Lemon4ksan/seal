@@ -12,7 +12,16 @@ import (
 
 	"github.com/lemon4ksan/foundation/bufkit"
 	"github.com/lemon4ksan/foundation/generic"
+	"github.com/lemon4ksan/przm"
 )
+
+type decScratchpad struct {
+	scanlineBuf []byte
+}
+
+var decScratchPool = generic.NewPool(func() *decScratchpad {
+	return &decScratchpad{}
+})
 
 var (
 	pngSignature = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
@@ -53,7 +62,7 @@ func parsePNGContainer(src []byte) (*PNGMetadata, []byte, error) {
 		chunkTotal := 12 + int(chunkLen)
 
 		if pos+chunkTotal > len(src) {
-			return nil, nil, fmt.Errorf("%w: truncated chunk %s", ErrCorruptedFrame, chunkType)
+			return nil, nil, fmt.Errorf("%w: truncated chunk %s", przm.ErrCorruptedFrame, chunkType)
 		}
 
 		chunkData := src[pos+8 : pos+8+int(chunkLen)]
@@ -116,14 +125,14 @@ func CompressArchivalPNG(src []byte, level int) ([]byte, error) {
 	}
 
 	innerLevel := level
-	if innerLevel >= ModeArchival || innerLevel <= 0 {
+	if innerLevel >= przm.ModeArchival || innerLevel <= 0 {
 		innerLevel = 3
 	}
 
 	// Compress IDAT scanline stream using standard PRZM stream format without experimental formats
-	innerPRZM, err := CompressWithOptions(idatPayload, CompressOptions{
+	innerPRZM, err := przm.CompressWithOptions(idatPayload, przm.CompressOptions{
 		Level:              innerLevel,
-		WindowLog:          WindowLog8M,
+		WindowLog:          przm.WindowLog8M,
 		StandardStreamOnly: true,
 	})
 	if err != nil {
@@ -135,7 +144,7 @@ func CompressArchivalPNG(src []byte, level int) ([]byte, error) {
 	postfixLen := len(meta.PostfixBytes)
 
 	if prefixLen > 65535 || postfixLen > 65535 || idatCount > 65535 {
-		return nil, fmt.Errorf("%w: metadata exceeds 16-bit limits", ErrExceedsMaxBlock)
+		return nil, fmt.Errorf("%w: metadata exceeds 16-bit limits", przm.ErrExceedsMaxBlock)
 	}
 
 	metaSize := 8 + idatCount*8 + prefixLen + postfixLen
@@ -144,7 +153,7 @@ func CompressArchivalPNG(src []byte, level int) ([]byte, error) {
 	out := make([]byte, totalSize)
 
 	// Archival PNG Container Header
-	binary.LittleEndian.PutUint32(out[0:4], ArchivalPNGMagic)
+	binary.LittleEndian.PutUint32(out[0:4], przm.ArchivalPNGMagic)
 	binary.LittleEndian.PutUint32(out[4:8], uint32(len(src)))
 	binary.LittleEndian.PutUint32(out[8:12], uint32(metaSize))
 
@@ -179,27 +188,27 @@ func CompressArchivalPNG(src []byte, level int) ([]byte, error) {
 // DecompressArchivalPNGTo decompresses an ArchivalPNGMagic container frame into dst with strictly 0 heap allocs.
 func DecompressArchivalPNGTo(src []byte, dst []byte) ([]byte, error) {
 	if len(src) < 12 {
-		return nil, ErrCorruptedFrame
+		return nil, przm.ErrCorruptedFrame
 	}
 
 	magic := binary.LittleEndian.Uint32(src[0:4])
-	if magic != ArchivalPNGMagic {
-		return nil, ErrInvalidMagic
+	if magic != przm.ArchivalPNGMagic {
+		return nil, przm.ErrInvalidMagic
 	}
 
 	origLen := int(binary.LittleEndian.Uint32(src[4:8]))
-	if origLen > MaxBlockSize {
-		return nil, ErrExceedsMaxBlock
+	if origLen > przm.MaxBlockSize {
+		return nil, przm.ErrExceedsMaxBlock
 	}
 
 	metaSize := int(binary.LittleEndian.Uint32(src[8:12]))
 	if 12+metaSize > len(src) || metaSize < 8 {
-		return nil, ErrCorruptedFrame
+		return nil, przm.ErrCorruptedFrame
 	}
 
 	metaBuf := src[12 : 12+metaSize]
 	if metaBuf[0] != 0x50 {
-		return nil, ErrCorruptedFrame
+		return nil, przm.ErrCorruptedFrame
 	}
 
 	prefixLen := int(binary.LittleEndian.Uint16(metaBuf[2:4]))
@@ -208,7 +217,7 @@ func DecompressArchivalPNGTo(src []byte, dst []byte) ([]byte, error) {
 
 	expectedMeta := 8 + idatCount*8 + prefixLen + postfixLen
 	if metaSize != expectedMeta {
-		return nil, ErrCorruptedFrame
+		return nil, przm.ErrCorruptedFrame
 	}
 
 	if dst == nil || cap(dst) < origLen+64 {
@@ -223,7 +232,7 @@ func DecompressArchivalPNGTo(src []byte, dst []byte) ([]byte, error) {
 	if cap(pad.scanlineBuf) < origLen+64 {
 		pad.scanlineBuf = bufkit.AlignedBytes(origLen+64, bufkit.CacheLineSize)
 	}
-	innerBytes, err := DecompressTo(innerSrc, pad.scanlineBuf)
+	innerBytes, err := przm.DecompressTo(innerSrc, pad.scanlineBuf)
 	if err != nil {
 		decScratchPool.Put(pad)
 		return nil, err
@@ -239,7 +248,7 @@ func DecompressArchivalPNGTo(src []byte, dst []byte) ([]byte, error) {
 	if prefixLen > 0 {
 		if dstPos+prefixLen > origLen {
 			decScratchPool.Put(pad)
-			return nil, ErrCorruptedFrame
+			return nil, przm.ErrCorruptedFrame
 		}
 		copy(dst[dstPos:dstPos+prefixLen], metaBuf[prefixPos:prefixPos+prefixLen])
 		dstPos += prefixLen
@@ -254,7 +263,7 @@ func DecompressArchivalPNGTo(src []byte, dst []byte) ([]byte, error) {
 
 		if innerPos+chunkLen > len(innerBytes) || dstPos+12+chunkLen > origLen {
 			decScratchPool.Put(pad)
-			return nil, ErrCorruptedFrame
+			return nil, przm.ErrCorruptedFrame
 		}
 
 		binary.BigEndian.PutUint32(dst[dstPos:dstPos+4], uint32(chunkLen))
@@ -273,14 +282,14 @@ func DecompressArchivalPNGTo(src []byte, dst []byte) ([]byte, error) {
 
 	if innerPos != len(innerBytes) {
 		decScratchPool.Put(pad)
-		return nil, ErrCorruptedFrame
+		return nil, przm.ErrCorruptedFrame
 	}
 
 	// 3. Postfix (ancillary chunks + IEND)
 	if postfixLen > 0 {
 		if dstPos+postfixLen > origLen {
 			decScratchPool.Put(pad)
-			return nil, ErrCorruptedFrame
+			return nil, przm.ErrCorruptedFrame
 		}
 		copy(dst[dstPos:dstPos+postfixLen], metaBuf[postfixPos:postfixPos+postfixLen])
 		dstPos += postfixLen
@@ -288,7 +297,7 @@ func DecompressArchivalPNGTo(src []byte, dst []byte) ([]byte, error) {
 
 	if dstPos != origLen {
 		decScratchPool.Put(pad)
-		return nil, ErrCorruptedFrame
+		return nil, przm.ErrCorruptedFrame
 	}
 
 	decScratchPool.Put(pad)
