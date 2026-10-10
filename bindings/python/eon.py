@@ -10,10 +10,10 @@ Powered by libeon native C ABI.
 import ctypes
 import os
 import sys
-from typing import final
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
+from typing import final
 
 # Find libeon DLL/SO/dylib
 _LIB_NAME = (

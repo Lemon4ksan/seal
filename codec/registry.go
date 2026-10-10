@@ -5,6 +5,7 @@
 package codec
 
 import (
+	"maps"
 	"fmt"
 	"sync"
 )
@@ -24,25 +25,19 @@ func NewRegistry() *Registry {
 	}
 
 	// Register default codecs
-	r.RegisterCompressor(Store, NewStoreCompressor)
-	r.RegisterDecompressor(Store, NewStoreDecompressor)
+	r.RegisterPair(Store, NewStoreCompressor, NewStoreDecompressor)
 
-	r.RegisterCompressor(Deflate, NewDeflateCompressor)
-	r.RegisterDecompressor(Deflate, NewDeflateDecompressor)
+	r.RegisterPair(Deflate, NewDeflateCompressor, NewDeflateDecompressor)
 
-	r.RegisterCompressor(Gzip, NewGzipCompressor)
-	r.RegisterDecompressor(Gzip, NewGzipDecompressor)
+	r.RegisterPair(Gzip, NewGzipCompressor, NewGzipDecompressor)
 
-	r.RegisterCompressor(Zlib, NewZlibCompressor)
-	r.RegisterDecompressor(Zlib, NewZlibDecompressor)
+	r.RegisterPair(Zlib, NewZlibCompressor, NewZlibDecompressor)
 
 	r.RegisterDecompressor(BZIP2, NewBzip2Decompressor)
 
-	r.RegisterCompressor(LZMA, NewLZMACompressor)
-	r.RegisterDecompressor(LZMA, NewLZMADecompressor)
+	r.RegisterPair(LZMA, NewLZMACompressor, NewLZMADecompressor)
 
-	r.RegisterCompressor(PRZM, NewPRZMCompressor)
-	r.RegisterDecompressor(PRZM, NewPRZMDecompressor)
+	r.RegisterPair(PRZM, NewPRZMCompressor, NewPRZMDecompressor)
 
 	return r
 }
@@ -62,6 +57,13 @@ func (r *Registry) RegisterDecompressor(method Method, factory DecompressorFacto
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.decompressors[method] = factory
+}
+
+func (r *Registry) RegisterPair(method Method, compressor CompressorFactory, decompressor DecompressorFactory) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.compressors[method] = compressor
+	r.decompressors[method] = decompressor
 }
 
 // Compressor returns a configured [Compressor] for the method and compression level.
@@ -97,11 +99,7 @@ func (r *Registry) Clone() *Registry {
 		compressors:   make(map[Method]CompressorFactory, len(r.compressors)),
 		decompressors: make(map[Method]DecompressorFactory, len(r.decompressors)),
 	}
-	for k, v := range r.compressors {
-		clone.compressors[k] = v
-	}
-	for k, v := range r.decompressors {
-		clone.decompressors[k] = v
-	}
+	maps.Copy(clone.compressors, r.compressors)
+	maps.Copy(clone.decompressors, r.decompressors)
 	return clone
 }

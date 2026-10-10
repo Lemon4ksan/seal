@@ -230,11 +230,11 @@ func (a *Archive) SetPassword(pwd string) {
 }
 
 // AddFile reads an OS file from disk, normalizes its path, and attaches it as an archive entry.
-func (a *Archive) AddFile(diskPath string, opts ...option.Option) (*file.File, error) {
-	p := pathkit.FromFilePath(diskPath)
+func (a *Archive) AddFile(osPath string, opts ...option.Option) (*file.File, error) {
+	p := pathkit.FromFilePath(osPath)
 	stat, err := os.Stat(p.FilePath())
 	if err != nil {
-		return nil, fmt.Errorf("archive: stat %s: %w", diskPath, err)
+		return nil, fmt.Errorf("archive: stat %s: %w", osPath, err)
 	}
 
 	entryName := p.Base()
