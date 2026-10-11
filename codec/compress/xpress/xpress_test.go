@@ -9,7 +9,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/testing/require"
 
-	"github.com/lemon4ksan/seal/codec/xpress"
+	"github.com/lemon4ksan/seal/codec/compress/xpress"
 )
 
 func TestXpress_ShortBuffer(t *testing.T) {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package codec_test
+package compress_test
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"github.com/lemon4ksan/foundation/testing/assert"
 	"github.com/lemon4ksan/foundation/testing/require"
 
-	"github.com/lemon4ksan/seal/codec"
+	"github.com/lemon4ksan/seal/codec/compress"
 )
 
 func TestDCZ_Decompression(t *testing.T) {
@@ -33,19 +33,19 @@ func TestDCZ_Decompression(t *testing.T) {
 	}
 
 	t.Run("UnzstdDCZ", func(t *testing.T) {
-		decompressed, err := codec.UnzstdDCZ(dczStream, nil, dictPayload)
+		decompressed, err := compress.UnzstdDCZ(dczStream, nil, dictPayload)
 		require.NoError(t, err)
 		assert.Equal(t, originalData, decompressed)
 	})
 
 	t.Run("DecompressWithDict", func(t *testing.T) {
-		decompressed, err := codec.DecompressWithDict("dcz", dczStream, nil, dictPayload)
+		decompressed, err := compress.DecompressWithDict("dcz", dczStream, nil, dictPayload)
 		require.NoError(t, err)
 		assert.Equal(t, originalData, decompressed)
 	})
 
 	t.Run("NewDCZReader streaming", func(t *testing.T) {
-		reader, err := codec.NewDictionaryReader("dcz", bytes.NewReader(dczStream), dictPayload)
+		reader, err := compress.NewDictionaryReader("dcz", bytes.NewReader(dczStream), dictPayload)
 		require.NoError(t, err)
 		defer reader.Close()
 
@@ -56,7 +56,7 @@ func TestDCZ_Decompression(t *testing.T) {
 
 	t.Run("SHA-256 mismatch rejection", func(t *testing.T) {
 		wrongDict := []byte("different dictionary contents")
-		_, err := codec.UnzstdDCZ(dczStream, nil, wrongDict)
+		_, err := compress.UnzstdDCZ(dczStream, nil, wrongDict)
 		require.Error(t, err, "expected error on dictionary hash mismatch")
 	})
 
@@ -65,7 +65,7 @@ func TestDCZ_Decompression(t *testing.T) {
 		copy(corrupt, dczStream)
 		corrupt[0] = 0x00 // corrupt magic
 
-		_, err := codec.UnzstdDCZ(corrupt, nil, dictPayload)
+		_, err := compress.UnzstdDCZ(corrupt, nil, dictPayload)
 		require.Error(t, err, "expected error on corrupt magic")
 	})
 }
@@ -86,19 +86,19 @@ func TestDCB_Decompression(t *testing.T) {
 	}
 
 	t.Run("UnbrotliDCB", func(t *testing.T) {
-		decompressed, err := codec.UnbrotliDCB(dcbStream, nil, dictPayload)
+		decompressed, err := compress.UnbrotliDCB(dcbStream, nil, dictPayload)
 		require.NoError(t, err)
 		assert.Equal(t, originalData, decompressed)
 	})
 
 	t.Run("DecompressWithDict", func(t *testing.T) {
-		decompressed, err := codec.DecompressWithDict("dcb", dcbStream, nil, dictPayload)
+		decompressed, err := compress.DecompressWithDict("dcb", dcbStream, nil, dictPayload)
 		require.NoError(t, err)
 		assert.Equal(t, originalData, decompressed)
 	})
 
 	t.Run("NewDCBReader streaming", func(t *testing.T) {
-		reader, err := codec.NewDictionaryReader("dcb", bytes.NewReader(dcbStream), dictPayload)
+		reader, err := compress.NewDictionaryReader("dcb", bytes.NewReader(dcbStream), dictPayload)
 		require.NoError(t, err)
 		defer reader.Close()
 
@@ -109,7 +109,7 @@ func TestDCB_Decompression(t *testing.T) {
 
 	t.Run("SHA-256 mismatch rejection", func(t *testing.T) {
 		wrongDict := []byte("wrong dictionary")
-		_, err := codec.UnbrotliDCB(dcbStream, nil, wrongDict)
+		_, err := compress.UnbrotliDCB(dcbStream, nil, wrongDict)
 		require.Error(t, err, "expected error on hash mismatch")
 	})
 
@@ -118,7 +118,7 @@ func TestDCB_Decompression(t *testing.T) {
 		copy(corrupt, dcbStream)
 		corrupt[0] = 0x00
 
-		_, err := codec.UnbrotliDCB(corrupt, nil, dictPayload)
+		_, err := compress.UnbrotliDCB(corrupt, nil, dictPayload)
 		require.Error(t, err, "expected error on corrupt magic")
 	})
 }

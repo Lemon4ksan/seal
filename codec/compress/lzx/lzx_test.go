@@ -10,7 +10,7 @@ import (
 	"github.com/lemon4ksan/foundation/testing/assert"
 	"github.com/lemon4ksan/foundation/testing/require"
 
-	"github.com/lemon4ksan/seal/codec/lzx"
+	"github.com/lemon4ksan/seal/codec/compress/lzx"
 )
 
 func TestLZX_Roundtrip(t *testing.T) {

@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/przm"
-	"github.com/lemon4ksan/seal/codec"
+	"github.com/lemon4ksan/seal/codec/compress"
 	"github.com/lemon4ksan/seal/file"
 )
 
@@ -465,7 +465,7 @@ func (r *Reader) loadChunk(chunkIdx uint32) ([]byte, error) {
 	case CodecStore:
 		raw = compressedBytes
 	case CodecZSTD:
-		raw, err = codec.Unzstd(compressedBytes, nil)
+		raw, err = compress.Unzstd(compressedBytes, nil)
 		if err != nil {
 			return nil, fmt.Errorf("eon: decompress zstd chunk: %w", err)
 		}

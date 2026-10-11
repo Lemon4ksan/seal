@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lemon4ksan/seal/codec/lzx"
+	"github.com/lemon4ksan/seal/codec/compress/lzx"
 	"github.com/lemon4ksan/seal/file"
 )
 

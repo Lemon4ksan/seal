@@ -12,8 +12,8 @@ import (
 	"io"
 	"path"
 
-	"github.com/lemon4ksan/seal/codec/lzx"
-	"github.com/lemon4ksan/seal/codec/xpress"
+	"github.com/lemon4ksan/seal/codec/compress/lzx"
+	"github.com/lemon4ksan/seal/codec/compress/xpress"
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/internal/sys"
 )

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -1294,4 +1294,29 @@ func Unlz4Block(src, dst []byte) (int, error) {
 // LZ4BlockBound returns the maximum compressed size for n bytes in raw block format.
 func LZ4BlockBound(n int) int {
 	return lz4.CompressBlockBound(n)
+}
+
+// CompressGzip compresses src using RFC 1952 format into dst.
+func CompressGzip(src, dst []byte, level ...int) ([]byte, error) {
+	return Gzip(src, dst, level...)
+}
+
+// CompressDeflate compresses src using RFC 1951 format into dst.
+func CompressDeflate(src, dst []byte, level ...int) ([]byte, error) {
+	return Deflate(src, dst, level...)
+}
+
+// CompressBrotli compresses src using RFC 7932 format into dst.
+func CompressBrotli(src, dst []byte, level ...int) ([]byte, error) {
+	return Brotli(src, dst, level...)
+}
+
+// CompressZstd compresses src using RFC 8878 format into dst.
+func CompressZstd(src, dst []byte, level ...int) ([]byte, error) {
+	return Zstd(src, dst, level...)
+}
+
+// CompressLZMA2 compresses src using LZMA2 format into dst.
+func CompressLZMA2(src, dst []byte, level ...int) ([]byte, error) {
+	return LZMA2(src, dst, level...)
 }

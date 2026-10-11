@@ -19,6 +19,7 @@ import (
 
 	"github.com/lemon4ksan/przm"
 	"github.com/lemon4ksan/seal/codec"
+	"github.com/lemon4ksan/seal/codec/compress"
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/file"
 )
@@ -470,7 +471,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 					case CodecPRZM:
 						compPayload, compErr = przm.Compress(buf, ew.codecLevel)
 					default:
-						compPayload, compErr = codec.CompressZstd(buf, nil)
+						compPayload, compErr = compress.CompressZstd(buf, nil)
 					}
 
 					c := &compChunk{

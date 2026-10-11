@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package codec_test
+package compress_test
 
 import (
 	"bytes"
@@ -14,7 +14,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/borrow"
 
-	"github.com/lemon4ksan/seal/codec"
+	"github.com/lemon4ksan/seal/codec/compress"
 )
 
 // Generate sample test payloads (small 1KB, medium 64KB, large 1MB)
@@ -49,7 +49,7 @@ func BenchmarkGzip_SealCodec_Decompress_1KB(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		_, _ = codec.Gunzip(compressed, dst)
+		_, _ = compress.Gunzip(compressed, dst)
 	}
 }
 
@@ -77,7 +77,7 @@ func BenchmarkGzip_SealCodec_Decompress_64KB(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		_, _ = codec.Gunzip(compressed, dst)
+		_, _ = compress.Gunzip(compressed, dst)
 	}
 }
 
@@ -91,7 +91,7 @@ func BenchmarkGzip_SealCodec_DecompressScoped_64KB(b *testing.B) {
 	defer s.Release()
 
 	for b.Loop() {
-		_, _ = codec.GunzipScoped(s, compressed)
+		_, _ = compress.GunzipScoped(s, compressed)
 	}
 }
 
@@ -118,7 +118,7 @@ func BenchmarkDeflate_SealCodec_Decompress_64KB(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		_, _ = codec.Inflate(compressed, dst)
+		_, _ = compress.Inflate(compressed, dst)
 	}
 }
 
@@ -132,19 +132,19 @@ func BenchmarkZstd_SealCodec_Decompress_64KB(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		_, _ = codec.Unzstd(compressed, dst)
+		_, _ = compress.Unzstd(compressed, dst)
 	}
 }
 
 func BenchmarkBrotli_SealCodec_Decompress_64KB(b *testing.B) {
-	compressed, _ := codec.CompressBrotli(payloadMedium, nil)
+	compressed, _ := compress.CompressBrotli(payloadMedium, nil)
 	dst := make([]byte, 0, len(payloadMedium))
 	b.SetBytes(int64(len(payloadMedium)))
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for b.Loop() {
-		_, _ = codec.Unbrotli(compressed, dst)
+		_, _ = compress.Unbrotli(compressed, dst)
 	}
 }
 
@@ -170,7 +170,7 @@ func BenchmarkGzip_SealCodec_Compress_64KB(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		_, _ = codec.CompressGzip(payloadMedium, dst)
+		_, _ = compress.CompressGzip(payloadMedium, dst)
 	}
 }
 
@@ -181,6 +181,6 @@ func BenchmarkBrotli_SealCodec_Compress_64KB(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		_, _ = codec.CompressBrotli(payloadMedium, dst)
+		_, _ = compress.CompressBrotli(payloadMedium, dst)
 	}
 }
