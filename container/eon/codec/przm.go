@@ -5,6 +5,8 @@
 package codec
 
 import (
+	"os"
+
 	"github.com/lemon4ksan/przm"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
@@ -24,7 +26,11 @@ func (p *PRZMCodec) Name() string {
 
 // Compress encodes raw source bytes using the PRZM engine.
 func (p *PRZMCodec) Compress(src []byte, level int) ([]byte, error) {
-	return przm.Compress(src, level)
+	opts := przm.CompressOptions{Level: level}
+	if os.Getenv("PRZM_GPU") == "1" {
+		opts.GPUAcceleration = true
+	}
+	return przm.CompressWithOptions(src, opts)
 }
 
 // Decompress decodes PRZM-compressed payload back to original bytes.

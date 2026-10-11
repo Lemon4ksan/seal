@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -314,12 +315,21 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 		jobs = append(jobs, &chunkJob{idx: 0})
 	}
 
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 1 {
-		numWorkers = 1
-	}
-	if numWorkers > 32 {
-		numWorkers = 32
+	numWorkers := 1
+	if cfg.Workers > 0 {
+		numWorkers = cfg.Workers
+	} else if os.Getenv("PRZM_GPU") == "1" && ew.codecID == CodecPRZM {
+		// With GPU acceleration, 2 workers (1 reading ahead from disk, 1 submitting to GPU)
+		// maximize PCIe/GPU pipelining without thrashing disk I/O or fighting over CUDA context.
+		numWorkers = 2
+	} else {
+		numWorkers = runtime.NumCPU() - 1
+		if numWorkers < 1 {
+			numWorkers = 1
+		}
+		if numWorkers > 16 {
+			numWorkers = 16
+		}
 	}
 
 	parentCtx := cfg.Context
@@ -469,7 +479,11 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 					case CodecStore:
 						compPayload = buf
 					case CodecPRZM:
-						compPayload, compErr = przm.Compress(buf, ew.codecLevel)
+						opts := przm.CompressOptions{Level: ew.codecLevel}
+						if os.Getenv("PRZM_GPU") == "1" {
+							opts.GPUAcceleration = true
+						}
+						compPayload, compErr = przm.CompressWithOptions(buf, opts)
 					default:
 						compPayload, compErr = compress.CompressZstd(buf, nil)
 					}

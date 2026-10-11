@@ -113,6 +113,7 @@ type Config struct {
 	Solid          bool
 	SolidSize      int64
 	SolidExtension bool
+	Workers        int
 }
 
 // Container defines the bidirectional serialization interface for archive containers.

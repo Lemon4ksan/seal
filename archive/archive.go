@@ -958,6 +958,7 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 		Solid:          solid,
 		SolidSize:      solidSize,
 		SolidExtension: solidExtension,
+		Workers:        procCfg.workers,
 	}
 
 	return c.WriteArchive(dest, filesCopy, containerCfg)
