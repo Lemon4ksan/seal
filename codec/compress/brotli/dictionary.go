@@ -122888,3 +122888,23 @@ var kBrotliDictionary = dictionary{
 func getDictionary() *dictionary {
 	return &kBrotliDictionary
 }
+
+// StaticDictionaryData returns the raw RFC 7932 static dictionary data bytes.
+func StaticDictionaryData() []byte {
+	return kBrotliDictionaryData
+}
+
+// WordsByLength returns all words of a given length from the Brotli static dictionary.
+func WordsByLength(length int) []string {
+	if length < minDictionaryWordLength || length > maxDictionaryWordLength {
+		return nil
+	}
+	numWords := 1 << kBrotliDictionary.size_bits_by_length[length]
+	offset := kBrotliDictionary.offsets_by_length[length]
+	words := make([]string, numWords)
+	for i := 0; i < numWords; i++ {
+		w := kBrotliDictionaryData[offset+uint32(i*length) : offset+uint32((i+1)*length)]
+		words[i] = string(w)
+	}
+	return words
+}
