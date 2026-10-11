@@ -9,6 +9,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -50,13 +51,62 @@ func main() {
 	fmt.Println("PRZM injects external prefix dictionaries agnostically via DictID (Zero Engine Pollution).          ")
 	fmt.Println("====================================================================================================")
 
+	loadRealDataSet := func(path, name, category, desc string, fallback func(int) WebDataSet, fallbackSize int) WebDataSet {
+		data, err := os.ReadFile(path)
+		if err == nil && len(data) > 0 {
+			return WebDataSet{
+				Name:        name,
+				Category:    category,
+				Description: desc,
+				Data:        data,
+			}
+		}
+		return fallback(fallbackSize)
+	}
+
 	datasets := []WebDataSet{
-		generateMicroJSONPayload(16 * 1024),
-		generateSemanticHTML5(128 * 1024),
-		generateMinifiedJSBundle(256 * 1024),
-		generateTailwindCSS(128 * 1024),
-		generateTechnicalDoc(256 * 1024),
-		generateServerLogStream(1024 * 1024),
+		loadRealDataSet(
+			`d:\CodingProjects\g-man\cmd\generator\protobufs\c\partner.steamgames.com\ssr\aYRS7mnC.css`,
+			"Steam Production CSS (aYRS7mnC.css)",
+			"Real Production CSS",
+			"Real minified Steam partner portal stylesheet with atomic rules and variables",
+			generateTailwindCSS, 128*1024,
+		),
+		loadRealDataSet(
+			`d:\CodingProjects\g-man\cmd\generator\protobufs\c\ClientExtracted\steamui\broadcast.js`,
+			"Steam Community JS (broadcast.js)",
+			"Real Production JS",
+			"Real Steam Community Webpack broadcast UI runtime bundle",
+			generateMinifiedJSBundle, 256*1024,
+		),
+		loadRealDataSet(
+			`d:\CodingProjects\chromium-net\net\data\ssl\root_stores\root_stores.json`,
+			"Chromium Root SSL Store JSON (root_stores.json)",
+			"Real Production JSON",
+			"Real Chromium production root certificate store JSON configuration",
+			generateMicroJSONPayload, 16*1024,
+		),
+		loadRealDataSet(
+			`d:\CodingProjects\g-man\cmd\generator\protobufs\Random\People.html`,
+			"Production HTML5 Page (People.html)",
+			"Real Production HTML",
+			"Real Steam web application HTML markup template with scripts and inline CSS",
+			generateSemanticHTML5, 128*1024,
+		),
+		loadRealDataSet(
+			`d:\CodingProjects\przm\src\przm_dec.c`,
+			"PRZM Pure C99 Engine Source (przm_dec.c)",
+			"Real Systems C Code",
+			"Production pure C99 zero-allocation PRZM decompressor reference implementation",
+			generateServerLogStream, 1024*1024,
+		),
+		loadRealDataSet(
+			`d:\CodingProjects\przm\docs\math_report.md`,
+			"Mathematical Specification Markdown (math_report.md)",
+			"Real Technical Markdown",
+			"Full mathematical specification document with formulas, theorems, and tables",
+			generateTechnicalDoc, 256*1024,
+		),
 	}
 
 	for _, ds := range datasets {
