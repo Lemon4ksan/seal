@@ -86,6 +86,78 @@ func (c *PRZMCompressor) Compress(src io.Reader, dest io.Writer) (int64, error) 
 	return int64(len(raw)), nil
 }
 
+// CompressPRZMBrotli compresses src using PRZM with the injected 122KB RFC 7932 Brotli Web dictionary.
+func CompressPRZMBrotli(src, dst []byte, level ...int) ([]byte, error) {
+	RegisterBrotliWebDictionary()
+	lvl := 3
+	if len(level) > 0 {
+		lvl = level[0]
+	}
+	opts := []przm.Option{}
+	if os.Getenv("PRZM_GPU") == "1" {
+		opts = append(opts, przm.WithGPUAcceleration())
+	}
+	rawDict := GetBrotliWebDictionaryData()
+	compressed, err := przm.CompressWithOptions(src, przm.CompressOptions{
+		Level:   lvl,
+		DictID:  DictIDBrotliWeb,
+		RawDict: rawDict,
+	}, opts...)
+	if err != nil {
+		return nil, err
+	}
+	if cap(dst) >= len(compressed) {
+		dst = dst[:len(compressed)]
+		copy(dst, compressed)
+		return dst, nil
+	}
+	return compressed, nil
+}
+
+// PRZMBrotliCompressor implements streaming PRZM compression with injected Brotli dictionary.
+type PRZMBrotliCompressor struct {
+	level int
+}
+
+// NewPRZMBrotliCompressor creates a new PRZM compressor using the 122KB Brotli Web dictionary.
+func NewPRZMBrotliCompressor(level int) Compressor {
+	if level <= 0 {
+		level = 3
+	}
+	RegisterBrotliWebDictionary()
+	return &PRZMBrotliCompressor{level: level}
+}
+
+// Compress reads from src, compresses via PRZM with Brotli dictionary, and writes length-prefixed blocks into dest.
+func (c *PRZMBrotliCompressor) Compress(src io.Reader, dest io.Writer) (int64, error) {
+	raw, err := io.ReadAll(src)
+	if err != nil {
+		return 0, err
+	}
+	opts := []przm.Option{}
+	if os.Getenv("PRZM_GPU") == "1" {
+		opts = append(opts, przm.WithGPUAcceleration())
+	}
+	rawDict := GetBrotliWebDictionaryData()
+	compressed, err := przm.CompressWithOptions(raw, przm.CompressOptions{
+		Level:   c.level,
+		DictID:  DictIDBrotliWeb,
+		RawDict: rawDict,
+	}, opts...)
+	if err != nil {
+		return 0, err
+	}
+	var lenBuf [4]byte
+	binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(compressed)))
+	if _, err := dest.Write(lenBuf[:]); err != nil {
+		return 0, err
+	}
+	if _, err := dest.Write(compressed); err != nil {
+		return 0, err
+	}
+	return int64(len(raw)), nil
+}
+
 // PRZMDecompressor implements PRZM decompression.
 type PRZMDecompressor struct{}
 

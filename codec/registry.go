@@ -38,6 +38,7 @@ func NewRegistry() *Registry {
 	r.RegisterPair(LZMA, NewLZMACompressor, NewLZMADecompressor)
 
 	r.RegisterPair(PRZM, NewPRZMCompressor, NewPRZMDecompressor)
+	r.RegisterPair(PRZMBrotli, NewPRZMBrotliCompressor, NewPRZMDecompressor)
 
 	return r
 }
