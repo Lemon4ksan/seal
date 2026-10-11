@@ -86,7 +86,9 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 		} else {
 			ew.targetSize = 64 * 1024 * 1024
 		}
-		files = file.SortByExtension(files)
+		if cfg.SolidExtension {
+			files = file.SortByExtension(files)
+		}
 	}
 
 	if cfg.DefaultMethod == codec.PRZM {
@@ -319,9 +321,9 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 	if cfg.Workers > 0 {
 		numWorkers = cfg.Workers
 	} else if os.Getenv("PRZM_GPU") == "1" && ew.codecID == CodecPRZM {
-		// With GPU acceleration, 2 workers (1 reading ahead from disk, 1 submitting to GPU)
-		// maximize PCIe/GPU pipelining without thrashing disk I/O or fighting over CUDA context.
-		numWorkers = 2
+		// With GPU acceleration, 4 workers reading ahead from disk saturate the SATA NCQ buffer
+		// without CPU contention, pipelining directly to the GPU.
+		numWorkers = 4
 	} else {
 		numWorkers = runtime.NumCPU() - 1
 		if numWorkers < 1 {

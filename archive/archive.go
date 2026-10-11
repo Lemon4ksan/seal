@@ -871,7 +871,7 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 	case SortExtensionAsc:
 		filesCopy = file.SortByExtension(filesCopy)
 	default:
-		if solid {
+		if solidExtension {
 			filesCopy = file.SortByExtension(filesCopy)
 		}
 	}

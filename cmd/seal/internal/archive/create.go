@@ -155,7 +155,7 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 	if sz.Workers > 0 {
 		opts = append(opts, seal.WithWorkers(sz.Workers))
 	} else if sz.GPUAcceleration {
-		opts = append(opts, seal.WithWorkers(2))
+		opts = append(opts, seal.WithWorkers(4))
 	}
 
 	archiveInstance := seal.NewArchive(opts...)
@@ -256,7 +256,7 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		if sz.Workers > 0 {
 			writeOpts = append(writeOpts, seal.WithWorkers(sz.Workers))
 		} else if sz.GPUAcceleration {
-			writeOpts = append(writeOpts, seal.WithWorkers(2))
+			writeOpts = append(writeOpts, seal.WithWorkers(4))
 		}
 		if len(inputs) > 0 {
 			writeOpts = append(writeOpts, seal.WithSourceDir(inputs[0]))
