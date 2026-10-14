@@ -52,7 +52,7 @@ func main() {
 	fmt.Printf("Original Size:   %d bytes\n", len(llmData))
 	
 	start := time.Now()
-	compressedLLM, err := przm.CompressTTRN(llmData, dict)
+	compressedLLM, err := przm.CompressWithDict(llmData, 6, dict)
 	duration := time.Since(start)
 	
 	if err != nil {
@@ -69,7 +69,7 @@ func main() {
 	fmt.Printf("Original Size:   %d bytes\n", len(jsonData))
 	
 	start = time.Now()
-	compressedJSON, err := przm.GlobalLRGGFEncode(jsonData, dict)
+	compressedJSON, err := przm.CompressWithDict(jsonData, 6, dict)
 	duration = time.Since(start)
 	
 	if err != nil {

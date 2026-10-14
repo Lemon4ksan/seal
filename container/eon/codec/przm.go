@@ -35,7 +35,7 @@ func (p *PRZMCodec) Compress(src []byte, level int) ([]byte, error) {
 
 // Decompress decodes PRZM-compressed payload back to original bytes.
 func (p *PRZMCodec) Decompress(src []byte) ([]byte, error) {
-	return przm.Decompress(src)
+	return przm.Decode(src)
 }
 
 func init() {

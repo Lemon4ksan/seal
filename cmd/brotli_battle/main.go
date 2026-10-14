@@ -277,17 +277,14 @@ func runPRZM(ds WebDataSet, name, role string, level int, rawDict []byte, dictID
 	for {
 		if len(rawDict) > 0 {
 			opts := przm.CompressOptions{
-				Level:       level,
-				RawDict:     rawDict,
-				DictID:      dictID,
-				MinMatch:    minMatch,
-				CompactDict: compactDict,
+				Level:   level,
+				RawDict: rawDict,
+				DictID:  dictID,
 			}
 			compBytes, err = przm.CompressWithOptions(data, opts)
 		} else {
 			opts := przm.CompressOptions{
-				Level:    level,
-				MinMatch: minMatch,
+				Level: level,
 			}
 			compBytes, err = przm.CompressWithOptions(data, opts)
 		}
@@ -306,8 +303,9 @@ func runPRZM(ds WebDataSet, name, role string, level int, rawDict []byte, dictID
 	dIters := 0
 	start = time.Now()
 	passed := false
+	dst := make([]byte, len(data), len(data)+64)
 	for {
-		decompBytes, err := przm.Decompress(compBytes)
+		decompBytes, err := przm.DecompressTo(compBytes, dst)
 		if dIters == 0 {
 			passed = err == nil && bytes.Equal(data, decompBytes)
 		}

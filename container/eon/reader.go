@@ -470,7 +470,7 @@ func (r *Reader) loadChunk(chunkIdx uint32) ([]byte, error) {
 			return nil, fmt.Errorf("eon: decompress zstd chunk: %w", err)
 		}
 	case CodecPRZM:
-		raw, err = przm.Decompress(compressedBytes)
+		raw, err = przm.Decode(compressedBytes)
 		if err != nil {
 			return nil, fmt.Errorf("eon: decompress przm chunk: %w", err)
 		}

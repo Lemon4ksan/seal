@@ -16,13 +16,13 @@ func CompressPRZM(src, dst []byte, level ...int) ([]byte, error) {
 	if len(level) > 0 {
 		lvl = level[0]
 	}
-	
-	opts := []przm.Option{}
+
+	opts := []any{przm.WithLevel(lvl)}
 	if os.Getenv("PRZM_GPU") == "1" {
 		opts = append(opts, przm.WithGPUAcceleration())
 	}
-	
-	compressed, err := przm.CompressWithOptions(src, przm.CompressOptions{Level: lvl}, opts...)
+
+	compressed, err := przm.CompressWithOptions(src, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,10 @@ func CompressPRZM(src, dst []byte, level ...int) ([]byte, error) {
 
 // Unprzm decompresses a PRZM payload from src into dst.
 func Unprzm(src, dst []byte) ([]byte, error) {
-	decompressed, err := przm.Decompress(src)
+	if len(dst) > 0 {
+		return przm.DecompressTo(src, dst)
+	}
+	decompressed, err := przm.Decode(src)
 	if err != nil {
 		return nil, err
 	}
@@ -67,11 +70,11 @@ func (c *PRZMCompressor) Compress(src io.Reader, dest io.Writer) (int64, error) 
 	if err != nil {
 		return 0, err
 	}
-	opts := []przm.Option{}
+	opts := []any{przm.WithLevel(c.level)}
 	if os.Getenv("PRZM_GPU") == "1" {
 		opts = append(opts, przm.WithGPUAcceleration())
 	}
-	compressed, err := przm.CompressWithOptions(raw, przm.CompressOptions{Level: c.level}, opts...)
+	compressed, err := przm.CompressWithOptions(raw, opts...)
 	if err != nil {
 		return 0, err
 	}
@@ -93,16 +96,15 @@ func CompressPRZMBrotli(src, dst []byte, level ...int) ([]byte, error) {
 	if len(level) > 0 {
 		lvl = level[0]
 	}
-	opts := []przm.Option{}
+	rawDict := GetBrotliWebDictionaryData()
+	opts := []any{
+		przm.WithLevel(lvl),
+		przm.WithDict(rawDict),
+	}
 	if os.Getenv("PRZM_GPU") == "1" {
 		opts = append(opts, przm.WithGPUAcceleration())
 	}
-	rawDict := GetBrotliWebDictionaryData()
-	compressed, err := przm.CompressWithOptions(src, przm.CompressOptions{
-		Level:   lvl,
-		DictID:  DictIDBrotliWeb,
-		RawDict: rawDict,
-	}, opts...)
+	compressed, err := przm.CompressWithOptions(src, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -134,16 +136,15 @@ func (c *PRZMBrotliCompressor) Compress(src io.Reader, dest io.Writer) (int64, e
 	if err != nil {
 		return 0, err
 	}
-	opts := []przm.Option{}
+	rawDict := GetBrotliWebDictionaryData()
+	opts := []any{
+		przm.WithLevel(c.level),
+		przm.WithDict(rawDict),
+	}
 	if os.Getenv("PRZM_GPU") == "1" {
 		opts = append(opts, przm.WithGPUAcceleration())
 	}
-	rawDict := GetBrotliWebDictionaryData()
-	compressed, err := przm.CompressWithOptions(raw, przm.CompressOptions{
-		Level:   c.level,
-		DictID:  DictIDBrotliWeb,
-		RawDict: rawDict,
-	}, opts...)
+	compressed, err := przm.CompressWithOptions(raw, opts...)
 	if err != nil {
 		return 0, err
 	}
@@ -177,7 +178,7 @@ func (d *PRZMDecompressor) Decompress(src io.Reader) (io.ReadCloser, error) {
 	}
 	// Check if bare PRZM frame (starts with 'PRZM' magic)
 	if binary.LittleEndian.Uint32(payload[0:4]) == przm.MagicPRZM {
-		decompressed, err := przm.Decompress(payload)
+		decompressed, err := przm.Decode(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -186,7 +187,7 @@ func (d *PRZMDecompressor) Decompress(src io.Reader) (io.ReadCloser, error) {
 	// Length-prefixed block
 	frameLen := int(binary.LittleEndian.Uint32(payload[0:4]))
 	if len(payload) >= 4+frameLen {
-		decompressed, err := przm.Decompress(payload[4 : 4+frameLen])
+		decompressed, err := przm.Decode(payload[4 : 4+frameLen])
 		if err != nil {
 			return nil, err
 		}
