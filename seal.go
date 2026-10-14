@@ -22,9 +22,6 @@ import (
 	"github.com/lemon4ksan/seal/option"
 )
 
-// Version represents the current release semver string of Seal.
-const Version = "0.1.0"
-
 // ErrArchiveFrozen indicates that archive creation was gracefully frozen on context cancellation,
 // producing a valid partial archive with an embedded stealth checkpoint.
 var ErrArchiveFrozen = container.ErrArchiveFrozen
