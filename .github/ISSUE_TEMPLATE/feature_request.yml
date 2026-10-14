@@ -1,0 +1,37 @@
+name: "Feature Request"
+description: "Suggest an improvement, new container codec, or VFS layer for seal"
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an improvement for seal.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Motivation
+      description: What storage, archiving, or container use case inspires this request?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution & Design
+      description: Describe the feature and hypothetical Go API design.
+    validations:
+      required: true
+  - type: textarea
+    id: ram-budget
+    attributes:
+      label: Deterministic RAM Budget
+      description: How does this maintain the deterministic memory ceiling (<= 32 MB)?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative formats or libraries considered?
+    validations:
+      false
