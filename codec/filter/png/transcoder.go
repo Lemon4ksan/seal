@@ -23,6 +23,8 @@ var decScratchPool = generic.NewPool(func() *decScratchpad {
 	return &decScratchpad{}
 })
 
+const ArchivalPNGMagic uint32 = 0x504E4741 // 'P','N','G','A'
+
 var (
 	pngSignature = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	ErrNotPNG    = errors.New("przm: invalid PNG container signature or format")
@@ -125,14 +127,14 @@ func CompressArchivalPNG(src []byte, level int) ([]byte, error) {
 	}
 
 	innerLevel := level
-	if innerLevel >= przm.ModeArchival || innerLevel <= 0 {
+	if innerLevel > 12 || innerLevel <= 0 {
 		innerLevel = 3
 	}
 
 	// Compress IDAT scanline stream using standard PRZM stream format without experimental formats
 	innerPRZM, err := przm.CompressWithOptions(idatPayload, przm.CompressOptions{
 		Level:              innerLevel,
-		WindowLog:          przm.WindowLog8M,
+		WindowLog:          23,
 		StandardStreamOnly: true,
 	})
 	if err != nil {
@@ -153,7 +155,7 @@ func CompressArchivalPNG(src []byte, level int) ([]byte, error) {
 	out := make([]byte, totalSize)
 
 	// Archival PNG Container Header
-	binary.LittleEndian.PutUint32(out[0:4], przm.ArchivalPNGMagic)
+	binary.LittleEndian.PutUint32(out[0:4], ArchivalPNGMagic)
 	binary.LittleEndian.PutUint32(out[4:8], uint32(len(src)))
 	binary.LittleEndian.PutUint32(out[8:12], uint32(metaSize))
 
@@ -192,7 +194,7 @@ func DecompressArchivalPNGTo(src []byte, dst []byte) ([]byte, error) {
 	}
 
 	magic := binary.LittleEndian.Uint32(src[0:4])
-	if magic != przm.ArchivalPNGMagic {
+	if magic != ArchivalPNGMagic {
 		return nil, przm.ErrInvalidMagic
 	}
 

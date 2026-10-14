@@ -313,7 +313,7 @@ func runHeadToHeadBattle(chunks []eon.CTOCEntry, r *eon.Reader) {
 	startPRZM := getCPUSnapshot()
 	wallStartPRZM := time.Now()
 	for i := 0; i < iterations; i++ {
-		out, err := przm.Decompress(przmCompressed)
+		out, err := przm.Decode(przmCompressed)
 		if err != nil || len(out) != len(rawData) {
 			fmt.Printf("PRZM error: %v\n", err)
 			return

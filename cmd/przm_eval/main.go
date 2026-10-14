@@ -59,22 +59,21 @@ func main() {
 		runBenchmark("PRZM (L1 Stream)", bc.Data, func(src []byte) ([]byte, error) {
 			return przm.Compress(src, 1)
 		}, func(comp []byte) ([]byte, error) {
-			return przm.Decompress(comp)
+			return przm.Decode(comp)
 		})
 
 		// 2. Standard PRZM Level 3 (Default Balance)
 		runBenchmark("PRZM (L3 Balanced)", bc.Data, func(src []byte) ([]byte, error) {
 			return przm.Compress(src, 3)
 		}, func(comp []byte) ([]byte, error) {
-			return przm.Decompress(comp)
+			return przm.Decode(comp)
 		})
 
-		// 3. PRZM 4D IsoQuant (Quaternionic Collimation)
-		runBenchmark("PRZM (4D IsoQuant)", bc.Data, func(src []byte) ([]byte, error) {
-			return przm.CompressIsoQuant(src)
+		// 3. Standard PRZM Level 6 (Deep Ratio)
+		runBenchmark("PRZM (L6 Deep)", bc.Data, func(src []byte) ([]byte, error) {
+			return przm.Compress(src, 6)
 		}, func(comp []byte) ([]byte, error) {
-			dst := make([]byte, len(bc.Data)+128)
-			return przm.DecompressIsoQuant(comp, dst)
+			return przm.Decode(comp)
 		})
 	}
 }
