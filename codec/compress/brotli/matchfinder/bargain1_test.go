@@ -1,4 +1,4 @@
-﻿package matchfinder_test
+package matchfinder_test
 
 // Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
@@ -11,9 +11,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/lemon4ksan/seal/codec/compress/brotli/matchfinder"
 	"github.com/lemon4ksan/foundation/testing/assert"
 	"github.com/lemon4ksan/foundation/testing/require"
+
+	"github.com/lemon4ksan/seal/codec/compress/brotli/matchfinder"
 )
 
 // verifyMatchesOracle verifies LZ77 reconstruction fidelity and ensures all match offsets are valid.
@@ -37,8 +38,15 @@ func verifyMatchesOracle(t *testing.T, src []byte, matches []matchfinder.Match, 
 
 		if m.Length > 0 {
 			require.Truef(t, m.Distance > 0, "%s: match %d invalid non-positive distance %d", finderName, i, m.Distance)
-			require.Truef(t, m.Distance <= len(reconstructed),
-				"%s: match %d distance %d exceeds reconstructed length %d", finderName, i, m.Distance, len(reconstructed))
+			require.Truef(
+				t,
+				m.Distance <= len(reconstructed),
+				"%s: match %d distance %d exceeds reconstructed length %d",
+				finderName,
+				i,
+				m.Distance,
+				len(reconstructed),
+			)
 
 			start := len(reconstructed) - m.Distance
 			for j := 0; j < m.Length; j++ {

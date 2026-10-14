@@ -12,14 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/codec/compress/brotli"
 	"github.com/lemon4ksan/seal/codec/compress/lzma"
+	"github.com/lemon4ksan/seal/codec/compress/ppmd"
 	"github.com/lemon4ksan/seal/codec/compress/zstd"
 	"github.com/lemon4ksan/seal/codec/filter/bcj"
-
-	"github.com/lemon4ksan/seal/codec"
 	_ "github.com/lemon4ksan/seal/codec/legacy"
-	"github.com/lemon4ksan/seal/codec/compress/ppmd"
 )
 
 type DataSet struct {

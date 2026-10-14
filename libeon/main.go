@@ -29,8 +29,8 @@ import (
 	"time"
 	"unsafe"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/catalog"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 
@@ -72,7 +72,7 @@ func eon_get_last_error() *C.char {
 }
 
 //export eon_open
-func eon_open(cPath *C.char, cPassword *C.char, outErr *C.int) C.uint64_t {
+func eon_open(cPath, cPassword *C.char, outErr *C.int) C.uint64_t {
 	if cPath == nil {
 		if outErr != nil {
 			*outErr = C.int(-1) // EON_ERR_IO

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/przm"
+
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/codec/compress"
 	"github.com/lemon4ksan/seal/container"
@@ -57,10 +58,21 @@ func (ew *Writer) WithCodec(codecID uint8, level int) *Writer {
 	return ew
 }
 
+// SetCodec sets the chunk compression algorithm and level.
+func (ew *Writer) SetCodec(codecID uint8, level int) {
+	ew.codecID = codecID
+	ew.codecLevel = level
+}
+
 // WithTargetSize sets the uncompressed chunk target threshold.
 func (ew *Writer) WithTargetSize(targetSize uint32) *Writer {
 	ew.targetSize = targetSize
 	return ew
+}
+
+// SetTargetSize sets the uncompressed chunk target threshold.
+func (ew *Writer) SetTargetSize(targetSize uint32) {
+	ew.targetSize = targetSize
 }
 
 type extentMeta struct {
@@ -91,7 +103,8 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 		}
 	}
 
-	if cfg.DefaultMethod == codec.PRZM {
+	switch cfg.DefaultMethod {
+	case codec.PRZM:
 		ew.codecID = CodecPRZM
 		if cfg.DefaultLevel > 0 {
 			ew.codecLevel = cfg.DefaultLevel
@@ -99,12 +112,12 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 		if !cfg.Solid && (ew.targetSize == DefaultChunkTargetSize || ew.targetSize > 4*1024*1024) {
 			ew.targetSize = 4 * 1024 * 1024
 		}
-	} else if cfg.DefaultMethod == codec.Store {
+	case codec.Store:
 		ew.codecID = CodecStore
 		if !cfg.Solid && (ew.targetSize == DefaultChunkTargetSize || ew.targetSize > 4*1024*1024) {
 			ew.targetSize = 4 * 1024 * 1024
 		}
-	} else if cfg.DefaultMethod == codec.LZMA2 || cfg.DefaultMethod == codec.ZStandard {
+	case codec.LZMA2, codec.ZStandard:
 		ew.codecID = CodecZSTD
 		if cfg.DefaultLevel > 0 {
 			ew.codecLevel = cfg.DefaultLevel
@@ -450,7 +463,9 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 
 							chunkCount := uint16(1)
 							if task.totalSize > uint64(targetChunkSize) {
-								chunkCount = uint16((task.totalSize + uint64(targetChunkSize) - 1) / uint64(targetChunkSize))
+								chunkCount = uint16(
+									(task.totalSize + uint64(targetChunkSize) - 1) / uint64(targetChunkSize),
+								)
 							}
 
 							jobExtents = append(jobExtents, extentMeta{

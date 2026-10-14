@@ -24,7 +24,14 @@ func verifyMatches(t *testing.T, src []byte, matches []Match, name string) {
 	for idx, m := range matches {
 		if m.Unmatched > 0 {
 			if pos+m.Unmatched > len(src) {
-				t.Fatalf("%s: match %d unmatched %d exceeds src len %d at pos %d", name, idx, m.Unmatched, len(src), pos)
+				t.Fatalf(
+					"%s: match %d unmatched %d exceeds src len %d at pos %d",
+					name,
+					idx,
+					m.Unmatched,
+					len(src),
+					pos,
+				)
 			}
 			reconstructed = append(reconstructed, src[pos:pos+m.Unmatched]...)
 			pos += m.Unmatched
@@ -35,7 +42,13 @@ func verifyMatches(t *testing.T, src []byte, matches []Match, name string) {
 			}
 			start := len(reconstructed) - m.Distance
 			if start < 0 {
-				t.Fatalf("%s: match %d distance %d exceeds reconstructed len %d", name, idx, m.Distance, len(reconstructed))
+				t.Fatalf(
+					"%s: match %d distance %d exceeds reconstructed len %d",
+					name,
+					idx,
+					m.Distance,
+					len(reconstructed),
+				)
 			}
 			for i := 0; i < m.Length; i++ {
 				reconstructed = append(reconstructed, reconstructed[start+i])
@@ -472,23 +485,39 @@ func TestMatchFinderTargetedCoverage(t *testing.T) {
 	// Match 1: at 108, len 28 (End 136)
 	// Match 0: at 112, len 60 (End 172) -> 112 < 116 -> Case 1
 	var c1 bytes.Buffer
-	c1.WriteString("REF:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789extra_payload_longer_match!")
+	c1.WriteString(
+		"REF:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789extra_payload_longer_match!",
+	)
 	c1.WriteString(string(bytes.Repeat([]byte("_"), 60)))
 	// Substrings to match REF
-	c1.WriteString("abcdefghijklmnop")                                                                        // 16 bytes
-	c1.WriteString("ijklmnopqrstuvwxyz0123456789")                                                            // overlaps previous
-	c1.WriteString("mnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789extra_payload_longer_match!") // overlaps both, much longer
+	c1.WriteString(
+		"abcdefghijklmnop",
+	) // 16 bytes
+	c1.WriteString(
+		"ijklmnopqrstuvwxyz0123456789",
+	) // overlaps previous
+	c1.WriteString(
+		"mnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789extra_payload_longer_match!",
+	) // overlaps both, much longer
 	m4c1 := &M4{MinLength: 4, ChainLength: 16, DistanceBitCost: 0, MaxDistance: 4096}
 	matchesC1 := m4c1.FindMatches(nil, c1.Bytes())
 	verifyMatches(t, c1.Bytes(), matchesC1, "m4 case 1")
 
 	// Case 2: matches[0].Start < matches[2].End + MinLength
 	var c2 bytes.Buffer
-	c2.WriteString("REF:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789extra_payload_longer_match!")
+	c2.WriteString(
+		"REF:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789extra_payload_longer_match!",
+	)
 	c2.WriteString(string(bytes.Repeat([]byte("_"), 60)))
-	c2.WriteString("abcdefghijklmnop")                                                                        // 16 bytes
-	c2.WriteString("1234")                                                                                    // small gap
-	c2.WriteString("mnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789extra_payload_longer_match!") // starts at End + 2
+	c2.WriteString(
+		"abcdefghijklmnop",
+	) // 16 bytes
+	c2.WriteString(
+		"1234",
+	) // small gap
+	c2.WriteString(
+		"mnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789extra_payload_longer_match!",
+	) // starts at End + 2
 	m4c2 := &M4{MinLength: 4, ChainLength: 16, DistanceBitCost: 0, MaxDistance: 4096}
 	matchesC2 := m4c2.FindMatches(nil, c2.Bytes())
 	verifyMatches(t, c2.Bytes(), matchesC2, "m4 case 2")
@@ -803,7 +832,14 @@ func TestPathfinderEdgeBranches(t *testing.T) {
 }
 
 // verifyMatchesCumulative verifies that matches correctly reconstruct data when streaming across chunks.
-func verifyMatchesCumulative(t *testing.T, cumulative []byte, chunkStart int, chunk []byte, matches []Match, name string) {
+func verifyMatchesCumulative(
+	t *testing.T,
+	cumulative []byte,
+	chunkStart int,
+	chunk []byte,
+	matches []Match,
+	name string,
+) {
 	t.Helper()
 	if len(chunk) == 0 {
 		return
@@ -814,7 +850,14 @@ func verifyMatchesCumulative(t *testing.T, cumulative []byte, chunkStart int, ch
 	for idx, m := range matches {
 		if m.Unmatched > 0 {
 			if pos+m.Unmatched > len(cumulative) {
-				t.Fatalf("%s: match %d unmatched %d exceeds cumulative len %d at pos %d", name, idx, m.Unmatched, len(cumulative), pos)
+				t.Fatalf(
+					"%s: match %d unmatched %d exceeds cumulative len %d at pos %d",
+					name,
+					idx,
+					m.Unmatched,
+					len(cumulative),
+					pos,
+				)
 			}
 			reconstructed = append(reconstructed, cumulative[pos:pos+m.Unmatched]...)
 			pos += m.Unmatched
@@ -825,7 +868,13 @@ func verifyMatchesCumulative(t *testing.T, cumulative []byte, chunkStart int, ch
 			}
 			start := len(reconstructed) - m.Distance
 			if start < 0 {
-				t.Fatalf("%s: match %d distance %d exceeds reconstructed len %d", name, idx, m.Distance, len(reconstructed))
+				t.Fatalf(
+					"%s: match %d distance %d exceeds reconstructed len %d",
+					name,
+					idx,
+					m.Distance,
+					len(reconstructed),
+				)
 			}
 			for i := 0; i < m.Length; i++ {
 				reconstructed = append(reconstructed, reconstructed[start+i])
@@ -1129,8 +1178,14 @@ func TestAdversarialM4ExhaustivePrePopulatedDst(t *testing.T) {
 					func() {
 						defer func() {
 							if r := recover(); r != nil {
-								t.Fatalf("M4 panicked with pre-populated Match{Unmatched:%d, Length:%d, Distance:%d} on input %d: %v",
-									u, l, d, inIdx, r)
+								t.Fatalf(
+									"M4 panicked with pre-populated Match{Unmatched:%d, Length:%d, Distance:%d} on input %d: %v",
+									u,
+									l,
+									d,
+									inIdx,
+									r,
+								)
 							}
 						}()
 						matches = m4.FindMatches(append([]Match(nil), preDst...), src)

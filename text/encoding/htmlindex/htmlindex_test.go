@@ -1,10 +1,11 @@
-﻿// Copyright 2015 The Go Authors. All rights reserved.
+// Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 package htmlindex
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/lemon4ksan/seal/text/encoding"
@@ -27,7 +28,7 @@ func TestGet(t *testing.T) {
 		{"latin-5", "", errInvalidName},
 	} {
 		enc, err := Get(tc.name)
-		if err != tc.err {
+		if !errors.Is(err, tc.err) {
 			t.Errorf("%d: error was %v; want %v", i, err, tc.err)
 		}
 		if err != nil {
@@ -88,7 +89,7 @@ func TestName(t *testing.T) {
 		errUnknown,
 	}} {
 		name, err := Name(tc.enc)
-		if name != tc.name || err != tc.err {
+		if name != tc.name || !errors.Is(err, tc.err) {
 			t.Errorf("%d:%s: got %q, %v; want %q, %v", i, tc.desc, name, err, tc.name, tc.err)
 		}
 	}

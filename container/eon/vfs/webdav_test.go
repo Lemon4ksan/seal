@@ -11,10 +11,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"golang.org/x/net/webdav"
+
 	"github.com/lemon4ksan/seal/container/eon/catalog"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 	"github.com/lemon4ksan/seal/container/eon/vfs"
-	"golang.org/x/net/webdav"
 )
 
 func TestWebDAV_MountRead(t *testing.T) {
@@ -25,7 +26,7 @@ func TestWebDAV_MountRead(t *testing.T) {
 		},
 		data: map[string][]byte{
 			"docs/readme.txt": []byte("Hello World!"),
-			"data.bin":        []byte{0xDE, 0xAD, 0xBE, 0xEF},
+			"data.bin":        {0xDE, 0xAD, 0xBE, 0xEF},
 		},
 	}
 

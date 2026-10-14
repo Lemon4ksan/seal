@@ -6,6 +6,7 @@ package catalog
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 
@@ -64,7 +65,7 @@ func ReadChunkHashTable(r io.Reader) (*ChunkHashTable, error) {
 		return nil, err
 	}
 	if binary.LittleEndian.Uint32(hdr[0:4]) != spec.MagicCHSHLE {
-		return nil, fmt.Errorf("invalid CHSH magic")
+		return nil, errors.New("invalid CHSH magic")
 	}
 
 	count := binary.LittleEndian.Uint32(hdr[4:8])

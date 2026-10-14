@@ -24,7 +24,7 @@ func (m *MultiStringFlag) Set(val string) error {
 }
 
 // SetupUnlockFlags registers credentials flags (-p, --share, --kms, etc.) on the given FlagSet.
-func SetupUnlockFlags(fset *flag.FlagSet) (passwords *MultiStringFlag, shares *MultiStringFlag, kmsKey, vaultAddr, vaultToken *string) {
+func SetupUnlockFlags(fset *flag.FlagSet) (passwords, shares *MultiStringFlag, kmsKey, vaultAddr, vaultToken *string) {
 	passwords = &MultiStringFlag{}
 	shares = &MultiStringFlag{}
 	fset.Var(passwords, "p", "Passphrase(s) to unlock encrypted container / vaults (repeatable)")
@@ -38,7 +38,7 @@ func SetupUnlockFlags(fset *flag.FlagSet) (passwords *MultiStringFlag, shares *M
 }
 
 // BuildUnlockOptions converts parsed credentials flags into aeon ReaderOptions.
-func BuildUnlockOptions(passwords []string, shares []string, kmsKey, vaultAddr, vaultToken string) ([]aeon.ReaderOption, error) {
+func BuildUnlockOptions(passwords, shares []string, kmsKey, vaultAddr, vaultToken string) ([]aeon.ReaderOption, error) {
 	var opts []aeon.ReaderOption
 	if len(passwords) > 0 {
 		opts = append(opts, aeon.WithReaderPasswords(passwords...))

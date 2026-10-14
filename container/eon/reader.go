@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/przm"
+
 	"github.com/lemon4ksan/seal/codec/compress"
 	"github.com/lemon4ksan/seal/file"
 )
@@ -101,10 +102,18 @@ func NewReader(rAt io.ReaderAt, size int64) (*Reader, error) {
 	// If archiveStartOffset == 0, check if offset 0 has MagicHeaderLE
 	if baseOffset == 0 {
 		var magicBuf [4]byte
-		if _, err := rAt.ReadAt(magicBuf[:], 0); err == nil && binary.LittleEndian.Uint32(magicBuf[:]) != MagicHeaderLE {
+		if _, err := rAt.ReadAt(
+			magicBuf[:],
+			0,
+		); err == nil &&
+			binary.LittleEndian.Uint32(magicBuf[:]) != MagicHeaderLE {
 			// Auto-detect SFX/SMX stub offset by checking block boundaries
 			for off := int64(512); off < size-TrailerSize; off += 512 {
-				if _, err := rAt.ReadAt(magicBuf[:], off); err == nil && binary.LittleEndian.Uint32(magicBuf[:]) == MagicHeaderLE {
+				if _, err := rAt.ReadAt(
+					magicBuf[:],
+					off,
+				); err == nil &&
+					binary.LittleEndian.Uint32(magicBuf[:]) == MagicHeaderLE {
 					baseOffset = off
 					break
 				}
@@ -367,6 +376,12 @@ func (r *Reader) SetMaxCachedChunks(n int) {
 		r.lruList.Remove(oldest)
 		delete(r.chunkCache, oldest.Value.(*chunkCacheEntry).chunkIdx)
 	}
+}
+
+// WithMaxCachedChunks adjusts the maximum number of 32 MiB chunks held in LRU memory fluently.
+func (r *Reader) WithMaxCachedChunks(n int) *Reader {
+	r.SetMaxCachedChunks(n)
+	return r
 }
 
 // Close releases cached chunk memory.

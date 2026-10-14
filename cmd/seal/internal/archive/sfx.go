@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/ctrl/tuikit"
+
 	"github.com/lemon4ksan/seal"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
 	"github.com/lemon4ksan/seal/codec"
@@ -123,7 +124,12 @@ func (s *SFXCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) er
 	}
 	stubSize := int64(len(stubBytes))
 
-	fmt.Fprintf(stdout, "\n%s Preparing In-Situ Self-Mounting Executable %s...\n", tuikit.BadgeInfo(), tuikit.Bold(outFile))
+	fmt.Fprintf(
+		stdout,
+		"\n%s Preparing In-Situ Self-Mounting Executable %s...\n",
+		tuikit.BadgeInfo(),
+		tuikit.Bold(outFile),
+	)
 	fmt.Fprintf(stdout, "Embedded Stub: %s (%s)\n", tuikit.Cyan(filepath.Base(stubPath)), util.FormatBytes(stubSize))
 
 	// 2. Package inputs into EON container
@@ -247,8 +253,14 @@ func (s *SFXCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) er
 	box.AddRow("Embedded EON Payload", util.FormatBytes(payloadBytesWritten))
 	box.AddRow("Total Binary Size", util.FormatBytes(totalFileSize))
 	box.AddRow("Entries Bundled", fmt.Sprintf("%d files / directories", totalFiles))
-	box.AddRow("Compression Ratio", fmt.Sprintf("%.2f%% (%s savings)", ratio, util.FormatBytes(totalBytes-payloadBytesWritten)))
-	box.AddRow("Encoding Time", fmt.Sprintf("%v (%.2f MB/s)", elapsed, float64(totalBytes)/(1024*1024)/elapsed.Seconds()))
+	box.AddRow(
+		"Compression Ratio",
+		fmt.Sprintf("%.2f%% (%s savings)", ratio, util.FormatBytes(totalBytes-payloadBytesWritten)),
+	)
+	box.AddRow(
+		"Encoding Time",
+		fmt.Sprintf("%v (%.2f MB/s)", elapsed, float64(totalBytes)/(1024*1024)/elapsed.Seconds()),
+	)
 	box.AddRow("Launch Instructions", tuikit.Green("Double-click "+filepath.Base(outFile)+" in Explorer to run!"))
 	box.Render(stdout)
 

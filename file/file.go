@@ -369,6 +369,126 @@ func (f *File) SetRawFunc(fn func() (*io.SectionReader, error)) {
 	}
 }
 
+// SetOffset updates the local header byte offset.
+func (f *File) SetOffset(offset int64) {
+	f.SetLocalHeaderOffset(offset)
+}
+
+// SetSize updates the uncompressed size.
+func (f *File) SetSize(uncompressed int64) {
+	f.uncompressedSize.Store(uncompressed)
+}
+
+// SetCompressedSize updates the compressed size.
+func (f *File) SetCompressedSize(compressed int64) {
+	f.compressedSize.Store(compressed)
+}
+
+// SetCRC updates the CRC-32 checksum.
+func (f *File) SetCRC(crc uint32) {
+	f.crc32.Store(crc)
+}
+
+// SetLevel updates the compression level.
+func (f *File) SetLevel(level int) {
+	f.level.Store(int32(level))
+}
+
+// SetCompression sets the compression algorithm and level.
+func (f *File) SetCompression(m codec.Method, level int) {
+	if !f.IsDir() {
+		f.method.Store(uint32(m))
+		f.level.Store(int32(level))
+	}
+}
+
+// SetEncryption sets the payload encryption cipher and password.
+func (f *File) SetEncryption(enc EncryptionMethod, password string) {
+	if !f.IsDir() {
+		f.encryption.Store(uint32(enc))
+		f.updateMeta(func(m *fileMeta) {
+			m.password = password
+		})
+	}
+}
+
+// SetPassword sets the encryption password for the file entry.
+func (f *File) SetPassword(password string) {
+	if !f.IsDir() {
+		f.updateMeta(func(m *fileMeta) {
+			m.password = password
+		})
+		if f.Encryption() == NotEncrypted && password != "" {
+			f.encryption.Store(uint32(AES256))
+		}
+	}
+}
+
+// SetComment sets the per-entry comment string.
+func (f *File) SetComment(comment string) {
+	f.updateMeta(func(m *fileMeta) {
+		m.comment = comment
+	})
+}
+
+// SetMode sets the file system permission and mode bits.
+func (f *File) SetMode(mode fs.FileMode) {
+	f.updateMeta(func(m *fileMeta) {
+		m.mode = mode
+	})
+}
+
+// SetModTime sets the modification time of the file entry.
+func (f *File) SetModTime(modTime time.Time) {
+	f.updateMeta(func(m *fileMeta) {
+		m.modTime = modTime
+	})
+}
+
+// SetHostSystem sets the creator host operating system identifier.
+func (f *File) SetHostSystem(h sys.HostSystem) {
+	f.updateMeta(func(m *fileMeta) {
+		m.hostSystem = h
+	})
+}
+
+// SetMetadata sets extended filesystem metadata (timestamps, attributes).
+func (f *File) SetMetadata(meta sys.Metadata) {
+	f.updateMeta(func(m *fileMeta) {
+		m.metadata = meta
+	})
+}
+
+// SetRawName overrides the file entry name without automatic path sanitization.
+func (f *File) SetRawName(name string) {
+	f.updateMeta(func(m *fileMeta) {
+		m.name = name
+	})
+}
+
+// SetData sets an in-memory byte slice as the file content and updates the uncompressed size.
+func (f *File) SetData(data []byte) {
+	f.uncompressedSize.Store(int64(len(data)))
+	f.SetOpenFunc(func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	})
+}
+
+// SetString sets an in-memory string as the file content.
+func (f *File) SetString(content string) {
+	f.SetData([]byte(content))
+}
+
+// SetReader sets a static io.Reader stream as the file content source.
+func (f *File) SetReader(r io.Reader) {
+	f.SetOpenFunc(func() (io.ReadCloser, error) {
+		if rc, ok := r.(io.ReadCloser); ok {
+			return rc, nil
+		}
+		return io.NopCloser(r), nil
+	})
+}
+
 // Open opens the decompressed (and decrypted) content stream for reading.
 func (f *File) Open() (io.ReadCloser, error) {
 	fnPtr := f.openFunc.Load()
@@ -652,6 +772,27 @@ func (f *File) WithMetadata(meta sys.Metadata) *File {
 	f.updateMeta(func(m *fileMeta) {
 		m.metadata = meta
 	})
+	return f
+}
+
+// WithLocalHeaderOffset sets the local header byte offset.
+func (f *File) WithLocalHeaderOffset(offset int64) *File {
+	return f.WithOffset(offset)
+}
+
+// WithIsImplicit marks the entry as implicitly generated.
+func (f *File) WithIsImplicit(implicit bool) *File {
+	f.SetIsImplicit(implicit)
+	return f
+}
+
+// WithImplicit marks the entry as implicitly generated.
+func (f *File) WithImplicit(implicit ...bool) *File {
+	val := true
+	if len(implicit) > 0 {
+		val = implicit[0]
+	}
+	f.SetIsImplicit(val)
 	return f
 }
 

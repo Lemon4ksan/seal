@@ -16,7 +16,7 @@ import (
 	"github.com/lemon4ksan/seal/text/encoding/charmap"
 )
 
-func createTestZip(filename string, comment string, flags uint16, extra []byte) []byte {
+func createTestZip(filename, comment string, flags uint16, extra []byte) []byte {
 	buf := new(bytes.Buffer)
 
 	// Local File Header
@@ -79,7 +79,13 @@ func TestZip_LegacyCP866_Decoding(t *testing.T) {
 		return res
 	}
 
-	r, err := NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)), "", codec.DefaultRegistry, WithTextDecoder(cp866Decoder))
+	r, err := NewReader(
+		bytes.NewReader(zipBytes),
+		int64(len(zipBytes)),
+		"",
+		codec.DefaultRegistry,
+		WithTextDecoder(cp866Decoder),
+	)
 	require.NoError(t, err)
 
 	entries := r.Entries()

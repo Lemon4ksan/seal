@@ -499,7 +499,9 @@ func TestFSECompressLoopsHighTableLog(t *testing.T) {
 	}
 
 	// Case 4: zeroBits && actualTableLog > 8
-	data2 := append(bytes.Repeat([]byte("Z"), 5000), bytes.Repeat([]byte("0123456789abcdefghijklmnopqrstuvwxyz"), 50)...)
+	data2 := append(
+		bytes.Repeat([]byte("Z"), 5000),
+		bytes.Repeat([]byte("0123456789abcdefghijklmnopqrstuvwxyz"), 50)...)
 	var s2 Scratch
 	s2.TableLog = 10
 	comp2, err := Compress(data2, &s2)
@@ -753,6 +755,7 @@ func TestAdversarialFSEStreamTruncation(t *testing.T) {
 		}()
 	}
 }
+
 func BenchmarkFSECompress(b *testing.B) {
 	data := bytes.Repeat([]byte("ABRACADABRA_ALAKAZAM_SIMSALABIM_FSE_COMPRESS"), 100)
 	var s Scratch

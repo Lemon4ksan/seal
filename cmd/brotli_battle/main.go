@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/przm"
+
 	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/codec/compress/brotli"
 )
@@ -114,7 +115,9 @@ func main() {
 		fmt.Printf("    Description: %s\n", ds.Description)
 		fmt.Printf("    %-24s | %-12s | %-10s | %-8s | %-13s | %-14s | %-6s\n",
 			"Algorithm", "Role / Level", "Size (KiB)", "Ratio", "Comp (MB/s)", "Decomp (MB/s)", "Exact")
-		fmt.Println("    -------------------------+--------------+------------+----------+---------------+----------------+-------")
+		fmt.Println(
+			"    -------------------------+--------------+------------+----------+---------------+----------------+-------",
+		)
 
 		// 1. Classic Web Baseline: Gzip (Deflate) Level 6
 		runGzip(ds, 6)
@@ -268,7 +271,15 @@ func runBrotli(ds WebDataSet, name, role string, level int) {
 	})
 }
 
-func runPRZM(ds WebDataSet, name, role string, level int, rawDict []byte, dictID uint32, minMatch int, compactDict bool) {
+func runPRZM(
+	ds WebDataSet,
+	name, role string,
+	level int,
+	rawDict []byte,
+	dictID uint32,
+	minMatch int,
+	compactDict bool,
+) {
 	data := ds.Data
 	var compBytes []byte
 	var err error
@@ -332,23 +343,41 @@ func runPRZM(ds WebDataSet, name, role string, level int, rawDict []byte, dictID
 }
 
 func printSummaryReport() {
-	fmt.Println("\n====================================================================================================")
+	fmt.Println(
+		"\n====================================================================================================",
+	)
 	fmt.Println("                                EXECUTIVE SUMMARY: KEY BENCHMARK METRICS                            ")
 	fmt.Println("====================================================================================================")
 	fmt.Println("| Dataset | Algorithm | Compressed Size | Ratio | Comp Speed | Decomp Speed |")
 	fmt.Println("| :--- | :--- | :---: | :---: | :---: | :---: |")
 	for _, r := range allResults {
-		fmt.Printf("| %s | %s (%s) | %.2f KB | %.2f%% | %.1f MB/s | %.1f MB/s |\n",
-			r.DatasetName, r.Algorithm, r.LevelDesc, float64(r.CompressedSize)/1024.0, r.Ratio, r.CompSpeedMBs, r.DecompSpeedMBs)
+		fmt.Printf(
+			"| %s | %s (%s) | %.2f KB | %.2f%% | %.1f MB/s | %.1f MB/s |\n",
+			r.DatasetName,
+			r.Algorithm,
+			r.LevelDesc,
+			float64(r.CompressedSize)/1024.0,
+			r.Ratio,
+			r.CompSpeedMBs,
+			r.DecompSpeedMBs,
+		)
 	}
 	fmt.Println("====================================================================================================")
 }
 
 func generateMicroJSONPayload(targetSize int) WebDataSet {
 	var b strings.Builder
-	b.WriteString(`{"status":"ok","code":200,"server":"edge-router-04","region":"us-east-1","timestamp":"2026-10-11T01:15:30.124Z","data":{"session_id":"sess_98f4a1c0d2","user":{"id":84192,"username":"alex_developer","email":"alex@engineering.corp","roles":["admin","billing_manager"],"profile":{"avatar":"https://cdn.corp/avatars/84192.png","organization":"Acme Systems International LLC","tier":"enterprise_plus","mfa_enabled":true,"last_login_ip":"192.168.1.105"}},"permissions":[{"scope":"read:all","expires_at":1798761600},{"scope":"write:deployments","expires_at":1798761600},{"scope":"admin:billing","expires_at":1798761600}]},"items":[`)
+	b.WriteString(
+		`{"status":"ok","code":200,"server":"edge-router-04","region":"us-east-1","timestamp":"2026-10-11T01:15:30.124Z","data":{"session_id":"sess_98f4a1c0d2","user":{"id":84192,"username":"alex_developer","email":"alex@engineering.corp","roles":["admin","billing_manager"],"profile":{"avatar":"https://cdn.corp/avatars/84192.png","organization":"Acme Systems International LLC","tier":"enterprise_plus","mfa_enabled":true,"last_login_ip":"192.168.1.105"}},"permissions":[{"scope":"read:all","expires_at":1798761600},{"scope":"write:deployments","expires_at":1798761600},{"scope":"admin:billing","expires_at":1798761600}]},"items":[`,
+	)
 	for i := 0; b.Len() < targetSize-64; i++ {
-		fmt.Fprintf(&b, `{"item_id":"it_%04x","sku":"SKU-%d-PRO","price":%.2f,"in_stock":true,"tags":["cloud","saas","premium"]},`, i, i, 19.99+float64(i%10))
+		fmt.Fprintf(
+			&b,
+			`{"item_id":"it_%04x","sku":"SKU-%d-PRO","price":%.2f,"in_stock":true,"tags":["cloud","saas","premium"]},`,
+			i,
+			i,
+			19.99+float64(i%10),
+		)
 	}
 	b.WriteString(`{"item_id":"it_final","sku":"SKU-END","price":0.00,"in_stock":false}]}`)
 	return WebDataSet{
@@ -432,8 +461,16 @@ Under maximum saturation, each broker node sustains 12.8 million input/output op
 func generateServerLogStream(targetSize int) WebDataSet {
 	var b strings.Builder
 	for i := 1000; b.Len() < targetSize-128; i++ {
-		fmt.Fprintf(&b, `{"timestamp":"2026-10-11T01:15:%02d.%03dZ","level":"INFO","trace_id":"trc_%08x","client_ip":"192.168.1.%d","http":{"method":"POST","uri":"/api/v2/ingest/telemetry","status":200,"duration_ms":%.2f,"bytes_sent":%d},"user_agent":"CloudScale-Agent/2.4.1 (Linux x86_64) Go-http-client/2.0","service":"edge-ingest-router","region":"eu-central-1"}`+"\n",
-			(i/1000)%60, i%1000, i*31, i%254+1, 1.2+float64(i%50)/10.0, 480+(i%200))
+		fmt.Fprintf(
+			&b,
+			`{"timestamp":"2026-10-11T01:15:%02d.%03dZ","level":"INFO","trace_id":"trc_%08x","client_ip":"192.168.1.%d","http":{"method":"POST","uri":"/api/v2/ingest/telemetry","status":200,"duration_ms":%.2f,"bytes_sent":%d},"user_agent":"CloudScale-Agent/2.4.1 (Linux x86_64) Go-http-client/2.0","service":"edge-ingest-router","region":"eu-central-1"}`+"\n",
+			(i/1000)%60,
+			i%1000,
+			i*31,
+			i%254+1,
+			1.2+float64(i%50)/10.0,
+			480+(i%200),
+		)
 	}
 	return WebDataSet{
 		Name:        "Server JSON Access Logs (1 MiB)",

@@ -1,4 +1,4 @@
-﻿// Copyright 2013 The Go Authors. All rights reserved.
+// Copyright 2013 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -7,10 +7,11 @@ package simplifiedchinese
 import (
 	"unicode/utf8"
 
+	"github.com/lemon4ksan/foundation/text/transform"
+
 	"github.com/lemon4ksan/seal/text/encoding"
 	"github.com/lemon4ksan/seal/text/encoding/internal"
 	"github.com/lemon4ksan/seal/text/encoding/internal/identifier"
-	"github.com/lemon4ksan/foundation/text/transform"
 )
 
 // HZGB2312 is the HZ-GB2312 encoding.

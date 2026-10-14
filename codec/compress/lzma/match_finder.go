@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package lzma
 
 import (
@@ -166,7 +170,8 @@ func (e *EncoderCore) findBestMatch(src []byte, pos, endPos int) matchCandidate 
 			mPos := int(matchPos)
 			mPtr := unsafe.Add(srcPtr, mPos)
 			if best.length >= 4 {
-				if *(*byte)(unsafe.Add(curPtr, best.length-1)) != *(*byte)(unsafe.Add(mPtr, best.length-1)) || *(*uint32)(curPtr) != *(*uint32)(mPtr) {
+				if *(*byte)(unsafe.Add(curPtr, best.length-1)) != *(*byte)(unsafe.Add(mPtr, best.length-1)) ||
+					*(*uint32)(curPtr) != *(*uint32)(mPtr) {
 					matchPos = e.prev[matchPos&dictMask]
 					chainLen++
 					continue

@@ -250,7 +250,16 @@ func TestZip_StrictCompliance_APPNOTE441_VersionNeeded(t *testing.T) {
 
 	for _, tt := range tests {
 		got := ComputeVersionNeeded(tt.method, tt.isDir, tt.isEncrypted, tt.isZip64)
-		assert.Equalf(t, tt.wantVersion, got, "ComputeVersionNeeded(%v, %v, %v, %v)", tt.method, tt.isDir, tt.isEncrypted, tt.isZip64)
+		assert.Equalf(
+			t,
+			tt.wantVersion,
+			got,
+			"ComputeVersionNeeded(%v, %v, %v, %v)",
+			tt.method,
+			tt.isDir,
+			tt.isEncrypted,
+			tt.isZip64,
+		)
 	}
 }
 

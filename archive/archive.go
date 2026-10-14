@@ -5,7 +5,6 @@
 package archive
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -275,6 +274,65 @@ func (a *Archive) SetSolid(solid bool, size ...int64) {
 	}
 }
 
+// WithEngine assigns an explicit serialization container engine fluently.
+func (a *Archive) WithEngine(c container.Container) *Archive {
+	a.SetEngine(c)
+	return a
+}
+
+// WithComment updates the archive comment fluently.
+func (a *Archive) WithComment(c string) *Archive {
+	a.SetComment(c)
+	return a
+}
+
+// WithPassword sets the default encryption password fluently.
+func (a *Archive) WithPassword(pwd string) *Archive {
+	a.SetPassword(pwd)
+	return a
+}
+
+// WithSolid configures solid archiving mode fluently.
+func (a *Archive) WithSolid(solid bool, size ...int64) *Archive {
+	a.SetSolid(solid, size...)
+	return a
+}
+
+// Apply applies one or more functional Option values to the Archive.
+func (a *Archive) Apply(opts ...option.Option) *Archive {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, opt := range opts {
+		switch opt.Kind {
+		case option.OptContainer:
+			// Container instantiation occurs during NewArchive
+		case option.OptCompression:
+			a.defaultMethod = opt.Method
+			a.defaultLevel = opt.Level
+		case option.OptPassword:
+			a.password = opt.Text
+		case option.OptComment:
+			a.comment = opt.Text
+		case option.OptBytecodeFilter:
+			a.bytecodeFilter = opt.Text
+		case option.OptSolid:
+			a.solid = opt.Solid
+			a.solidSize = opt.SolidSize
+		case option.OptSolidExtension:
+			a.solidExtension = opt.SolidExtension
+		case option.OptEncoding:
+			if opt.TextDecoder != nil {
+				a.textDecoder = opt.TextDecoder
+			}
+		case option.OptCustom:
+			if opt.Custom != nil {
+				opt.Custom(a)
+			}
+		}
+	}
+	return a
+}
+
 // AddFile reads an OS file from disk, normalizes its path, and attaches it as an archive entry.
 func (a *Archive) AddFile(osPath string, opts ...option.Option) (*file.File, error) {
 	p := pathkit.FromFilePath(osPath)
@@ -292,20 +350,17 @@ func (a *Archive) AddFile(osPath string, opts ...option.Option) (*file.File, err
 	if err != nil {
 		return nil, err
 	}
-	entry.SetSizes(stat.Size(), 0, 0)
-	entry.WithMode(stat.Mode())
-	entry.WithModTime(stat.ModTime())
-	entry.WithCompression(a.defaultMethod, a.defaultLevel)
+	entry.WithSizes(stat.Size(), 0, 0).
+		WithMode(stat.Mode()).
+		WithModTime(stat.ModTime()).
+		WithCompression(a.defaultMethod, a.defaultLevel).
+		WithOpenFunc(func() (io.ReadCloser, error) {
+			return os.Open(p.FilePath())
+		})
 	if a.password != "" {
 		entry.WithPassword(a.password)
 	}
-	entry.SetOpenFunc(func() (io.ReadCloser, error) {
-		return os.Open(p.FilePath())
-	})
-
-	for _, opt := range opts {
-		applyOption(entry, opt)
-	}
+	ApplyOption(entry, opts...)
 
 	a.attachEntry(entry)
 	return entry, nil
@@ -321,12 +376,12 @@ func (a *Archive) AddDir(dirPath string, opts ...option.Option) ([]*file.File, e
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
 			}
-			return nil
+			return err
 		}
 
 		rel, err := filepath.Rel(cleanRoot, currentPath)
 		if err != nil {
-			return nil
+			return err
 		}
 		if rel == "." {
 			return nil
@@ -335,7 +390,7 @@ func (a *Archive) AddDir(dirPath string, opts ...option.Option) ([]*file.File, e
 		entryName := filepath.ToSlash(rel)
 		info, err := d.Info()
 		if err != nil {
-			return nil
+			return err
 		}
 
 		if d.IsDir() {
@@ -351,20 +406,17 @@ func (a *Archive) AddDir(dirPath string, opts ...option.Option) ([]*file.File, e
 		if err != nil {
 			return err
 		}
-		f.SetSizes(info.Size(), 0, 0)
-		f.WithMode(info.Mode())
-		f.WithModTime(info.ModTime())
-		f.WithCompression(a.defaultMethod, a.defaultLevel)
+		f.WithSizes(info.Size(), 0, 0).
+			WithMode(info.Mode()).
+			WithModTime(info.ModTime()).
+			WithCompression(a.defaultMethod, a.defaultLevel).
+			WithOpenFunc(func() (io.ReadCloser, error) {
+				return os.Open(currentPath)
+			})
 		if a.password != "" {
 			f.WithPassword(a.password)
 		}
-		f.SetOpenFunc(func() (io.ReadCloser, error) {
-			return os.Open(currentPath)
-		})
-
-		for _, opt := range opts {
-			applyOption(f, opt)
-		}
+		ApplyOption(f, opts...)
 
 		a.attachEntry(f)
 		added = append(added, f)
@@ -384,12 +436,9 @@ func (a *Archive) addDirEntry(
 	if err != nil {
 		return nil, err
 	}
-	entry.WithMode(mode | fs.ModeDir)
-	entry.WithModTime(modTime)
-
-	for _, opt := range opts {
-		applyOption(entry, opt)
-	}
+	entry.WithMode(mode | fs.ModeDir).
+		WithModTime(modTime)
+	ApplyOption(entry, opts...)
 
 	a.attachEntry(entry)
 	return entry, nil
@@ -405,18 +454,12 @@ func (a *Archive) Add(files ...*file.File) {
 // AddBytes attaches an in-memory byte slice as an archive entry.
 func (a *Archive) AddBytes(data []byte, name string, opts ...option.Option) *file.File {
 	entry, _ := file.New(name, false)
-	entry.SetSizes(int64(len(data)), 0, 0)
-	entry.WithCompression(a.defaultMethod, a.defaultLevel)
+	entry.WithData(data).
+		WithCompression(a.defaultMethod, a.defaultLevel)
 	if a.password != "" {
 		entry.WithPassword(a.password)
 	}
-	entry.SetOpenFunc(func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(data)), nil
-	})
-
-	for _, opt := range opts {
-		applyOption(entry, opt)
-	}
+	ApplyOption(entry, opts...)
 
 	a.attachEntry(entry)
 	return entry
@@ -437,15 +480,12 @@ func (a *Archive) AddLazy(
 	if err != nil {
 		return nil, err
 	}
-	entry.WithCompression(a.defaultMethod, a.defaultLevel)
+	entry.WithCompression(a.defaultMethod, a.defaultLevel).
+		WithOpenFunc(factory)
 	if a.password != "" {
 		entry.WithPassword(a.password)
 	}
-	entry.SetOpenFunc(factory)
-
-	for _, opt := range opts {
-		applyOption(entry, opt)
-	}
+	ApplyOption(entry, opts...)
 
 	a.attachEntry(entry)
 	return entry, nil
@@ -482,20 +522,17 @@ func (a *Archive) AddFS(fsys fs.FS, opts ...option.Option) ([]*file.File, error)
 		if err != nil {
 			return err
 		}
-		f.SetSizes(info.Size(), 0, 0)
-		f.WithMode(info.Mode())
-		f.WithModTime(info.ModTime())
-		f.WithCompression(a.defaultMethod, a.defaultLevel)
+		f.WithSizes(info.Size(), 0, 0).
+			WithMode(info.Mode()).
+			WithModTime(info.ModTime()).
+			WithCompression(a.defaultMethod, a.defaultLevel).
+			WithOpenFunc(func() (io.ReadCloser, error) {
+				return fsys.Open(p)
+			})
 		if a.password != "" {
 			f.WithPassword(a.password)
 		}
-		f.SetOpenFunc(func() (io.ReadCloser, error) {
-			return fsys.Open(p)
-		})
-
-		for _, opt := range opts {
-			applyOption(f, opt)
-		}
+		ApplyOption(f, opts...)
 
 		a.attachEntry(f)
 		added = append(added, f)
@@ -1001,23 +1038,35 @@ func (a *Archive) Entries() []vfs.VFSEntry {
 	return a.GetEntries()
 }
 
-func applyOption(entry *file.File, opt option.Option) {
-	switch opt.Kind {
-	case option.OptCompression:
-		entry.WithCompression(opt.Method, opt.Level)
-	case option.OptPassword:
-		entry.WithPassword(opt.Text)
-	case option.OptComment:
-		entry.WithComment(opt.Text)
-	case option.OptMode:
-		entry.WithMode(opt.Mode)
-	case option.OptModTime:
-		entry.WithModTime(opt.ModTime)
-	case option.OptName:
-		entry.SetName(opt.Text)
-	case option.OptPathPrefix:
-		entry.SetName(vfs.CleanPath(opt.Text + "/" + entry.Name()))
+// ApplyOption configures a file entry using one or more functional Option values.
+func ApplyOption(entry *file.File, opts ...option.Option) *file.File {
+	for _, opt := range opts {
+		switch opt.Kind {
+		case option.OptCompression:
+			entry.WithCompression(opt.Method, opt.Level)
+		case option.OptPassword:
+			entry.WithPassword(opt.Text)
+		case option.OptComment:
+			entry.WithComment(opt.Text)
+		case option.OptMode:
+			entry.WithMode(opt.Mode)
+		case option.OptModTime:
+			entry.WithModTime(opt.ModTime)
+		case option.OptName:
+			entry.WithName(opt.Text)
+		case option.OptPathPrefix:
+			entry.WithName(vfs.CleanPath(opt.Text + "/" + entry.Name()))
+		case option.OptCustom:
+			if opt.Custom != nil {
+				opt.Custom(entry)
+			}
+		}
 	}
+	return entry
+}
+
+func applyOption(entry *file.File, opt option.Option) {
+	ApplyOption(entry, opt)
 }
 
 // WithContainer assigns an explicit serialization [container.Container] engine to the archive.

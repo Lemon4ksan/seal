@@ -32,6 +32,7 @@ func (c *CreateCmd) Aliases() []string { return []string{"a", "c", "pack"} }
 func (c *CreateCmd) Synopsis() string {
 	return "Create an archive (EON, 7z, ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2)"
 }
+
 func (c *CreateCmd) Usage() string {
 	return `seal a [flags] <archive-path> <files...> [-o <archive-path>]
 
@@ -61,7 +62,7 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 	if err != nil {
 		return err
 	}
-	
+
 	if sz.GPUAcceleration {
 		os.Setenv("PRZM_GPU", "1")
 	} else {
@@ -224,8 +225,16 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 		}
 	}
 
-	fmt.Fprintf(stdout, "Compressing %d entries (%s uncompressed) via %s (Level %d, Filter: %s, Solid: %s)...\n",
-		totalFiles, util.FormatBytes(totalBytes), tuikit.Bold(method.String()), level, displayFilter, tuikit.Cyan(solidStr))
+	fmt.Fprintf(
+		stdout,
+		"Compressing %d entries (%s uncompressed) via %s (Level %d, Filter: %s, Solid: %s)...\n",
+		totalFiles,
+		util.FormatBytes(totalBytes),
+		tuikit.Bold(method.String()),
+		level,
+		displayFilter,
+		tuikit.Cyan(solidStr),
+	)
 
 	var p *tuikit.Progress
 	if tuikit.ProbeTerminal(stdout) {
@@ -330,4 +339,3 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 	fmt.Println()
 	return box.Render(stdout)
 }
-

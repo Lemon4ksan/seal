@@ -188,7 +188,7 @@ func CompressArchivalPNG(src []byte, level int) ([]byte, error) {
 }
 
 // DecompressArchivalPNGTo decompresses an ArchivalPNGMagic container frame into dst with strictly 0 heap allocs.
-func DecompressArchivalPNGTo(src []byte, dst []byte) ([]byte, error) {
+func DecompressArchivalPNGTo(src, dst []byte) ([]byte, error) {
 	if len(src) < 12 {
 		return nil, przm.ErrCorruptedFrame
 	}
@@ -307,7 +307,7 @@ func DecompressArchivalPNGTo(src []byte, dst []byte) ([]byte, error) {
 }
 
 // unpackArchivalPNG decompresses an Archival PNG container bitstream into dst with strictly 0 heap allocations.
-func unpackArchivalPNG(src []byte, dst []byte) ([]byte, error) {
+func unpackArchivalPNG(src, dst []byte) ([]byte, error) {
 	return DecompressArchivalPNGTo(src, dst)
 }
 
@@ -471,11 +471,12 @@ func (idx *ApproxSubChunkIndex) FindMatch(
 		}
 
 		ringK := -1
-		if d == rep0 {
+		switch d {
+		case rep0:
 			ringK = 0
-		} else if d == rep1 {
+		case rep1:
 			ringK = 1
-		} else if d == rep2 {
+		case rep2:
 			ringK = 2
 		}
 

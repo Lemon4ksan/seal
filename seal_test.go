@@ -159,3 +159,34 @@ func TestArchive_WithEncoding(t *testing.T) {
 	require.NotNil(t, arc)
 }
 
+func TestArchive_OptionsAndFluentMethods(t *testing.T) {
+	t.Parallel()
+
+	// Test functional options WithComment, WithPassword, WithCompressionLevel, WithSolid
+	arc := seal.NewArchive(
+		seal.WithComment("archive comment"),
+		seal.WithPassword("archivePass"),
+		seal.WithCompressionLevel(9),
+		seal.WithSolid(true, 32*1024*1024),
+	)
+	require.NotNil(t, arc)
+	assert.Equal(t, "archive comment", arc.Comment())
+	assert.True(t, arc.Solid())
+
+	// Test fluent With... methods on Archive
+	arc.WithComment("updated comment").
+		WithPassword("newPass").
+		WithSolid(false)
+
+	assert.Equal(t, "updated comment", arc.Comment())
+	assert.False(t, arc.Solid())
+
+	// Test WithCustom option
+	called := false
+	customOpt := seal.WithCustom(func(v any) {
+		called = true
+	})
+	arc2 := seal.NewArchive(customOpt)
+	require.NotNil(t, arc2)
+	assert.True(t, called)
+}

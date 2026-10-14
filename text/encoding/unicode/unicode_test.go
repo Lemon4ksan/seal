@@ -1,16 +1,18 @@
-﻿// Copyright 2015 The Go Authors. All rights reserved.
+// Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 package unicode
 
 import (
+	"errors"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/text/transform"
 
 	"github.com/lemon4ksan/seal/text/encoding"
 	"github.com/lemon4ksan/seal/text/encoding/charmap"
 	"github.com/lemon4ksan/seal/text/encoding/internal/enctest"
-	"github.com/lemon4ksan/foundation/text/transform"
 )
 
 func TestBasics(t *testing.T) {
@@ -303,7 +305,7 @@ func TestUTF16(t *testing.T) {
 		for range 2 {
 			b := make([]byte, tc.sizeDst)
 			nDst, nSrc, err := tc.t.Transform(b, []byte(tc.src), !tc.notEOF)
-			if err != tc.err {
+			if !errors.Is(err, tc.err) {
 				t.Errorf("%d:%s: error was %v; want %v", i, tc.desc, err, tc.err)
 			}
 			if got := string(b[:nDst]); got != tc.want {
@@ -476,7 +478,7 @@ func TestUTF8Decoder(t *testing.T) {
 	for i, tc := range testCases {
 		b := make([]byte, tc.sizeDst)
 		nDst, nSrc, err := tr.Transform(b, []byte(tc.src), !tc.notEOF)
-		if err != tc.err {
+		if !errors.Is(err, tc.err) {
 			t.Errorf("%d:%s: error was %v; want %v", i, tc.desc, err, tc.err)
 		}
 		if got := string(b[:nDst]); got != tc.want {
@@ -578,7 +580,7 @@ func TestUTF8BOMDecoder(t *testing.T) {
 		tr.Reset()
 		b := make([]byte, tc.sizeDst)
 		nDst, nSrc, err := tr.Transform(b, []byte(tc.src), !tc.notEOF)
-		if err != tc.err {
+		if !errors.Is(err, tc.err) {
 			t.Errorf("%d:%s: error was %v; want %v", i, tc.desc, err, tc.err)
 		}
 		if got := string(b[:nDst]); got != tc.want {
@@ -679,7 +681,7 @@ func TestUTF8SigEncoder(t *testing.T) {
 		tr.Reset()
 		b := make([]byte, tc.sizeDst)
 		nDst, nSrc, err := tr.Transform(b, []byte(tc.src), !tc.notEOF)
-		if err != tc.err {
+		if !errors.Is(err, tc.err) {
 			t.Errorf("%d:%s: error was %v; want %v", i, tc.desc, err, tc.err)
 		}
 		if got := string(b[:nDst]); got != tc.want {
@@ -732,7 +734,7 @@ func TestBOMOverride(t *testing.T) {
 		if got != tc.dst {
 			t.Errorf("%d: got %+q; want %+q", i, got, tc.dst)
 		}
-		if err != tc.err {
+		if !errors.Is(err, tc.err) {
 			t.Errorf("%d: error: got %v; want %v", i, err, tc.err)
 		}
 	}

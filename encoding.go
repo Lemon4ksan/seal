@@ -5,7 +5,7 @@
 package seal
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -63,7 +63,7 @@ func DecodeCP437(s string) string {
 func LookupEncoding(name string) (encoding.Encoding, error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
-		return nil, fmt.Errorf("encoding: empty encoding name")
+		return nil, errors.New("encoding: empty encoding name")
 	}
 
 	// Direct aliases and common code page mappings

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -12,11 +12,10 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/codec/compress/gzip"
 	"github.com/lemon4ksan/seal/codec/compress/lzma"
 	"github.com/lemon4ksan/seal/codec/compress/zstd"
-
-	"github.com/lemon4ksan/seal/codec"
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/vfs"

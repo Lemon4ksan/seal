@@ -77,7 +77,7 @@ func (mvr *MultiVolumeReader) ReadAt(p []byte, off int64) (int, error) {
 		volStart := mvr.offsets[volIdx]
 		offsetInVol := off - volStart
 		availInVol := vol.Size - offsetInVol
-		toRead := min(int64(len(p) - totalRead), availInVol)
+		toRead := min(int64(len(p)-totalRead), availInVol)
 
 		n, err := vol.Reader.ReadAt(p[totalRead:totalRead+int(toRead)], offsetInVol)
 		totalRead += n

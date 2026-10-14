@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package brotli
 
 var kCodeLengthDepth = [18]byte{4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 0, 4, 4}

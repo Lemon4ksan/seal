@@ -8,12 +8,12 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/testing/assert"
 	"github.com/lemon4ksan/seal/codec/compress/brotli"
 	"github.com/lemon4ksan/seal/codec/compress/gzip"
 	"github.com/lemon4ksan/seal/codec/compress/lzma"
-	"github.com/lemon4ksan/seal/codec/filter/bcj"
-	"github.com/lemon4ksan/foundation/testing/assert"
 	"github.com/lemon4ksan/seal/codec/compress/ppmd"
+	"github.com/lemon4ksan/seal/codec/filter/bcj"
 )
 
 // generateTextCorpus generates a repetitive source code / text sample.

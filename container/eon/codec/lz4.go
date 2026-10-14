@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -8,8 +8,8 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/lemon4ksan/seal/container/eon/spec"
 	"github.com/lemon4ksan/seal/codec/compress/lz4"
+	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 
 // LZ4Codec implements ultra-fast LZ4 compression for low seek latency and FastMount profiles.

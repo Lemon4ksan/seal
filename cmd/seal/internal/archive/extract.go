@@ -28,6 +28,7 @@ func (c *ExtractCmd) Aliases() []string { return []string{"x", "e"} }
 func (c *ExtractCmd) Synopsis() string {
 	return "Extract archive files (x: preserve paths, e: flat extract without directories)"
 }
+
 func (c *ExtractCmd) Usage() string {
 	return `seal x [flags] <archive-path> [include-patterns...]
 
@@ -139,4 +140,3 @@ func (c *ExtractCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer
 		tuikit.BadgePass(), time.Since(start), extractedCount)
 	return nil
 }
-

@@ -9,8 +9,8 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/cdc"
+	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 

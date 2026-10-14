@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -11,10 +11,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lemon4ksan/seal/container/eon/spec"
 	"github.com/lemon4ksan/seal/codec/filter/bcj"
 	"github.com/lemon4ksan/seal/codec/filter/delta"
 	"github.com/lemon4ksan/seal/codec/filter/shuffle"
+	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 
 var (
@@ -33,10 +33,10 @@ type Filter interface {
 	Name() string
 
 	// Encode applies the forward transformation on raw source bytes.
-	Encode(src []byte, params []byte) ([]byte, error)
+	Encode(src, params []byte) ([]byte, error)
 
 	// Decode reverses the transformation to recover original uncompressed bytes.
-	Decode(src []byte, params []byte) ([]byte, error)
+	Decode(src, params []byte) ([]byte, error)
 }
 
 var (
@@ -77,10 +77,10 @@ func ByName(name string) (Filter, error) {
 // ShuffleFilter implements byte-shuffling for structured/numeric/tensor data.
 type ShuffleFilter struct{}
 
-func (s *ShuffleFilter) ID() uint8     { return spec.FilterIDShuffle }
+func (s *ShuffleFilter) ID() uint8    { return spec.FilterIDShuffle }
 func (s *ShuffleFilter) Name() string { return "shuffle" }
 
-func (s *ShuffleFilter) Encode(src []byte, params []byte) ([]byte, error) {
+func (s *ShuffleFilter) Encode(src, params []byte) ([]byte, error) {
 	stride := 4
 	if len(params) > 0 && params[0] > 0 {
 		stride = int(params[0])
@@ -88,7 +88,7 @@ func (s *ShuffleFilter) Encode(src []byte, params []byte) ([]byte, error) {
 	return shuffle.Encode(src, nil, stride)
 }
 
-func (s *ShuffleFilter) Decode(src []byte, params []byte) ([]byte, error) {
+func (s *ShuffleFilter) Decode(src, params []byte) ([]byte, error) {
 	stride := 4
 	if len(params) > 0 && params[0] > 0 {
 		stride = int(params[0])
@@ -99,17 +99,17 @@ func (s *ShuffleFilter) Decode(src []byte, params []byte) ([]byte, error) {
 // BCJX86Filter implements Branch-Call-Jump relative address translation for x86 / x86-64 machine code.
 type BCJX86Filter struct{}
 
-func (b *BCJX86Filter) ID() uint8     { return spec.FilterIDBCJX86 }
+func (b *BCJX86Filter) ID() uint8    { return spec.FilterIDBCJX86 }
 func (b *BCJX86Filter) Name() string { return "bcj-x86" }
 
-func (b *BCJX86Filter) Encode(src []byte, params []byte) ([]byte, error) {
+func (b *BCJX86Filter) Encode(src, params []byte) ([]byte, error) {
 	dst := make([]byte, len(src))
 	copy(dst, src)
 	bcj.Filter(bcj.X86, dst, 0, true)
 	return dst, nil
 }
 
-func (b *BCJX86Filter) Decode(src []byte, params []byte) ([]byte, error) {
+func (b *BCJX86Filter) Decode(src, params []byte) ([]byte, error) {
 	dst := make([]byte, len(src))
 	copy(dst, src)
 	bcj.Filter(bcj.X86, dst, 0, false)
@@ -119,17 +119,17 @@ func (b *BCJX86Filter) Decode(src []byte, params []byte) ([]byte, error) {
 // BCJARM64Filter implements branch relative address translation for AArch64 (ARM64) machine code.
 type BCJARM64Filter struct{}
 
-func (b *BCJARM64Filter) ID() uint8     { return spec.FilterIDBCJARM64 }
+func (b *BCJARM64Filter) ID() uint8    { return spec.FilterIDBCJARM64 }
 func (b *BCJARM64Filter) Name() string { return "bcj-arm64" }
 
-func (b *BCJARM64Filter) Encode(src []byte, params []byte) ([]byte, error) {
+func (b *BCJARM64Filter) Encode(src, params []byte) ([]byte, error) {
 	dst := make([]byte, len(src))
 	copy(dst, src)
 	bcj.Filter(bcj.ARM64, dst, 0, true)
 	return dst, nil
 }
 
-func (b *BCJARM64Filter) Decode(src []byte, params []byte) ([]byte, error) {
+func (b *BCJARM64Filter) Decode(src, params []byte) ([]byte, error) {
 	dst := make([]byte, len(src))
 	copy(dst, src)
 	bcj.Filter(bcj.ARM64, dst, 0, false)
@@ -139,10 +139,10 @@ func (b *BCJARM64Filter) Decode(src []byte, params []byte) ([]byte, error) {
 // DeltaFilter implements the byte distance prediction filter.
 type DeltaFilter struct{}
 
-func (d *DeltaFilter) ID() uint8     { return spec.FilterIDDelta }
+func (d *DeltaFilter) ID() uint8    { return spec.FilterIDDelta }
 func (d *DeltaFilter) Name() string { return "delta" }
 
-func (d *DeltaFilter) Encode(src []byte, params []byte) ([]byte, error) {
+func (d *DeltaFilter) Encode(src, params []byte) ([]byte, error) {
 	dist := 1
 	if len(params) > 0 && params[0] > 0 {
 		dist = int(params[0])
@@ -157,7 +157,7 @@ func (d *DeltaFilter) Encode(src []byte, params []byte) ([]byte, error) {
 	return dst, nil
 }
 
-func (d *DeltaFilter) Decode(src []byte, params []byte) ([]byte, error) {
+func (d *DeltaFilter) Decode(src, params []byte) ([]byte, error) {
 	dist := 1
 	if len(params) > 0 && params[0] > 0 {
 		dist = int(params[0])

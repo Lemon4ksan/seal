@@ -65,19 +65,19 @@ type ProgressFunc func(stats ProgressStats)
 
 // Option represents a zero-allocation, value-based modifier payload residing on the stack.
 type Option struct {
-	Kind       OptionKind
-	Container  container.Type
-	Method     codec.Method
-	Level      int
-	Workers    int
-	Text       string
-	Mode       fs.FileMode
-	ModTime    time.Time
-	Security   SecuritySettings
-	Filter     Filter
-	Progress   ProgressFunc
-	Custom     func(any)
-	OnDone     func(entryName string, err error)
+	Kind           OptionKind
+	Container      container.Type
+	Method         codec.Method
+	Level          int
+	Workers        int
+	Text           string
+	Mode           fs.FileMode
+	ModTime        time.Time
+	Security       SecuritySettings
+	Filter         Filter
+	Progress       ProgressFunc
+	Custom         func(any)
+	OnDone         func(entryName string, err error)
 	Resumable      bool
 	SourceDir      string
 	SessionID      string
@@ -185,9 +185,15 @@ func WithModTime(t time.Time) Option {
 	return Option{Kind: OptModTime, ModTime: t}
 }
 
-// Custom attaches a custom closure callback for arbitrary runtime manipulation.
-func Custom(fn func(any)) Option {
+// WithCustom attaches a custom closure callback for arbitrary runtime manipulation.
+func WithCustom(fn func(any)) Option {
 	return Option{Kind: OptCustom, Custom: fn}
+}
+
+// Custom attaches a custom closure callback for arbitrary runtime manipulation.
+// Deprecated: Use WithCustom instead for consistency with the With... option convention.
+func Custom(fn func(any)) Option {
+	return WithCustom(fn)
 }
 
 // WithResumable enables graceful freeze on cancellation and stealth checkpoint persistence.

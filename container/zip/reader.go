@@ -117,7 +117,13 @@ type Reader struct {
 }
 
 // NewReader initializes a random-access ZIP archive reader.
-func NewReader(rAt io.ReaderAt, size int64, password string, reg *codec.Registry, opts ...ReaderOption) (*Reader, error) {
+func NewReader(
+	rAt io.ReaderAt,
+	size int64,
+	password string,
+	reg *codec.Registry,
+	opts ...ReaderOption,
+) (*Reader, error) {
 	if reg == nil {
 		reg = codec.DefaultRegistry
 	}

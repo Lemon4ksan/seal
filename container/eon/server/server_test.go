@@ -26,8 +26,8 @@ func createTestArchive(t *testing.T) (*engine.Reader, [32]byte) {
 
 	now := time.Now()
 	testFiles := map[string][]byte{
-		"config.json": []byte(`{"app": "aeon-cdn", "version": "1.0.0"}`),
-		"hello.txt":   []byte("Hello from Aeon Edge CDN!"),
+		"config.json":  []byte(`{"app": "aeon-cdn", "version": "1.0.0"}`),
+		"hello.txt":    []byte("Hello from Aeon Edge CDN!"),
 		"data/bin.dat": bytes.Repeat([]byte("0123456789ABCDEF"), 2000), // 32 KB
 	}
 

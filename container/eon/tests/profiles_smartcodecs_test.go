@@ -11,8 +11,8 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/codec"
+	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 

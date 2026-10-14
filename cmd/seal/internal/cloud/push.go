@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -15,8 +15,8 @@ import (
 
 	"github.com/lemon4ksan/ctrl/argkit"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/objstore"
 )
 
@@ -28,6 +28,7 @@ func (c *PushCmd) Aliases() []string { return []string{"publish"} }
 func (c *PushCmd) Synopsis() string {
 	return "Decompose and upload container to S3/R2/local store with CAS deduplication"
 }
+
 func (c *PushCmd) Usage() string {
 	return "aeon push [flags] <archive.eon> <target-uri>"
 }
@@ -44,7 +45,9 @@ func (c *PushCmd) Run(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 
 	if len(remaining) < 2 {
-		return errors.New("usage: aeon push [-v] <archive.eon> <target-uri>\n  target-uri examples:\n    s3://my-bucket/prefix\n    r2://my-bucket/prefix\n    file:///path/to/decomposed_store\n    ./local_dir")
+		return errors.New(
+			"usage: aeon push [-v] <archive.eon> <target-uri>\n  target-uri examples:\n    s3://my-bucket/prefix\n    r2://my-bucket/prefix\n    file:///path/to/decomposed_store\n    ./local_dir",
+		)
 	}
 
 	archivePath := remaining[0]
@@ -71,8 +74,19 @@ func (c *PushCmd) Run(ctx context.Context, args []string, stdout, stderr io.Writ
 
 	fmt.Fprintf(stdout, "\n✓ Successfully pushed in %s\n", elapsed.Round(time.Millisecond))
 	fmt.Fprintf(stdout, "  Total chunks:    %d\n", stats.TotalChunks)
-	fmt.Fprintf(stdout, "  Uploaded chunks: %d (%s)\n", stats.UploadedChunks, util.FormatHumanBytes(stats.UploadedBytes))
-	fmt.Fprintf(stdout, "  Reused chunks:   %d (%s) [%.1f%% deduplicated]\n", stats.ReusedChunks, util.FormatHumanBytes(stats.ReusedBytes), dedupRate)
+	fmt.Fprintf(
+		stdout,
+		"  Uploaded chunks: %d (%s)\n",
+		stats.UploadedChunks,
+		util.FormatHumanBytes(stats.UploadedBytes),
+	)
+	fmt.Fprintf(
+		stdout,
+		"  Reused chunks:   %d (%s) [%.1f%% deduplicated]\n",
+		stats.ReusedChunks,
+		util.FormatHumanBytes(stats.ReusedBytes),
+		dedupRate,
+	)
 	fmt.Fprintf(stdout, "  Index size:      %s (index.eon)\n", util.FormatHumanBytes(uint64(stats.IndexBytes)))
 	if *verbose {
 		fmt.Fprintf(stdout, "  Target URL:      %s\n", store.URL(prefix))

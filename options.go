@@ -31,6 +31,11 @@ func WithCompression(method codec.Method, level int) Option {
 	return option.WithCompression(method, level)
 }
 
+// WithCompressionLevel sets the compression effort level (1 = Fastest, 5 = Normal, 9 = Ultra).
+func WithCompressionLevel(level int) Option {
+	return option.WithCompressionLevel(level)
+}
+
 // WithPassword sets the encryption password.
 func WithPassword(pwd string) Option {
 	return option.WithPassword(pwd)
@@ -166,3 +171,13 @@ func WithTextDecoder(dec TextDecoder) Option {
 	return option.WithTextDecoder(dec)
 }
 
+// WithCustom attaches a custom modifier closure for arbitrary runtime manipulation.
+func WithCustom(fn func(any)) Option {
+	return option.WithCustom(fn)
+}
+
+// Custom attaches a custom closure callback for arbitrary runtime manipulation.
+// Deprecated: Use WithCustom instead for consistency with the With... option convention.
+func Custom(fn func(any)) Option {
+	return option.WithCustom(fn)
+}

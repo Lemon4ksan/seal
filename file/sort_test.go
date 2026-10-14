@@ -55,7 +55,13 @@ func TestSortByExtension(t *testing.T) {
 		grpA := file.ExtensionGroup(extA)
 		grpB := file.ExtensionGroup(extB)
 		if grpA > grpB {
-			t.Errorf("group ordering violated: %s (grp %d) after %s (grp %d)", sorted[i].Name(), grpA, sorted[i+1].Name(), grpB)
+			t.Errorf(
+				"group ordering violated: %s (grp %d) after %s (grp %d)",
+				sorted[i].Name(),
+				grpA,
+				sorted[i+1].Name(),
+				grpB,
+			)
 		}
 	}
 }

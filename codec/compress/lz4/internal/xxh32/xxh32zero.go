@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 // Package xxh32 implements the very fast XXH hashing algorithm (32 bits version).
 // (ported from the reference implementation https://github.com/Cyan4973/xxHash/)
 package xxh32

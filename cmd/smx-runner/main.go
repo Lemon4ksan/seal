@@ -20,6 +20,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/lemon4ksan/ctrl/tuikit"
 	"github.com/lemon4ksan/przm"
+
 	"github.com/lemon4ksan/seal/container/eon"
 	"github.com/lemon4ksan/seal/file"
 )
@@ -62,10 +63,18 @@ func formatBytes(b int64) string {
 func main() {
 	fmt.Print("\033[H\033[2J")
 
-	fmt.Println(tuikit.Bold(tuikit.Cyan("╔════════════════════════════════════════════════════════════════════════════╗")))
-	fmt.Println(tuikit.Bold(tuikit.Cyan("║          EON In-Situ Self-Mounting Executable (SMX) Runtime                ║")))
-	fmt.Println(tuikit.Bold(tuikit.Cyan("║        Zero-Staging Virtual Filesystem & PRZM Streaming Engine            ║")))
-	fmt.Println(tuikit.Bold(tuikit.Cyan("╚════════════════════════════════════════════════════════════════════════════╝")))
+	fmt.Println(
+		tuikit.Bold(tuikit.Cyan("╔════════════════════════════════════════════════════════════════════════════╗")),
+	)
+	fmt.Println(
+		tuikit.Bold(tuikit.Cyan("║          EON In-Situ Self-Mounting Executable (SMX) Runtime                ║")),
+	)
+	fmt.Println(
+		tuikit.Bold(tuikit.Cyan("║        Zero-Staging Virtual Filesystem & PRZM Streaming Engine            ║")),
+	)
+	fmt.Println(
+		tuikit.Bold(tuikit.Cyan("╚════════════════════════════════════════════════════════════════════════════╝")),
+	)
 
 	selfPath, err := os.Executable()
 	if err != nil {
@@ -127,7 +136,10 @@ func main() {
 	box.AddRow("Image File Size", formatBytes(fi.Size()))
 	box.AddRow("Virtual Catalog", fmt.Sprintf("%d files / directories", len(files)))
 	box.AddRow("Uncompressed Data", formatBytes(totalUncompressed))
-	box.AddRow("Compressed Chunks", fmt.Sprintf("%s (%d chunks, %.2f%% ratio)", formatBytes(totalCompressed), len(chunks), ratio))
+	box.AddRow(
+		"Compressed Chunks",
+		fmt.Sprintf("%s (%d chunks, %.2f%% ratio)", formatBytes(totalCompressed), len(chunks), ratio),
+	)
 	box.AddRow("Primary Codec", "PRZM v2.0 (Zero-Alloc Dual-Hash)")
 	box.AddRow("Mount Strategy", "In-Situ Direct-Memory (Zero-Staging)")
 	box.Render(os.Stdout)
@@ -249,7 +261,10 @@ func runLiveStreamingDemo(r *eon.Reader, files []*file.File, chunks []eon.CTOCEn
 		float64((endSnap.UserTime-startSnap.UserTime).Microseconds())/1000.0,
 	))
 	resBox.AddRow("Streaming Throughput", fmt.Sprintf("%.2f MB/s (%.2f GB/s)", throughputMBs, throughputMBs/1024.0))
-	resBox.AddRow("CPU Utilization", fmt.Sprintf("%.1f%% single-core (%.2f%% total system load)", cpuLoadSingleCore, cpuTotalSystem))
+	resBox.AddRow(
+		"CPU Utilization",
+		fmt.Sprintf("%.1f%% single-core (%.2f%% total system load)", cpuLoadSingleCore, cpuTotalSystem),
+	)
 	resBox.AddRow("CPU Cost per Byte", fmt.Sprintf("%.2f ns/byte (~%.2f CPU clock cycles)", nsPerByte, nsPerByte*3.6))
 	resBox.AddRow("Hot-Path Allocations", "0 bytes (Pure Stack & In-Place Slices)")
 	resBox.Render(os.Stdout)
@@ -350,15 +365,44 @@ func runHeadToHeadBattle(chunks []eon.CTOCEntry, r *eon.Reader) {
 
 	fmt.Println()
 	tbl := tuikit.NewTable("Metric", "PRZM Engine", "Zstandard (ZSTD)", "PRZM Advantage")
-	tbl.AddRow("Decompression Speed", fmt.Sprintf("%.1f MB/s", tpPRZM), fmt.Sprintf("%.1f MB/s", tpZSTD), tuikit.Bold(tuikit.Green(fmt.Sprintf("%.2fx FASTER", ratioSpeed))))
-	tbl.AddRow("Wall-Clock Time (50 iters)", fmt.Sprintf("%.2f ms", float64(wallPRZM.Microseconds())/1000.0), fmt.Sprintf("%.2f ms", float64(wallZSTD.Microseconds())/1000.0), fmt.Sprintf("%.2fx less time", float64(wallZSTD)/float64(wallPRZM)))
-	tbl.AddRow("Actual CPU Time Spent", fmt.Sprintf("%.2f ms", float64(cpuPRZM.Microseconds())/1000.0), fmt.Sprintf("%.2f ms", float64(cpuZSTD.Microseconds())/1000.0), tuikit.Bold(tuikit.Green(fmt.Sprintf("%.2fx LESS CPU", float64(cpuZSTD)/float64(cpuPRZM)))))
-	tbl.AddRow("CPU Cost per Byte", fmt.Sprintf("%.3f ns/byte", nsBytePRZM), fmt.Sprintf("%.3f ns/byte", nsByteZSTD), tuikit.Bold(tuikit.Green(fmt.Sprintf("%.1fx lighter", ratioCPU))))
-	tbl.AddRow("CPU Core Strain", fmt.Sprintf("%.1f%% single-core", loadPRZM), fmt.Sprintf("%.1f%% single-core", loadZSTD), "Negligible load")
+	tbl.AddRow(
+		"Decompression Speed",
+		fmt.Sprintf("%.1f MB/s", tpPRZM),
+		fmt.Sprintf("%.1f MB/s", tpZSTD),
+		tuikit.Bold(tuikit.Green(fmt.Sprintf("%.2fx FASTER", ratioSpeed))),
+	)
+	tbl.AddRow(
+		"Wall-Clock Time (50 iters)",
+		fmt.Sprintf("%.2f ms", float64(wallPRZM.Microseconds())/1000.0),
+		fmt.Sprintf("%.2f ms", float64(wallZSTD.Microseconds())/1000.0),
+		fmt.Sprintf("%.2fx less time", float64(wallZSTD)/float64(wallPRZM)),
+	)
+	tbl.AddRow(
+		"Actual CPU Time Spent",
+		fmt.Sprintf("%.2f ms", float64(cpuPRZM.Microseconds())/1000.0),
+		fmt.Sprintf("%.2f ms", float64(cpuZSTD.Microseconds())/1000.0),
+		tuikit.Bold(tuikit.Green(fmt.Sprintf("%.2fx LESS CPU", float64(cpuZSTD)/float64(cpuPRZM)))),
+	)
+	tbl.AddRow(
+		"CPU Cost per Byte",
+		fmt.Sprintf("%.3f ns/byte", nsBytePRZM),
+		fmt.Sprintf("%.3f ns/byte", nsByteZSTD),
+		tuikit.Bold(tuikit.Green(fmt.Sprintf("%.1fx lighter", ratioCPU))),
+	)
+	tbl.AddRow(
+		"CPU Core Strain",
+		fmt.Sprintf("%.1f%% single-core", loadPRZM),
+		fmt.Sprintf("%.1f%% single-core", loadZSTD),
+		"Negligible load",
+	)
 	tbl.AddRow("Hot-Path Heap Allocations", "0 bytes / iteration", "Huffman/FSE trees", "Zero GC pressure")
 	tbl.Render(os.Stdout)
 
-	fmt.Println("\n" + tuikit.Bold(tuikit.Cyan("Conclusion:")) + " PRZM delivers line-rate decoding directly from memory with virtually zero CPU thermal penalty, making In-Situ self-mounting apps run stutter-free!")
+	fmt.Println(
+		"\n" + tuikit.Bold(
+			tuikit.Cyan("Conclusion:"),
+		) + " PRZM delivers line-rate decoding directly from memory with virtually zero CPU thermal penalty, making In-Situ self-mounting apps run stutter-free!",
+	)
 }
 
 func listMountedFiles(files []*file.File) {

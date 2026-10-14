@@ -1,17 +1,19 @@
-﻿// Copyright 2013 The Go Authors. All rights reserved.
+// Copyright 2013 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 package encoding_test
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/text/transform"
+
 	"github.com/lemon4ksan/seal/text/encoding"
 	"github.com/lemon4ksan/seal/text/encoding/charmap"
-	"github.com/lemon4ksan/foundation/text/transform"
 )
 
 func TestEncodeInvalidUTF8(t *testing.T) {
@@ -27,7 +29,7 @@ func TestEncodeInvalidUTF8(t *testing.T) {
 		"\xacI\xe2\x82", // input lines. It maps to 0x80 in the Windows-1252 encoding.
 	}
 	// Each invalid source byte becomes '\x1a'.
-	want := strings.Replace("hello.wo?ld.ABC??????????D??E??????FGH\x80I??", "?", "\x1a", -1)
+	want := strings.ReplaceAll("hello.wo?ld.ABC??????????D??E??????FGH\x80I??", "?", "\x1a")
 
 	transformer := encoding.ReplaceUnsupported(charmap.Windows1252.NewEncoder())
 	gotBuf := make([]byte, 0, 1024)
@@ -39,7 +41,7 @@ func TestEncodeInvalidUTF8(t *testing.T) {
 		nDst, nSrc, err := transformer.Transform(dst, src, atEOF)
 		gotBuf = append(gotBuf, dst[:nDst]...)
 		src = src[nSrc:]
-		if err != nil && err != transform.ErrShortSrc {
+		if err != nil && !errors.Is(err, transform.ErrShortSrc) {
 			t.Fatalf("i=%d: %v", i, err)
 		}
 		if atEOF && err != nil {
@@ -196,7 +198,7 @@ func TestUTF8Validator(t *testing.T) {
 			continue
 		}
 		got := string(dst[:nDst])
-		if got != tc.want || nSrc != len(tc.want) || err != tc.wantErr {
+		if got != tc.want || nSrc != len(tc.want) || !errors.Is(err, tc.wantErr) {
 			t.Errorf("%s:\ngot  %+q, %d, %v\nwant %+q, %d, %v",
 				tc.desc, got, nSrc, err, tc.want, len(tc.want), tc.wantErr)
 			continue
@@ -276,7 +278,7 @@ func TestErrorHandler(t *testing.T) {
 		tr := tc.handler(charmap.Windows1250.NewEncoder())
 		b := make([]byte, tc.sizeDst)
 		nDst, nSrc, err := tr.Transform(b, []byte(tc.src), true)
-		if err != tc.err {
+		if !errors.Is(err, tc.err) {
 			t.Errorf("%d:%s: error was %v; want %v", i, tc.desc, err, tc.err)
 		}
 		if got := string(b[:nDst]); got != tc.want {

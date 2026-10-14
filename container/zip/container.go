@@ -34,6 +34,12 @@ func (z *Engine) SetTextDecoder(dec TextDecoder) {
 	z.TextDecoder = dec
 }
 
+// WithTextDecoder configures the fallback text decoder for non-UTF8 archive strings fluently.
+func (z *Engine) WithTextDecoder(dec TextDecoder) *Engine {
+	z.SetTextDecoder(dec)
+	return z
+}
+
 // Type returns [container.Zip].
 func (z *Engine) Type() container.Type {
 	return container.Zip

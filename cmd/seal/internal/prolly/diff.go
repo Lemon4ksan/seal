@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -14,8 +14,8 @@ import (
 
 	"github.com/lemon4ksan/ctrl/argkit"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/prolly"
 )
 
@@ -27,6 +27,7 @@ func (c *DiffCmd) Aliases() []string { return nil }
 func (c *DiffCmd) Synopsis() string {
 	return "Compare differences between two snapshots or containers in O(Δ) time"
 }
+
 func (c *DiffCmd) Usage() string {
 	return "aeon diff [flags] <archive.eon> [snap1] [snap2] (or: aeon diff <archive1.eon> <archive2.eon>)"
 }
@@ -45,7 +46,9 @@ func (c *DiffCmd) Run(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 
 	if len(remaining) < 1 {
-		return errors.New("usage: aeon diff [-p password] <archive.eon> [snap1] [snap2]\n       aeon diff [-p password] <archive1.eon> <archive2.eon>")
+		return errors.New(
+			"usage: aeon diff [-p password] <archive.eon> [snap1] [snap2]\n       aeon diff [-p password] <archive1.eon> <archive2.eon>",
+		)
 	}
 
 	var opts []aeon.ReaderOption
@@ -109,7 +112,13 @@ func PrintDiff(diff *prolly.DiffResult, w io.Writer) {
 		fmt.Fprintf(w, "+ Added:    %-40s (%s)\n", a.Name, util.FormatHumanBytes(a.PayloadSize))
 	}
 	for _, m := range diff.Modified {
-		fmt.Fprintf(w, "~ Modified: %-40s (%s -> %s)\n", m.New.Name, util.FormatHumanBytes(m.Old.PayloadSize), util.FormatHumanBytes(m.New.PayloadSize))
+		fmt.Fprintf(
+			w,
+			"~ Modified: %-40s (%s -> %s)\n",
+			m.New.Name,
+			util.FormatHumanBytes(m.Old.PayloadSize),
+			util.FormatHumanBytes(m.New.PayloadSize),
+		)
 	}
 	for _, d := range diff.Deleted {
 		fmt.Fprintf(w, "- Deleted:  %-40s (%s)\n", d.Name, util.FormatHumanBytes(d.PayloadSize))

@@ -31,7 +31,7 @@ func TestObjStore_DecomposeStreamAndCompose(t *testing.T) {
 
 	w := engine.NewWriter(f, engine.WithProfileFastMount())
 	filesData := map[string][]byte{
-		"config.json": []byte(`{"version": "1.0.0", "name": "eon-cloud-test"}`),
+		"config.json":      []byte(`{"version": "1.0.0", "name": "eon-cloud-test"}`),
 		"data/large_1.bin": bytes.Repeat([]byte("ABCDEF0123456789_CHUNK_ONE_DATA_"), 10000), // ~320 KB
 		"data/large_2.bin": bytes.Repeat([]byte("FEDCBA9876543210_CHUNK_TWO_DATA_"), 12000), // ~384 KB
 		"readme.txt":       []byte("Aeon S3/R2 detached chunk storage integration."),

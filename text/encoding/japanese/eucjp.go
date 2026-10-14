@@ -1,4 +1,4 @@
-﻿// Copyright 2013 The Go Authors. All rights reserved.
+// Copyright 2013 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -7,10 +7,11 @@ package japanese
 import (
 	"unicode/utf8"
 
+	"github.com/lemon4ksan/foundation/text/transform"
+
 	"github.com/lemon4ksan/seal/text/encoding"
 	"github.com/lemon4ksan/seal/text/encoding/internal"
 	"github.com/lemon4ksan/seal/text/encoding/internal/identifier"
-	"github.com/lemon4ksan/foundation/text/transform"
 )
 
 // EUCJP is the EUC-JP encoding.
@@ -129,7 +130,6 @@ func (eucJPEncoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err 
 		// Decode a 1-byte rune.
 		if r < utf8.RuneSelf {
 			size = 1
-
 		} else {
 			// Decode a multi-byte rune.
 			r, size = utf8.DecodeRune(src[nSrc:])

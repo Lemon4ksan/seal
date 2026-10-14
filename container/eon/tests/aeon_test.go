@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/catalog"
 	"github.com/lemon4ksan/seal/container/eon/chunk"
+	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 
@@ -22,7 +22,7 @@ func TestAeonRoundtrip(t *testing.T) {
 	w := engine.NewWriter(&buf)
 
 	files := map[string][]byte{
-		"greeting.txt":      []byte("Hello, Aeon format!"),
+		"greeting.txt":       []byte("Hello, Aeon format!"),
 		"config/system.json": []byte(`{"version": 1, "profile": "production"}`),
 		"large/payload.dat":  make([]byte, 256*1024),
 	}
@@ -125,8 +125,8 @@ type mockHandler struct {
 	fn func(name string, payload []byte) error
 }
 
-func (m *mockHandler) Namespace() uint16     { return m.ns }
-func (m *mockHandler) Description() string   { return "mock" }
+func (m *mockHandler) Namespace() uint16                  { return m.ns }
+func (m *mockHandler) Description() string                { return "mock" }
 func (m *mockHandler) Handle(name string, b []byte) error { return m.fn(name, b) }
 
 func TestMultiNamespaceContainer(t *testing.T) {

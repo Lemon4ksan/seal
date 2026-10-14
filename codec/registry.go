@@ -5,8 +5,8 @@
 package codec
 
 import (
-	"maps"
 	"fmt"
+	"maps"
 	"sync"
 )
 

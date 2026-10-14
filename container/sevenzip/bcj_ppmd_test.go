@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/seal/codec/compress/lzma"
 	"github.com/lemon4ksan/foundation/testing/assert"
 	"github.com/lemon4ksan/foundation/testing/require"
 
+	"github.com/lemon4ksan/seal/codec/compress/lzma"
 	"github.com/lemon4ksan/seal/file"
 )
 

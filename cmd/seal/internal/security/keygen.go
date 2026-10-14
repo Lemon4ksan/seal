@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -25,6 +25,7 @@ func (c *KeygenCmd) Aliases() []string { return nil }
 func (c *KeygenCmd) Synopsis() string {
 	return "Generate an Ed25519 keypair for digital container signing"
 }
+
 func (c *KeygenCmd) Usage() string {
 	return "aeon keygen [flags] [-o aeon_ed25519.key]"
 }
@@ -44,12 +45,12 @@ func (c *KeygenCmd) Run(ctx context.Context, args []string, stdout, stderr io.Wr
 		return fmt.Errorf("generating key: %w", err)
 	}
 
-	if err := os.WriteFile(*outKey, priv, 0600); err != nil {
+	if err := os.WriteFile(*outKey, priv, 0o600); err != nil {
 		return fmt.Errorf("saving private key: %w", err)
 	}
 
 	pubPath := *outKey + ".pub"
-	if err := os.WriteFile(pubPath, pub, 0644); err != nil {
+	if err := os.WriteFile(pubPath, pub, 0o644); err != nil {
 		return fmt.Errorf("saving public key: %w", err)
 	}
 

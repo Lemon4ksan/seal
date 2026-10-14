@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -12,9 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lemon4ksan/seal/codec/compress/gzip"
 	"github.com/lemon4ksan/foundation/testing/assert"
 	"github.com/lemon4ksan/foundation/testing/require"
+
+	"github.com/lemon4ksan/seal/codec/compress/gzip"
 )
 
 func TestGzipWriterAndReader(t *testing.T) {
@@ -81,6 +82,7 @@ func TestGzipWriterLevels(t *testing.T) {
 	_, err := gzip.NewWriterLevel(&bytes.Buffer{}, 99)
 	assert.Error(t, err)
 }
+
 func TestCRC32_DifferentialAgainstStdlib(t *testing.T) {
 	t.Parallel()
 

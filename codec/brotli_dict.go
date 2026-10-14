@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/lemon4ksan/przm"
+
 	"github.com/lemon4ksan/seal/codec/compress/brotli"
 )
 

@@ -1,8 +1,13 @@
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package codec
 
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -193,5 +198,5 @@ func (d *PRZMDecompressor) Decompress(src io.Reader) (io.ReadCloser, error) {
 		}
 		return io.NopCloser(bytes.NewReader(decompressed)), nil
 	}
-	return nil, fmt.Errorf("przm: invalid stream header")
+	return nil, errors.New("przm: invalid stream header")
 }

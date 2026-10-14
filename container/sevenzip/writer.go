@@ -14,13 +14,13 @@ import (
 	"sync"
 	"unicode/utf16"
 
-	"github.com/lemon4ksan/seal/codec/compress/lzma"
-	"github.com/lemon4ksan/seal/codec/filter/bcj"
 	"github.com/lemon4ksan/foundation/generic"
 
 	"github.com/lemon4ksan/seal/checkpoint"
-	"github.com/lemon4ksan/seal/codec/filter/bcj2"
+	"github.com/lemon4ksan/seal/codec/compress/lzma"
 	"github.com/lemon4ksan/seal/codec/compress/ppmd"
+	"github.com/lemon4ksan/seal/codec/filter/bcj"
+	"github.com/lemon4ksan/seal/codec/filter/bcj2"
 	"github.com/lemon4ksan/seal/container"
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/internal/pool"

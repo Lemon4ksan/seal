@@ -383,11 +383,13 @@ func OpenReader(rAt io.ReaderAt, size int64, opts ...ReaderOption) (*Reader, err
 				chunkAEADs = append(chunkAEADs, cAe)
 			}
 
-			if (flagsCopy & uint32(spec.FlagDigitalSig)) != 0 && dsig == nil {
+			if (flagsCopy&uint32(spec.FlagDigitalSig)) != 0 && dsig == nil {
 				if d, dErr := catalog.ReadDSIG(dirReader); dErr == nil {
 					dsig = d
 					hasher := sha256.New()
-					hasher.Write(decDirBytes[:spec.CTOCHeaderSize+int64(curCTOC.TotalChunks)*spec.CTOCEntrySize+indxByteLen])
+					hasher.Write(
+						decDirBytes[:spec.CTOCHeaderSize+int64(curCTOC.TotalChunks)*spec.CTOCEntrySize+indxByteLen],
+					)
 					dirDigest = hasher.Sum(nil)
 				}
 			}
@@ -441,7 +443,11 @@ func OpenReader(rAt io.ReaderAt, size int64, opts ...ReaderOption) (*Reader, err
 		}
 
 		var peek [4]byte
-		if _, err := rAt.ReadAt(peek[:], curOffset); err == nil && binary.LittleEndian.Uint32(peek[:]) == spec.MagicCHSHLE {
+		if _, err := rAt.ReadAt(
+			peek[:],
+			curOffset,
+		); err == nil &&
+			binary.LittleEndian.Uint32(peek[:]) == spec.MagicCHSHLE {
 			chshReader := io.NewSectionReader(rAt, curOffset, size-curOffset)
 			if chsh, err := catalog.ReadChunkHashTable(chshReader); err == nil && chsh != nil {
 				chunkHashes = chsh
@@ -824,9 +830,9 @@ func (r *Reader) fetchRemoteChunk(chunkIdx uint32) ([]byte, error) {
 	if r.cacheDir != "" {
 		cachePath := filepath.Join(r.cacheDir, filepath.FromSlash(chunkKey))
 		dir := filepath.Dir(cachePath)
-		if err := os.MkdirAll(dir, 0755); err == nil {
+		if err := os.MkdirAll(dir, 0o755); err == nil {
 			tmpFile := fmt.Sprintf("%s.tmp.%d", cachePath, time.Now().UnixNano())
-			if err := os.WriteFile(tmpFile, rawChunk, 0644); err == nil {
+			if err := os.WriteFile(tmpFile, rawChunk, 0o644); err == nil {
 				_ = os.Rename(tmpFile, cachePath)
 			}
 		}
@@ -1060,7 +1066,12 @@ func (r *Reader) Verify(cb func(curChunk, totalChunks int, extName string, err e
 		}
 
 		if uint64(len(raw)) != uint64(entry.UncompressedSize) {
-			err := fmt.Errorf("chunk #%d size mismatch: expected %d, got %d", chunkIdx, entry.UncompressedSize, len(raw))
+			err := fmt.Errorf(
+				"chunk #%d size mismatch: expected %d, got %d",
+				chunkIdx,
+				entry.UncompressedSize,
+				len(raw),
+			)
 			if cb != nil {
 				cb(i+1, totalChunks, "", err)
 			}
@@ -1209,7 +1220,11 @@ func (r *Reader) Diagnose(quick bool) *DiagnosticReport {
 		}
 
 		if uint64(len(raw)) != uint64(entry.UncompressedSize) {
-			errDesc := fmt.Errorf("chunk size mismatch: expected %d uncompressed, got %d", entry.UncompressedSize, len(raw))
+			errDesc := fmt.Errorf(
+				"chunk size mismatch: expected %d uncompressed, got %d",
+				entry.UncompressedSize,
+				len(raw),
+			)
 			rep.CorruptedChunks = append(rep.CorruptedChunks, ChunkDiagnostic{
 				ChunkIndex: chunkIdx,
 				BlockIndex: entry.BlockIndex,
@@ -1234,7 +1249,7 @@ func (r *Reader) Diagnose(quick bool) *DiagnosticReport {
 					rep.CorruptedFiles = append(rep.CorruptedFiles, FileDiagnostic{
 						Name:       ext.Name,
 						ChunkIndex: cIdx,
-						Error:      fmt.Errorf("underlying chunk #%d is corrupted: %v", cIdx, err),
+						Error:      fmt.Errorf("underlying chunk #%d is corrupted: %w", cIdx, err),
 					})
 					extentCorrupted = true
 					break
@@ -1263,8 +1278,13 @@ func (r *Reader) Diagnose(quick bool) *DiagnosticReport {
 					rep.CorruptedFiles = append(rep.CorruptedFiles, FileDiagnostic{
 						Name:       ext.Name,
 						ChunkIndex: ext.ChunkIndex,
-						Error: fmt.Errorf("extent offset+size (%d+%d=%d) exceeds chunk uncompressed capacity (%d)",
-							ext.ChunkOffset, ext.PayloadSize, ext.ChunkOffset+ext.PayloadSize, targetChunk.UncompressedSize),
+						Error: fmt.Errorf(
+							"extent offset+size (%d+%d=%d) exceeds chunk uncompressed capacity (%d)",
+							ext.ChunkOffset,
+							ext.PayloadSize,
+							ext.ChunkOffset+ext.PayloadSize,
+							targetChunk.UncompressedSize,
+						),
 					})
 					continue
 				}

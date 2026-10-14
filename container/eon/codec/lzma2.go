@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -9,8 +9,8 @@ import (
 	"io"
 	"sync"
 
-	"github.com/lemon4ksan/seal/container/eon/spec"
 	"github.com/lemon4ksan/seal/codec/compress/lzma"
+	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 
 var compressorPools sync.Map

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -15,8 +15,8 @@ import (
 
 	"github.com/lemon4ksan/ctrl/argkit"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/server"
 )
 
@@ -28,6 +28,7 @@ func (c *ServeCmd) Aliases() []string { return nil }
 func (c *ServeCmd) Synopsis() string {
 	return "Start high-performance HTTP Range CDN edge gateway"
 }
+
 func (c *ServeCmd) Usage() string {
 	return "seal serve [flags] <archive-path-or-uri>"
 }
@@ -50,7 +51,9 @@ func (c *ServeCmd) Run(ctx context.Context, args []string, stdout, stderr io.Wri
 	}
 
 	if len(remaining) < 1 {
-		return errors.New("usage: aeon serve [-p port] [-bind addr] [--cors] [--token secret] [--share s1] [--kms keyID] <archive-path-or-uri>\n  examples:\n    aeon serve archive.eon\n    aeon serve s3://my-bucket/models/llama3\n    aeon serve r2://dataset-lake/coco-2024")
+		return errors.New(
+			"usage: aeon serve [-p port] [-bind addr] [--cors] [--token secret] [--share s1] [--kms keyID] <archive-path-or-uri>\n  examples:\n    aeon serve archive.eon\n    aeon serve s3://my-bucket/models/llama3\n    aeon serve r2://dataset-lake/coco-2024",
+		)
 	}
 
 	sourcePath := remaining[0]

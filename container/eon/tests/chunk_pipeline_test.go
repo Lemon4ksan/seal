@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/catalog"
 	"github.com/lemon4ksan/seal/container/eon/chunk"
+	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/filter"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
@@ -22,7 +22,7 @@ import (
 // customMeshFilter is a simulated third-party filter (ID: 0x88) that XORs payload with a byte mask.
 type customMeshFilter struct{}
 
-func (c *customMeshFilter) ID() uint8     { return 0x88 }
+func (c *customMeshFilter) ID() uint8    { return 0x88 }
 func (c *customMeshFilter) Name() string { return "custom-mesh-quantizer" }
 
 func (c *customMeshFilter) Encode(src []byte, params []byte) ([]byte, error) {

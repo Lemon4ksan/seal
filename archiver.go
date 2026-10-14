@@ -21,7 +21,6 @@ import (
 	"sync/atomic"
 
 	"github.com/lemon4ksan/foundation/generic"
-	"github.com/lemon4ksan/seal/vfs"
 
 	"github.com/lemon4ksan/seal/archive"
 	"github.com/lemon4ksan/seal/checkpoint"
@@ -34,6 +33,7 @@ import (
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/internal/pool"
 	"github.com/lemon4ksan/seal/option"
+	"github.com/lemon4ksan/seal/vfs"
 )
 
 // OverwritePolicy defines file collision behavior during archive extraction.
@@ -357,7 +357,8 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 					_ = out.Close()
 
 					if copyErr != nil {
-						if errors.Is(copyErr, context.Canceled) || errors.Is(copyErr, context.DeadlineExceeded) || ctx.Err() != nil {
+						if errors.Is(copyErr, context.Canceled) || errors.Is(copyErr, context.DeadlineExceeded) ||
+							ctx.Err() != nil {
 							_ = os.Remove(targetPath)
 							errMu.Lock()
 							errs = append(errs, ctx.Err())
@@ -472,7 +473,12 @@ func (a *Archiver) ReadFile(ctx context.Context, src Source, targetFile string, 
 
 // ReadTo reads an individual named file from an archive and unmarshals its content into *T.
 // If unmarshaler is omitted, json.Unmarshal is used by default.
-func ReadTo[T any](ctx context.Context, src Source, targetFile string, unmarshaler ...func([]byte, any) error) (*T, error) {
+func ReadTo[T any](
+	ctx context.Context,
+	src Source,
+	targetFile string,
+	unmarshaler ...func([]byte, any) error,
+) (*T, error) {
 	data, err := ReadFile(ctx, src, targetFile)
 	if err != nil {
 		return nil, err
@@ -489,7 +495,13 @@ func ReadTo[T any](ctx context.Context, src Source, targetFile string, unmarshal
 }
 
 // ReadInto reads an individual named file from an archive and unmarshals its content directly into target.
-func ReadInto[T any](ctx context.Context, src Source, targetFile string, target *T, unmarshaler ...func([]byte, any) error) error {
+func ReadInto[T any](
+	ctx context.Context,
+	src Source,
+	targetFile string,
+	target *T,
+	unmarshaler ...func([]byte, any) error,
+) error {
 	data, err := ReadFile(ctx, src, targetFile)
 	if err != nil {
 		return err
@@ -505,7 +517,12 @@ func ReadInto[T any](ctx context.Context, src Source, targetFile string, target 
 }
 
 // ReadTo reads an individual named file from an archive and unmarshals its content into *T.
-func (a *Archiver) ReadTo[T any](ctx context.Context, src Source, targetFile string, unmarshaler ...func([]byte, any) error) (*T, error) {
+func (a *Archiver) ReadTo[T any](
+	ctx context.Context,
+	src Source,
+	targetFile string,
+	unmarshaler ...func([]byte, any) error,
+) (*T, error) {
 	data, err := a.ReadFile(ctx, src, targetFile)
 	if err != nil {
 		return nil, err
@@ -522,7 +539,13 @@ func (a *Archiver) ReadTo[T any](ctx context.Context, src Source, targetFile str
 }
 
 // ReadInto reads an individual named file from an archive and unmarshals its content directly into target.
-func (a *Archiver) ReadInto[T any](ctx context.Context, src Source, targetFile string, target *T, unmarshaler ...func([]byte, any) error) error {
+func (a *Archiver) ReadInto[T any](
+	ctx context.Context,
+	src Source,
+	targetFile string,
+	target *T,
+	unmarshaler ...func([]byte, any) error,
+) error {
 	data, err := a.ReadFile(ctx, src, targetFile)
 	if err != nil {
 		return err
@@ -620,7 +643,8 @@ func Verify(ctx context.Context, src Source, opts ...Option) error {
 			_ = rc.Close()
 
 			if copyErr != nil {
-				if errors.Is(copyErr, context.Canceled) || errors.Is(copyErr, context.DeadlineExceeded) || ctx.Err() != nil {
+				if errors.Is(copyErr, context.Canceled) || errors.Is(copyErr, context.DeadlineExceeded) ||
+					ctx.Err() != nil {
 					return ctx.Err()
 				}
 				errs = append(errs, wrapErr("verify", f.Name(), copyErr))
@@ -777,7 +801,12 @@ func GetExtension(ctx context.Context, archivePath string, id extension.ID) ([]b
 
 // GetExtensionTo extracts a single extension payload from the archive and unmarshals it into *T.
 // If unmarshaler is omitted, json.Unmarshal is used by default.
-func GetExtensionTo[T any](ctx context.Context, archivePath string, id extension.ID, unmarshaler ...func([]byte, any) error) (*T, error) {
+func GetExtensionTo[T any](
+	ctx context.Context,
+	archivePath string,
+	id extension.ID,
+	unmarshaler ...func([]byte, any) error,
+) (*T, error) {
 	data, err := GetExtension(ctx, archivePath, id)
 	if err != nil {
 		return nil, err

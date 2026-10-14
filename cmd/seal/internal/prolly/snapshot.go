@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -17,8 +17,8 @@ import (
 	"github.com/lemon4ksan/ctrl/argkit"
 	"github.com/lemon4ksan/foundation/fskit"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 )
 
 // SnapshotCmd creates an immutable snapshot inside an existing archive.
@@ -29,6 +29,7 @@ func (c *SnapshotCmd) Aliases() []string { return nil }
 func (c *SnapshotCmd) Synopsis() string {
 	return "Create an immutable snapshot inside an existing archive (-m message)"
 }
+
 func (c *SnapshotCmd) Usage() string {
 	return "aeon snapshot -m \"message\" [flags] <archive.eon> <target1> [target2 ...]"
 }

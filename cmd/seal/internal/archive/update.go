@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -18,8 +18,8 @@ import (
 	"github.com/lemon4ksan/ctrl/argkit"
 	"github.com/lemon4ksan/foundation/fskit"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 
@@ -31,6 +31,7 @@ func (c *UpdateCmd) Aliases() []string { return []string{"u"} }
 func (c *UpdateCmd) Synopsis() string {
 	return "Add or update files inside an existing container in-place"
 }
+
 func (c *UpdateCmd) Usage() string {
 	return "aeon update [flags] <archive.eon> <target1> [target2 ...]"
 }
@@ -75,7 +76,7 @@ func (c *UpdateCmd) Run(ctx context.Context, args []string, stdout, stderr io.Wr
 		return fmt.Errorf("creating temp archive: %w", err)
 	}
 
-	var codecID uint8 = spec.CodecZSTD
+	codecID := spec.CodecZSTD
 	switch strings.ToLower(*codecName) {
 	case "lz4":
 		codecID = spec.CodecLZ4

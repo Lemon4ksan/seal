@@ -6,6 +6,7 @@ package prolly
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -85,7 +86,7 @@ func ReadTreeNodes(r io.Reader, store NodeStore) (int, error) {
 		return 0, err
 	}
 	if binary.LittleEndian.Uint32(hdr[0:4]) != spec.MagicTREELE {
-		return 0, fmt.Errorf("prolly: invalid tree nodes magic")
+		return 0, errors.New("prolly: invalid tree nodes magic")
 	}
 
 	count := int(binary.LittleEndian.Uint32(hdr[4:8]))

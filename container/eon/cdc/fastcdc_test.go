@@ -59,7 +59,12 @@ func TestFastCDC_ShiftResistance(t *testing.T) {
 
 	// Shifted data: 123 bytes inserted at offset 0
 	shifted := make([]byte, 123+len(base))
-	copy(shifted[0:123], []byte("SHIFTED_PREFIX_DATA_INSERTED_AT_HEAD_TO_TEST_BOUNDARY_STABILITY_AND_CONTENT_DEFINED_CHUNKING_SHIFT_RESISTANCE!"))
+	copy(
+		shifted[0:123],
+		[]byte(
+			"SHIFTED_PREFIX_DATA_INSERTED_AT_HEAD_TO_TEST_BOUNDARY_STABILITY_AND_CONTENT_DEFINED_CHUNKING_SHIFT_RESISTANCE!",
+		),
+	)
 	copy(shifted[123:], base)
 
 	c, err := cdc.NewFastCDC(cdc.DefaultOptions())

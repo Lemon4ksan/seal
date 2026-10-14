@@ -95,6 +95,24 @@ func (w *Writer) SetCheckpointData(data []byte) {
 	w.checkpointData = slices.Clone(data)
 }
 
+// WithComment sets the global archive comment fluently.
+func (w *Writer) WithComment(comment string) *Writer {
+	w.SetComment(comment)
+	return w
+}
+
+// WithPassword sets the default encryption password fluently.
+func (w *Writer) WithPassword(pwd string) *Writer {
+	w.SetPassword(pwd)
+	return w
+}
+
+// WithCheckpointData sets the transient checkpoint payload fluently.
+func (w *Writer) WithCheckpointData(data []byte) *Writer {
+	w.SetCheckpointData(data)
+	return w
+}
+
 // WriteEntry processes and writes an individual file entry to the archive.
 func (w *Writer) WriteEntry(entry *file.File, src io.Reader) error {
 	w.mu.Lock()

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -19,11 +19,11 @@ import (
 	"github.com/lemon4ksan/ctrl/argkit"
 	"github.com/lemon4ksan/foundation/fskit"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/archive"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/forensics"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
 	"github.com/lemon4ksan/seal/container/eon/crypto"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 
@@ -35,6 +35,7 @@ func (c *VaultCmd) Aliases() []string { return nil }
 func (c *VaultCmd) Synopsis() string {
 	return "Manage isolated compartments (multi-vault) and plausible deniability"
 }
+
 func (c *VaultCmd) Usage() string {
 	return "aeon vault <create|list|extract|test|info> [arguments]"
 }
@@ -77,7 +78,10 @@ func (c *VaultCmd) printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  info     Display Key Slot parameters and decrypted vault descriptors")
 	fmt.Fprintln(w, "  test     Verify chunk & extent integrity for unlocked vault(s)")
 	fmt.Fprintln(w, "\nExamples:")
-	fmt.Fprintln(w, "  seal vault create -o secure.eon -vault \"personal:Pass1!:./personal\" -vault \"work:Pass2!:./work\"")
+	fmt.Fprintln(
+		w,
+		"  seal vault create -o secure.eon -vault \"personal:Pass1!:./personal\" -vault \"work:Pass2!:./work\"",
+	)
 	fmt.Fprintln(w, "  seal vault list -p Pass1! secure.eon")
 	fmt.Fprintln(w, "  seal vault list -p Pass1! -p Pass2! secure.eon  # Union view (Pass1 + Pass2)")
 	fmt.Fprintln(w, "  seal vault extract -p Pass1! -o ./restored secure.eon")
@@ -102,7 +106,9 @@ func (c *VaultCmd) runCreate(ctx context.Context, args []string, stdout, stderr 
 	}
 
 	if len(vaults) == 0 {
-		return errors.New("specify at least one -vault 'name:password:path'\nexample: aeon vault create -o secure.eon -vault 'personal:Secret123!:./personal' -vault 'work:CorpPass456!:./work'")
+		return errors.New(
+			"specify at least one -vault 'name:password:path'\nexample: aeon vault create -o secure.eon -vault 'personal:Secret123!:./personal' -vault 'work:CorpPass456!:./work'",
+		)
 	}
 
 	if *outPath == "vaults.eon" && len(remaining) > 0 {
@@ -115,7 +121,7 @@ func (c *VaultCmd) runCreate(ctx context.Context, args []string, stdout, stderr 
 	}
 	defer outFile.Close()
 
-	var codecID uint8 = spec.CodecZSTD
+	codecID := spec.CodecZSTD
 	switch strings.ToLower(*codecName) {
 	case "lz4":
 		codecID = spec.CodecLZ4
@@ -148,7 +154,7 @@ func (c *VaultCmd) runCreate(ctx context.Context, args []string, stdout, stderr 
 		}
 	}
 
-	var cipherID uint8 = spec.CipherAES256GCM
+	cipherID := spec.CipherAES256GCM
 	switch strings.ToLower(*cipherStr) {
 	case "chacha", "chacha20", "chacha20poly1305":
 		cipherID = spec.CipherChaCha20Poly1305
@@ -235,7 +241,13 @@ func (c *VaultCmd) runCreate(ctx context.Context, args []string, stdout, stderr 
 		}
 		totalCount += vaultFiles
 		totalBytes += vaultBytes
-		fmt.Fprintf(stdout, "  ✓ Vault %q: %d file(s), %s\n", vs.name, vaultFiles, util.FormatHumanBytes(uint64(vaultBytes)))
+		fmt.Fprintf(
+			stdout,
+			"  ✓ Vault %q: %d file(s), %s\n",
+			vs.name,
+			vaultFiles,
+			util.FormatHumanBytes(uint64(vaultBytes)),
+		)
 	}
 
 	if err := w.Close(); err != nil {
@@ -248,9 +260,16 @@ func (c *VaultCmd) runCreate(ctx context.Context, args []string, stdout, stderr 
 	if totalBytes > 0 {
 		ratio = float64(eonSize) / float64(totalBytes) * 100
 	}
-	fmt.Fprintf(stdout, "\n✓ Successfully created multi-vault container with %d vault(s), %d item(s) in %.2fs (Raw: %s ➔ EON: %s, %.1f%%)\n",
-		len(vspecs), totalCount, time.Since(startTime).Seconds(),
-		util.FormatHumanBytes(uint64(totalBytes)), util.FormatHumanBytes(eonSize), ratio)
+	fmt.Fprintf(
+		stdout,
+		"\n✓ Successfully created multi-vault container with %d vault(s), %d item(s) in %.2fs (Raw: %s ➔ EON: %s, %.1f%%)\n",
+		len(vspecs),
+		totalCount,
+		time.Since(startTime).Seconds(),
+		util.FormatHumanBytes(uint64(totalBytes)),
+		util.FormatHumanBytes(eonSize),
+		ratio,
+	)
 	return nil
 }
 

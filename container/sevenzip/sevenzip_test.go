@@ -71,7 +71,15 @@ func TestWriteNumber_Boundaries(t *testing.T) {
 		require.NoErrorf(t, err, "WriteNumber(%d) failed: %v", val, err)
 		readVal, err := ReadNumber(&buf)
 		require.NoErrorf(t, err, "ReadNumber for (%d) failed: %v", val, err)
-		assert.Equalf(t, val, readVal, "Number roundtrip mismatch: wrote %d, read %d (encoded len=%d)", val, readVal, buf.Len())
+		assert.Equalf(
+			t,
+			val,
+			readVal,
+			"Number roundtrip mismatch: wrote %d, read %d (encoded len=%d)",
+			val,
+			readVal,
+			buf.Len(),
+		)
 	}
 }
 

@@ -106,11 +106,11 @@ func TestMatchPattern(t *testing.T) {
 
 func TestParseSevenZipArgs_SolidFlags(t *testing.T) {
 	tests := []struct {
-		args       []string
-		wantSolid  bool
-		wantSize   int64
-		wantExt    bool
-		wantExp    bool
+		args      []string
+		wantSolid bool
+		wantSize  int64
+		wantExt   bool
+		wantExp   bool
 	}{
 		{args: []string{"a.eon", "f", "-ms"}, wantSolid: true, wantExp: true},
 		{args: []string{"a.eon", "f", "-ms=on"}, wantSolid: true, wantExp: true},
@@ -167,4 +167,3 @@ func TestParseSevenZipArgs_Encoding(t *testing.T) {
 		}
 	}
 }
-

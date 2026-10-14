@@ -83,7 +83,7 @@ func ParseURI(uri string) (Store, string, error) {
 
 	u, err := url.Parse(uri)
 	if err != nil {
-		return nil, "", fmt.Errorf("%w: %v", ErrInvalidURI, err)
+		return nil, "", fmt.Errorf("%w: %w", ErrInvalidURI, err)
 	}
 
 	switch strings.ToLower(u.Scheme) {

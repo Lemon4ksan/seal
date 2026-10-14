@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"mime"
 	"net"
 	"net/http"
@@ -21,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/catalog"
+	"github.com/lemon4ksan/seal/container/eon/engine"
 )
 
 // Config configures the CDN edge server.
@@ -37,7 +36,6 @@ type Config struct {
 // Server provides HTTP file and chunk serving backed by an EON container Reader.
 type Server struct {
 	reader   *engine.Reader
-	closer   io.Closer
 	cfg      Config
 	mux      *http.ServeMux
 	fileMap  map[string]catalog.Extent
@@ -270,7 +268,7 @@ func (s *Server) serveDirectory(w http.ResponseWriter, r *http.Request, dir stri
 		var items []map[string]any
 		for name, isSubDir := range entries {
 			items = append(items, map[string]any{
-				"name":  name,
+				"name":   name,
 				"is_dir": isSubDir,
 			})
 		}
@@ -280,7 +278,10 @@ func (s *Server) serveDirectory(w http.ResponseWriter, r *http.Request, dir stri
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, "<!DOCTYPE html><html><head><title>Index of /%s</title>", dir)
-	fmt.Fprintf(w, "<style>body{font-family:monospace;padding:20px;} a{text-decoration:none;} a:hover{text-decoration:underline;}</style></head><body>")
+	fmt.Fprintf(
+		w,
+		"<style>body{font-family:monospace;padding:20px;} a{text-decoration:none;} a:hover{text-decoration:underline;}</style></head><body>",
+	)
 	fmt.Fprintf(w, "<h2>Aeon CDN Gateway: /%s</h2><hr/><ul>", dir)
 	if dir != "" {
 		parent := path.Dir(strings.TrimSuffix(dir, "/"))

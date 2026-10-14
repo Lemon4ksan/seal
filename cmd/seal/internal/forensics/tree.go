@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -30,6 +30,7 @@ func (c *TreeCmd) Aliases() []string { return nil }
 func (c *TreeCmd) Synopsis() string {
 	return "Display visual ASCII directory tree of the archive with depth & filters"
 }
+
 func (c *TreeCmd) Usage() string {
 	return "seal tree [flags] <archive-path> [patterns...]"
 }
@@ -156,7 +157,7 @@ func (c *TreeCmd) Run(_ context.Context, args []string, stdout, _ io.Writer) err
 	if *dirsOnly {
 		summary = fmt.Sprintf("\n%s\n", tuikit.Cyan(fmt.Sprintf("%d directories", dirCount)))
 	} else {
-		summary = fmt.Sprintf("\n%s", tuikit.Cyan(fmt.Sprintf("%d directories, %d files", dirCount, fileCount)))
+		summary = "\n" + tuikit.Cyan(fmt.Sprintf("%d directories, %d files", dirCount, fileCount))
 		if totalBytes > 0 {
 			summary += fmt.Sprintf(" (%s uncompressed)", util.FormatBytes(totalBytes))
 		}
@@ -203,7 +204,18 @@ func renderTreeNode(
 			sb.WriteString(connector)
 			sb.WriteString(tuikit.Bold(tuikit.Cyan(name)))
 			sb.WriteString("/\n")
-			renderTreeNode(child, prefix+nextIndent, currentDepth+1, maxDepth, showSizes, dirsOnly, sb, dirCount, fileCount, totalBytes)
+			renderTreeNode(
+				child,
+				prefix+nextIndent,
+				currentDepth+1,
+				maxDepth,
+				showSizes,
+				dirsOnly,
+				sb,
+				dirCount,
+				fileCount,
+				totalBytes,
+			)
 		} else if !dirsOnly {
 			*fileCount++
 			*totalBytes += child.Size

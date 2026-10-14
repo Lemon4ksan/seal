@@ -1,22 +1,25 @@
-﻿package korean
+package korean
 
 // Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/lemon4ksan/foundation/text/transform"
 
 	"github.com/lemon4ksan/seal/text/encoding"
 	"github.com/lemon4ksan/seal/text/encoding/internal"
 	"github.com/lemon4ksan/seal/text/encoding/internal/enctest"
-	"github.com/lemon4ksan/foundation/text/transform"
 )
 
 func dec(e encoding.Encoding) (dir string, t transform.Transformer, err error) {
 	return "Decode", e.NewDecoder(), nil
 }
+
 func enc(e encoding.Encoding) (dir string, t transform.Transformer, err error) {
 	return "Encode", e.NewEncoder(), internal.ErrASCIIReplacement
 }
@@ -52,7 +55,7 @@ func TestNonRepertoire(t *testing.T) {
 		dir, tr, wantErr := tc.init(tc.e)
 
 		dst, _, err := transform.String(tr, tc.src)
-		if err != wantErr {
+		if !errors.Is(err, wantErr) {
 			t.Errorf("%s %v(%q): got %v; want %v", dir, tc.e, tc.src, err, wantErr)
 		}
 		if got := string(dst); got != tc.want {

@@ -61,7 +61,11 @@ func (idx *Index) Write(w io.Writer) (int64, error) {
 			return total, fmt.Errorf("eon: extent %q record length (%d) exceeds 65535 bytes", ext.Name, recLen)
 		}
 		if len(ext.ExtraTLVs) > 0xFFFF {
-			return total, fmt.Errorf("eon: extent %q ExtraTLVs length (%d) exceeds 65535 bytes", ext.Name, len(ext.ExtraTLVs))
+			return total, fmt.Errorf(
+				"eon: extent %q ExtraTLVs length (%d) exceeds 65535 bytes",
+				ext.Name,
+				len(ext.ExtraTLVs),
+			)
 		}
 
 		var prefix [spec.FixedExtentPrefixSize]byte
@@ -106,7 +110,7 @@ func (idx *Index) Write(w io.Writer) (int64, error) {
 // ReadIndex parses the INDX catalog from r and returns the parsed Index alongside total byte length on disk.
 func ReadIndex(r io.Reader) (*Index, int64, error) {
 	br, ok := r.(io.ByteReader)
-	var reader io.Reader = r
+	reader := r
 	if !ok {
 		buf := bufio.NewReader(r)
 		br = buf
@@ -216,12 +220,16 @@ func (idx *Index) Sort() {
 
 // BinarySearch performs O(log N) lookup for an extent matching (namespace, name) on a canonically sorted index.
 func (idx *Index) BinarySearch(namespace uint16, name string) (Extent, bool) {
-	i, found := slices.BinarySearchFunc(idx.Extents, Extent{Namespace: namespace, Name: name}, func(e, target Extent) int {
-		if e.Namespace != target.Namespace {
-			return cmp.Compare(e.Namespace, target.Namespace)
-		}
-		return strings.Compare(e.Name, target.Name)
-	})
+	i, found := slices.BinarySearchFunc(
+		idx.Extents,
+		Extent{Namespace: namespace, Name: name},
+		func(e, target Extent) int {
+			if e.Namespace != target.Namespace {
+				return cmp.Compare(e.Namespace, target.Namespace)
+			}
+			return strings.Compare(e.Name, target.Name)
+		},
+	)
 	if found {
 		return idx.Extents[i], true
 	}

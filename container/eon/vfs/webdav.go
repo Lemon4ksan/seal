@@ -108,9 +108,9 @@ type webdavDirFile struct {
 	offset  int
 }
 
-func (d *webdavDirFile) Close() error                                  { return nil }
-func (d *webdavDirFile) Read(p []byte) (int, error)                    { return 0, io.EOF }
-func (d *webdavDirFile) Write(p []byte) (int, error)                   { return 0, os.ErrPermission }
+func (d *webdavDirFile) Close() error                                 { return nil }
+func (d *webdavDirFile) Read(p []byte) (int, error)                   { return 0, io.EOF }
+func (d *webdavDirFile) Write(p []byte) (int, error)                  { return 0, os.ErrPermission }
 func (d *webdavDirFile) Seek(offset int64, whence int) (int64, error) { return 0, nil }
 
 func (d *webdavDirFile) Stat() (os.FileInfo, error) {
@@ -148,9 +148,11 @@ type webdavRegularFile struct {
 	reader *bytes.Reader
 }
 
-func (r *webdavRegularFile) Close() error                                  { return nil }
-func (r *webdavRegularFile) Read(p []byte) (int, error)                    { return r.reader.Read(p) }
-func (r *webdavRegularFile) Write(p []byte) (int, error)                   { return 0, os.ErrPermission }
-func (r *webdavRegularFile) Seek(offset int64, whence int) (int64, error) { return r.reader.Seek(offset, whence) }
-func (r *webdavRegularFile) Stat() (os.FileInfo, error)                    { return r.st, nil }
-func (r *webdavRegularFile) Readdir(count int) ([]os.FileInfo, error)      { return nil, os.ErrInvalid }
+func (r *webdavRegularFile) Close() error                { return nil }
+func (r *webdavRegularFile) Read(p []byte) (int, error)  { return r.reader.Read(p) }
+func (r *webdavRegularFile) Write(p []byte) (int, error) { return 0, os.ErrPermission }
+func (r *webdavRegularFile) Seek(offset int64, whence int) (int64, error) {
+	return r.reader.Seek(offset, whence)
+}
+func (r *webdavRegularFile) Stat() (os.FileInfo, error)               { return r.st, nil }
+func (r *webdavRegularFile) Readdir(count int) ([]os.FileInfo, error) { return nil, os.ErrInvalid }

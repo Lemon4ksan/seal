@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -14,10 +14,11 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/lemon4ksan/foundation/text/transform"
+
 	"github.com/lemon4ksan/seal/text/encoding"
 	"github.com/lemon4ksan/seal/text/encoding/internal"
 	"github.com/lemon4ksan/seal/text/encoding/internal/identifier"
-	"github.com/lemon4ksan/foundation/text/transform"
 )
 
 func TestEncoding(t *testing.T) {
@@ -384,12 +385,9 @@ func TestAdversarialMockIdentifiers(t *testing.T) {
 			// Check contract: "Exactly one of the mib and other values should be non-zero."
 			hasMIB := mib != 0
 			hasOther := other != ""
-			exactlyOneNonZero := (hasMIB || hasOther) && !(hasMIB && hasOther)
+			exactlyOneNonZero := (hasMIB || hasOther) && (!hasMIB || !hasOther)
 
-			otherCharsValid := true
-			if hasOther && !validOtherRegex.MatchString(other) {
-				otherCharsValid = false
-			}
+			otherCharsValid := !hasOther || validOtherRegex.MatchString(other)
 
 			isValid := exactlyOneNonZero && otherCharsValid
 			if isValid != tc.validContract {
@@ -425,7 +423,7 @@ func TestAdversarialTransformersWithShortBuffers(t *testing.T) {
 	dst := make([]byte, 2)
 	src := []byte("hello")
 	nDst, nSrc, err := dec.Transform(dst, src, false)
-	if err != transform.ErrShortDst {
+	if !errors.Is(err, transform.ErrShortDst) {
 		t.Fatalf("expected ErrShortDst, got: %v (nDst=%d, nSrc=%d)", err, nDst, nSrc)
 	}
 }

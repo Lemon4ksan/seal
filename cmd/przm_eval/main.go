@@ -53,7 +53,9 @@ func main() {
 		fmt.Printf("    Description: %s\n", bc.Description)
 		fmt.Printf("    %-22s | %-12s | %-12s | %-8s | %-12s | %-12s | %-7s\n",
 			"PRZM Configuration", "Raw (Bytes)", "Comp (Bytes)", "Ratio", "Comp (MB/s)", "Decomp(MB/s)", "Allocs")
-		fmt.Println("    -----------------------+--------------+--------------+----------+--------------+--------------+--------")
+		fmt.Println(
+			"    -----------------------+--------------+--------------+----------+--------------+--------------+--------",
+		)
 
 		// 1. Standard PRZM Level 1 (Fast)
 		runBenchmark("PRZM (L1 Stream)", bc.Data, func(src []byte) ([]byte, error) {
@@ -78,7 +80,7 @@ func main() {
 	}
 }
 
-func runBenchmark(name string, src []byte, compFn func([]byte) ([]byte, error), decompFn func([]byte) ([]byte, error)) {
+func runBenchmark(name string, src []byte, compFn, decompFn func([]byte) ([]byte, error)) {
 	// Warm-up & roundtrip verification
 	compressed, err := compFn(src)
 	if err != nil {
@@ -265,9 +267,34 @@ func generateSPIRVShaderBytecode(size int) BenchmarkCase {
 		// OpTypeFloat 32 (0x00030016)
 		buf.Write([]byte{0x16, 0x00, 0x03, 0x00, 0x02, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00})
 		// OpTypeVector 4 (0x00040017)
-		buf.Write([]byte{0x17, 0x00, 0x04, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00})
+		buf.Write(
+			[]byte{0x17, 0x00, 0x04, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00},
+		)
 		// OpFMul / OpFAdd arithmetic instructions with repeating register patterns
-		buf.Write([]byte{0x85, 0x00, 0x05, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00})
+		buf.Write(
+			[]byte{
+				0x85,
+				0x00,
+				0x05,
+				0x00,
+				0x03,
+				0x00,
+				0x00,
+				0x00,
+				0x04,
+				0x00,
+				0x00,
+				0x00,
+				0x05,
+				0x00,
+				0x00,
+				0x00,
+				0x06,
+				0x00,
+				0x00,
+				0x00,
+			},
+		)
 	}
 
 	return BenchmarkCase{

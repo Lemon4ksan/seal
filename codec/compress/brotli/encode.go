@@ -811,8 +811,7 @@ func extendLastCommand(s *Writer, bytes, wrapped_last_processed_pos *uint32) {
 	max_backward_distance := (uint64(1) << s.params.lgwin) - windowGap
 	last_copy_len := uint64(last_command.copy_len_) & 0x1FFFFFF
 	last_processed_pos := s.last_processed_pos_ - last_copy_len
-	var max_distance uint64
-	max_distance = min(last_processed_pos, max_backward_distance)
+	max_distance := min(last_processed_pos, max_backward_distance)
 	cmd_dist := uint64(s.dist_cache_[0])
 	distance_code := commandRestoreDistanceCode(last_command, &s.params.dist)
 	if distance_code < numDistanceShortCodes || uint64(distance_code-(numDistanceShortCodes-1)) == cmd_dist {

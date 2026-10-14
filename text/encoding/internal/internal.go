@@ -1,4 +1,4 @@
-﻿// Copyright 2015 The Go Authors. All rights reserved.
+// Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -6,9 +6,10 @@
 package internal
 
 import (
+	"github.com/lemon4ksan/foundation/text/transform"
+
 	"github.com/lemon4ksan/seal/text/encoding"
 	"github.com/lemon4ksan/seal/text/encoding/internal/identifier"
-	"github.com/lemon4ksan/foundation/text/transform"
 )
 
 // Encoding is an implementation of the Encoding interface that adds the String

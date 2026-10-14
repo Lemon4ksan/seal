@@ -6,6 +6,7 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -53,7 +54,7 @@ func FormatBytes(b int64) string {
 func ParseByteSize(s string) (int64, error) {
 	s = strings.TrimSpace(strings.ToLower(s))
 	if s == "" {
-		return 0, fmt.Errorf("empty byte size")
+		return 0, errors.New("empty byte size")
 	}
 	multiplier := int64(1)
 	if strings.HasSuffix(s, "g") || strings.HasSuffix(s, "gb") || strings.HasSuffix(s, "gib") {
@@ -76,4 +77,3 @@ func ParseByteSize(s string) (int64, error) {
 	}
 	return val * multiplier, nil
 }
-

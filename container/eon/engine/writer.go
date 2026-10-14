@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lemon4ksan/seal/codec/filter/shuffle"
 	"github.com/lemon4ksan/seal/container/eon/catalog"
 	"github.com/lemon4ksan/seal/container/eon/cdc"
 	"github.com/lemon4ksan/seal/container/eon/chunk"
@@ -29,7 +31,6 @@ import (
 	"github.com/lemon4ksan/seal/container/eon/filter"
 	"github.com/lemon4ksan/seal/container/eon/prolly"
 	"github.com/lemon4ksan/seal/container/eon/spec"
-	"github.com/lemon4ksan/seal/codec/filter/shuffle"
 )
 
 // WriterOption configures the EON container serialization engine.
@@ -302,7 +303,6 @@ type Writer struct {
 
 	useCDC            bool
 	cdcOpts           cdc.Options
-	cdcChunker        *cdc.FastCDC
 	chunkDedup        map[[32]byte]uint32
 	dedupReusedChunks uint32
 	dedupSavedBytes   uint64
@@ -366,7 +366,7 @@ func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
 // AddVault registers an isolated virtual vault within the container with its own passphrase.
 func (w *Writer) AddVault(name, password string) error {
 	if w.headerWritten {
-		return fmt.Errorf("cannot add vault after writing has started")
+		return errors.New("cannot add vault after writing has started")
 	}
 	if _, exists := w.vaultMap[name]; exists {
 		return fmt.Errorf("vault %q already registered", name)
@@ -924,7 +924,8 @@ func (w *Writer) AddFileStream(name string, size int64, modTime time.Time, r io.
 	var doneReading bool
 
 	// If starting fresh chunk, sample first read for incompressible detection
-	if w.autoDetect && fileCodecID != spec.CodecStore && (fileChunkFlags&spec.ChunkFlagByteShuffle == 0) && len(w.currentRaw) == 0 {
+	if w.autoDetect && fileCodecID != spec.CodecStore && (fileChunkFlags&spec.ChunkFlagByteShuffle == 0) &&
+		len(w.currentRaw) == 0 {
 		avail := int(w.targetChunkSize)
 		toRead := min(len(buf), avail)
 		n, err := r.Read(buf[:toRead])
@@ -1009,7 +1010,15 @@ func (w *Writer) AddFileStream(name string, size int64, modTime time.Time, r io.
 	return nil
 }
 
-func (w *Writer) addFileStreamCDC(cleanName string, size int64, modTime time.Time, pxTLV []byte, r io.Reader, fileCodecID uint8, fileCodecLevel uint8, fileChunkFlags uint16) error {
+func (w *Writer) addFileStreamCDC(
+	cleanName string,
+	size int64,
+	modTime time.Time,
+	pxTLV []byte,
+	r io.Reader,
+	fileCodecID, fileCodecLevel uint8,
+	fileChunkFlags uint16,
+) error {
 	if len(w.currentRaw) > 0 {
 		if err := w.flushChunk(); err != nil {
 			return err
@@ -1027,7 +1036,7 @@ func (w *Writer) addFileStreamCDC(cleanName string, size int64, modTime time.Tim
 
 	for {
 		chunkBytes, err := chunker.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -1451,7 +1460,7 @@ func (w *Writer) Close() error {
 	// Write 32-byte Archive Trailer at exact EOF
 	var trailer [spec.TrailerSize]byte
 	binary.LittleEndian.PutUint64(trailer[0:8], primaryDirOffset)
-	binary.LittleEndian.PutUint64(trailer[8:16], 0) // RecoveryOffset (0 = absent)
+	binary.LittleEndian.PutUint64(trailer[8:16], 0)  // RecoveryOffset (0 = absent)
 	binary.LittleEndian.PutUint64(trailer[16:24], 0) // ArchiveStartOffset (0 = no stub)
 	binary.LittleEndian.PutUint32(trailer[24:28], flagsCopy)
 	copy(trailer[28:32], spec.MagicTrailer[:])
@@ -1468,7 +1477,6 @@ func (w *Writer) Close() error {
 func (w *Writer) TotalWritten() int64 {
 	return w.totalWritten
 }
-
 
 func (w *Writer) rewriteENCR() {
 	if ws, ok := w.w.(io.WriteSeeker); ok {
@@ -1516,5 +1524,3 @@ func writeTreeNodes(out io.Writer, store *prolly.MemoryNodeStore) (int64, error)
 	total += int64(n)
 	return total, err
 }
-
-

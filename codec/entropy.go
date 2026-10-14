@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lemon4ksan/seal/codec/entropy"
 	"github.com/lemon4ksan/foundation/fskit"
+
+	"github.com/lemon4ksan/seal/codec/entropy"
 )
 
 // IsIncompressibleName checks if a filename extension corresponds to already compressed or encrypted media.
@@ -25,7 +26,18 @@ var IsIncompressibleSample = entropy.IsIncompressibleSample
 func IsTensorName(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
 	switch ext {
-	case ".safetensors", ".pt", ".bin", ".npy", ".npz", ".onnx", ".gguf", ".weight", ".weights", ".ckpt", ".tflite", ".h5":
+	case ".safetensors",
+		".pt",
+		".bin",
+		".npy",
+		".npz",
+		".onnx",
+		".gguf",
+		".weight",
+		".weights",
+		".ckpt",
+		".tflite",
+		".h5":
 		return true
 	default:
 		return false

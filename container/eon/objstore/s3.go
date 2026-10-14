@@ -34,19 +34,19 @@ type S3Config struct {
 
 // S3Store provides an S3-compatible Store implementation with zero external dependencies.
 type S3Store struct {
-	cfg        S3Config
-	client     *http.Client
-	baseURL    *url.URL
-	pathStyle  bool
-	region     string
-	accessKey  string
-	secretKey  string
+	cfg       S3Config
+	client    *http.Client
+	baseURL   *url.URL
+	pathStyle bool
+	region    string
+	accessKey string
+	secretKey string
 }
 
 // NewS3Store creates a new S3-compatible Store.
 func NewS3Store(cfg S3Config) (*S3Store, error) {
 	if cfg.Bucket == "" {
-		return nil, fmt.Errorf("objstore/s3: bucket name is required")
+		return nil, errors.New("objstore/s3: bucket name is required")
 	}
 	if cfg.Region == "" {
 		cfg.Region = "us-east-1"
@@ -58,11 +58,11 @@ func NewS3Store(cfg S3Config) (*S3Store, error) {
 	}
 
 	var rawEndpoint string
-	pathStyle := cfg.PathStyle
+	var pathStyle bool
 
 	if cfg.Endpoint != "" {
 		rawEndpoint = strings.TrimRight(cfg.Endpoint, "/")
-		// If custom endpoint provided without explicit path style, default to path style (standard for MinIO / local / R2)
+		// If custom endpoint provided, default to path style (standard for MinIO / local / R2)
 		pathStyle = true
 	} else {
 		// Standard AWS S3 endpoint
@@ -71,6 +71,9 @@ func NewS3Store(cfg S3Config) (*S3Store, error) {
 		} else {
 			rawEndpoint = fmt.Sprintf("https://s3.%s.amazonaws.com", cfg.Region)
 		}
+		pathStyle = cfg.PathStyle
+	}
+	if cfg.PathStyle {
 		pathStyle = true
 	}
 
@@ -134,7 +137,7 @@ func (s *S3Store) Sign(req *http.Request, payloadHash string, t time.Time) {
 
 	var canonicalHeaders strings.Builder
 	for _, k := range headerNames {
-		canonicalHeaders.WriteString(fmt.Sprintf("%s:%s\n", k, strings.TrimSpace(headers[k])))
+		fmt.Fprintf(&canonicalHeaders, "%s:%s\n", k, strings.TrimSpace(headers[k]))
 	}
 	signedHeaders := strings.Join(headerNames, ";")
 
@@ -258,7 +261,7 @@ func (s *S3Store) Put(ctx context.Context, key string, r io.Reader, size int64) 
 	u := s.endpointURL(key)
 
 	// Read body to compute SHA-256 (or use buffer for SigV4 compliance)
-	var bodyReader io.Reader = r
+	bodyReader := r
 	payloadHash := "UNSIGNED-PAYLOAD"
 
 	if size >= 0 && size <= 64*1024*1024 {
@@ -288,7 +291,8 @@ func (s *S3Store) Put(ctx context.Context, key string, r io.Reader, size int64) 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated &&
+		resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("s3 put failed (%d): %s", resp.StatusCode, string(body))
 	}

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/crypto"
+	"github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 	"github.com/lemon4ksan/seal/crypto/shamir"
 )

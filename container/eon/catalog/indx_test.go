@@ -47,7 +47,14 @@ func TestIndex_CanonicalSortAndBinarySearch(t *testing.T) {
 
 	for i, exp := range expected {
 		if idx.Extents[i].Namespace != exp.ns || idx.Extents[i].Name != exp.name {
-			t.Errorf("item %d: expected (%d, %s), got (%d, %s)", i, exp.ns, exp.name, idx.Extents[i].Namespace, idx.Extents[i].Name)
+			t.Errorf(
+				"item %d: expected (%d, %s), got (%d, %s)",
+				i,
+				exp.ns,
+				exp.name,
+				idx.Extents[i].Namespace,
+				idx.Extents[i].Name,
+			)
 		}
 	}
 

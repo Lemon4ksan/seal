@@ -46,19 +46,19 @@ const (
 
 // Structural byte lengths.
 const (
-	HeaderSize             = 32
-	TrailerSize            = 32
-	ChunkHeaderSize        = 64
-	CTOCHeaderSize         = 16
-	CTOCEntrySize          = 16
-	INDXHeaderSize         = 8
-	FixedExtentPrefixSize  = 58
-	DSIGHeaderSize         = 14
-	ENCRHeaderSize         = 24
-	KeySlotSize            = 144
-	MaxKeySlots            = 16
+	HeaderSize            = 32
+	TrailerSize           = 32
+	ChunkHeaderSize       = 64
+	CTOCHeaderSize        = 16
+	CTOCEntrySize         = 16
+	INDXHeaderSize        = 8
+	FixedExtentPrefixSize = 58
+	DSIGHeaderSize        = 14
+	ENCRHeaderSize        = 24
+	KeySlotSize           = 144
+	MaxKeySlots           = 16
 
-	DefaultBlockSizeShift  = 12 // 4096 bytes (4 KiB)
+	DefaultBlockSizeShift  = 12               // 4096 bytes (4 KiB)
 	DefaultChunkTargetSize = 32 * 1024 * 1024 // 32 MiB uncompressed
 	MicroFrameSize         = 64 * 1024        // 64 KiB
 )
@@ -209,17 +209,17 @@ const (
 // Standard TLV tags.
 const (
 	TagPOSIXPermissions uint16 = 0x5058 // 'PX'
-	TagDigitalSignature  uint16 = 0x5349 // 'SI'
-	TagProvenance        uint16 = 0x5056 // 'PV'
-	TagEntrypoint        uint16 = 0x4550 // 'EP'
-	TagEnvironment       uint16 = 0x4556 // 'EV'
-	TagComment           uint16 = 0x434D // 'CM'
-	TagWindowsInfo       uint16 = 0x4E54 // 'NT'
-	TagExtendedAttrs     uint16 = 0x5841 // 'XA'
-	TagIngestPriority    uint16 = 0x5052 // 'PR'
-	TagTensorInfo        uint16 = 0x5453 // 'TS'
-	TagChunkList         uint16 = 0x434C // 'CL'
-	TagChunkRuns         uint16 = 0x4352 // 'CR'
-	TagSnapshotID        uint16 = 0x5353 // 'SS'
-	TagParentSnapshot    uint16 = 0x5053 // 'PS'
+	TagDigitalSignature uint16 = 0x5349 // 'SI'
+	TagProvenance       uint16 = 0x5056 // 'PV'
+	TagEntrypoint       uint16 = 0x4550 // 'EP'
+	TagEnvironment      uint16 = 0x4556 // 'EV'
+	TagComment          uint16 = 0x434D // 'CM'
+	TagWindowsInfo      uint16 = 0x4E54 // 'NT'
+	TagExtendedAttrs    uint16 = 0x5841 // 'XA'
+	TagIngestPriority   uint16 = 0x5052 // 'PR'
+	TagTensorInfo       uint16 = 0x5453 // 'TS'
+	TagChunkList        uint16 = 0x434C // 'CL'
+	TagChunkRuns        uint16 = 0x4352 // 'CR'
+	TagSnapshotID       uint16 = 0x5353 // 'SS'
+	TagParentSnapshot   uint16 = 0x5053 // 'PS'
 )

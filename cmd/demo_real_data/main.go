@@ -1,4 +1,8 @@
-package seal
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package main
 
 import (
 	"bytes"
@@ -10,7 +14,6 @@ import (
 
 // GenerateLLMWeights simulates a BF16/INT8 weight matrix with low-rank structure + sparse noise.
 func GenerateLLMWeights(rows, cols, rank int) []byte {
-	// We'll generate a block of size rows * cols.
 	matrix := make([]byte, rows*cols)
 
 	for i := 0; i < rows; i++ {
@@ -31,7 +34,13 @@ func GenerateLLMWeights(rows, cols, rank int) []byte {
 func GenerateJSONLogs(count int) []byte {
 	var buf bytes.Buffer
 	for i := 0; i < count; i++ {
-		buf.WriteString(fmt.Sprintf(`{"timestamp": "2026-09-13T22:30:%02dZ", "level": "INFO", "service": "auth-service", "message": "User login successful", "user_id": 100%d, "ip_address": "192.168.1.%d"}`+"\n", i%60, i%10, i%255))
+		fmt.Fprintf(
+			&buf,
+			`{"timestamp": "2026-09-13T22:30:%02dZ", "level": "INFO", "service": "auth-service", "message": "User login successful", "user_id": 100%d, "ip_address": "192.168.1.%d"}`+"\n",
+			i%60,
+			i%10,
+			i%255,
+		)
 	}
 	return buf.Bytes()
 }
@@ -41,20 +50,19 @@ func main() {
 
 	// Need a 32KiB dictionary for GlobalLRGGF / CompressTTRN
 	dict := make([]byte, 32768)
-	// Fill dict with some arbitrary bytes so it's not all zeros (optional but realistic)
 	for i := range dict {
 		dict[i] = byte(i % 256)
 	}
 
 	// 1. LLM Weight Matrix (TTRN)
 	fmt.Println("\n--- LLM Weight Matrix (Low-Rank + Sparse Noise) ---")
-	llmData := GenerateLLMWeights(256, 256, 4) 
+	llmData := GenerateLLMWeights(256, 256, 4)
 	fmt.Printf("Original Size:   %d bytes\n", len(llmData))
-	
+
 	start := time.Now()
 	compressedLLM, err := przm.CompressWithDict(llmData, 6, dict)
 	duration := time.Since(start)
-	
+
 	if err != nil {
 		fmt.Printf("Compression failed: %v\n", err)
 	} else {
@@ -67,11 +75,11 @@ func main() {
 	fmt.Println("\n--- Repetitive JSON Log Stream ---")
 	jsonData := GenerateJSONLogs(500)
 	fmt.Printf("Original Size:   %d bytes\n", len(jsonData))
-	
+
 	start = time.Now()
 	compressedJSON, err := przm.CompressWithDict(jsonData, 6, dict)
 	duration = time.Since(start)
-	
+
 	if err != nil {
 		fmt.Printf("Compression failed: %v\n", err)
 	} else {

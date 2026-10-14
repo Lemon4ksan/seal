@@ -1,4 +1,4 @@
-﻿// Copyright 2013 The Go Authors. All rights reserved.
+// Copyright 2013 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -10,10 +10,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/lemon4ksan/foundation/text/transform"
+
 	"github.com/lemon4ksan/seal/text/encoding"
 	"github.com/lemon4ksan/seal/text/encoding/charmap"
 	"github.com/lemon4ksan/seal/text/encoding/unicode"
-	"github.com/lemon4ksan/foundation/text/transform"
 )
 
 func Example_decodeWindows1252() {

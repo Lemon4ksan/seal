@@ -1282,7 +1282,11 @@ func TestReadTableWeightErrorBranches(t *testing.T) {
 
 	// 3. Last value not power of two
 	hdrNotPow2 := []byte{129, 0x14}
-	if _, _, err := ReadTable(hdrNotPow2, &dec); err == nil || !strings.Contains(err.Error(), "last value not power of two") {
+	if _, _, err := ReadTable(
+		hdrNotPow2,
+		&dec,
+	); err == nil ||
+		!strings.Contains(err.Error(), "last value not power of two") {
 		t.Fatalf("expected 'last value not power of two' error, got %v", err)
 	}
 
@@ -1292,7 +1296,11 @@ func TestReadTableWeightErrorBranches(t *testing.T) {
 	for i := 1; i < len(hdrTableLogTooBig); i++ {
 		hdrTableLogTooBig[i] = 0xAA // weights 10 and 10
 	}
-	if _, _, err := ReadTable(hdrTableLogTooBig, &dec); err == nil || !strings.Contains(err.Error(), "tableLog too big") {
+	if _, _, err := ReadTable(
+		hdrTableLogTooBig,
+		&dec,
+	); err == nil ||
+		!strings.Contains(err.Error(), "tableLog too big") {
 		t.Fatalf("expected 'tableLog too big' error, got %v", err)
 	}
 }
@@ -1447,6 +1455,7 @@ func TestCountSimplePrevTableEdge(t *testing.T) {
 		t.Fatalf("expected reuse=false when symbol >= len(prevTable)")
 	}
 }
+
 // TestAdversarialHuff0RandomBitstreams feeds arbitrary random bytes to decoders.
 func TestAdversarialHuff0RandomBitstreams(t *testing.T) {
 	lengths := []int{0, 1, 2, 3, 4, 7, 8, 15, 16, 31, 32, 63, 64, 128, 256, 512, 1024, 2048}
@@ -1563,6 +1572,7 @@ func TestAdversarialHuff0StreamTruncation(t *testing.T) {
 		}()
 	}
 }
+
 func BenchmarkHuff0Compress1X(b *testing.B) {
 	data := bytes.Repeat([]byte("Huffman coding benchmarks with zero allocations! 1234567890"), 30)
 	var s Scratch

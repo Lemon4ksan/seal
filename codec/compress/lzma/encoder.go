@@ -524,7 +524,11 @@ func (e *EncoderCore) EncodeChunk(src []byte, startPos, endPos int, re *RangeEnc
 			nextH := (nextU32 * 0x1E35A7BD) >> e.headShift
 			nextMatchPos := e.head[nextH]
 			if nextMatchPos != 0xFFFFFFFF && uint32(pos+1)-nextMatchPos < e.dictSize {
-				nextLen := findMatchLengthPtr(unsafe.Add(srcPtr, pos+1), unsafe.Add(srcPtr, int(nextMatchPos)), min(endPos-(pos+1), srcLen-int(nextMatchPos)))
+				nextLen := findMatchLengthPtr(
+					unsafe.Add(srcPtr, pos+1),
+					unsafe.Add(srcPtr, int(nextMatchPos)),
+					min(endPos-(pos+1), srcLen-int(nextMatchPos)),
+				)
 				if nextLen > cand.length+1 {
 					e.encodeLiteral(&fe, isMatchProb, uint32(pos), prevByte, src[pos], src)
 					prevByte = src[pos]

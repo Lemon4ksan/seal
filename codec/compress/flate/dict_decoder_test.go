@@ -27,7 +27,12 @@ func TestRepro_DictDecoder_WildcopyBufferOverflow_8Bytes(t *testing.T) {
 	assert.Equal(t, 4, copied)
 
 	// Invariant: Memory beyond dd.hist (the canary) must never be modified
-	assert.Equal(t, string(canary), string(buf[64:]), "canary bytes after buffer boundary were overwritten by wildcopy!")
+	assert.Equal(
+		t,
+		string(canary),
+		string(buf[64:]),
+		"canary bytes after buffer boundary were overwritten by wildcopy!",
+	)
 }
 
 func TestRepro_DictDecoder_WildcopyBufferOverflow_16Bytes(t *testing.T) {
@@ -48,5 +53,10 @@ func TestRepro_DictDecoder_WildcopyBufferOverflow_16Bytes(t *testing.T) {
 	assert.Equal(t, 10, copied)
 
 	// Invariant: Memory beyond dd.hist (the canary) must never be modified
-	assert.Equal(t, string(canary), string(buf[64:]), "canary bytes after buffer boundary were overwritten by 16-byte wildcopy!")
+	assert.Equal(
+		t,
+		string(canary),
+		string(buf[64:]),
+		"canary bytes after buffer boundary were overwritten by 16-byte wildcopy!",
+	)
 }

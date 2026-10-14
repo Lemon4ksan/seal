@@ -14,10 +14,8 @@ import (
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 
-var (
-	// ErrInvalidPipelineDescriptor indicates a malformed pipeline header.
-	ErrInvalidPipelineDescriptor = errors.New("filter: invalid pipeline descriptor")
-)
+// ErrInvalidPipelineDescriptor indicates a malformed pipeline header.
+var ErrInvalidPipelineDescriptor = errors.New("filter: invalid pipeline descriptor")
 
 // Stage describes an individual filter step within a pipeline.
 type Stage struct {
@@ -33,7 +31,7 @@ type Pipeline struct {
 }
 
 // NewPipeline creates a new chunk compression pipeline.
-func NewPipeline(codecID uint8, codecLevel uint8, stages ...Stage) *Pipeline {
+func NewPipeline(codecID, codecLevel uint8, stages ...Stage) *Pipeline {
 	return &Pipeline{
 		Stages:     stages,
 		CodecID:    codecID,
@@ -55,9 +53,9 @@ func (p *Pipeline) AddStage(filterID uint8, params ...byte) *Pipeline {
 //   - 4 bytes: Magic 'PIPE' (0x45504950 LE)
 //   - 1 byte:  StageCount (1..255)
 //   - For each stage:
-//       - 1 byte: FilterID
-//       - 1 byte: ParamLen
-//       - N bytes: Params
+//   - 1 byte: FilterID
+//   - 1 byte: ParamLen
+//   - N bytes: Params
 func (p *Pipeline) MarshalDescriptor() []byte {
 	var buf bytes.Buffer
 	buf.Write(spec.MagicPipeline[:])

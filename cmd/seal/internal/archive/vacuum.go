@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -16,8 +16,8 @@ import (
 
 	"github.com/lemon4ksan/ctrl/argkit"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 
@@ -29,6 +29,7 @@ func (c *VacuumCmd) Aliases() []string { return []string{"compact"} }
 func (c *VacuumCmd) Synopsis() string {
 	return "Defragment and repack container, purging unreferenced chunks"
 }
+
 func (c *VacuumCmd) Usage() string {
 	return "aeon vacuum [flags] [-o compacted.eon] <archive.eon>"
 }

@@ -221,7 +221,12 @@ func ReadENCR(r io.Reader) (*ENCR, error) {
 	cipherID := hdr[4]
 	slotCount := int(hdr[5])
 	if slotCount > spec.MaxKeySlots {
-		return nil, fmt.Errorf("%w: key slot count %d exceeds maximum (%d)", spec.ErrInvalidENCR, slotCount, spec.MaxKeySlots)
+		return nil, fmt.Errorf(
+			"%w: key slot count %d exceeds maximum (%d)",
+			spec.ErrInvalidENCR,
+			slotCount,
+			spec.MaxKeySlots,
+		)
 	}
 	var masterIV [16]byte
 	copy(masterIV[:], hdr[8:24])
@@ -358,9 +363,14 @@ func (e *ENCR) UnlockAll(passwords ...string) ([]*VaultDescriptor, error) {
 }
 
 // AddVaultSlot creates and seals a new key slot for the specified vault descriptor.
-func (e *ENCR) AddVaultSlot(password string, vd *VaultDescriptor, memKiB, iter uint32, threads uint8) (*KeySlot, error) {
+func (e *ENCR) AddVaultSlot(
+	password string,
+	vd *VaultDescriptor,
+	memKiB, iter uint32,
+	threads uint8,
+) (*KeySlot, error) {
 	if len(e.Slots) >= 16 {
-		return nil, fmt.Errorf("maximum key slots (16) reached")
+		return nil, errors.New("maximum key slots (16) reached")
 	}
 
 	var salt [32]byte
@@ -422,7 +432,7 @@ func CreateENCR(password string, cipherID uint8, memKiB, iter uint32, threads ui
 // AddKMSSlot wraps the VaultDescriptor using an envelope KEK encrypted via the provided KMS client.
 func (e *ENCR) AddKMSSlot(ctx context.Context, client KMSClient, keyID string, vd *VaultDescriptor) (*KeySlot, error) {
 	if len(e.Slots) >= 16 {
-		return nil, fmt.Errorf("maximum key slots (16) reached")
+		return nil, errors.New("maximum key slots (16) reached")
 	}
 	if client == nil {
 		return nil, errors.New("crypto: nil KMSClient provided")
@@ -462,7 +472,12 @@ func (e *ENCR) AddKMSSlot(ctx context.Context, client KMSClient, keyID string, v
 }
 
 // CreateKMSENCR generates an initial ENCR record with a randomly generated 256-bit DEK wrapped in a KMS KeySlot.
-func CreateKMSENCR(ctx context.Context, client KMSClient, keyID string, cipherID uint8) (*ENCR, *VaultDescriptor, error) {
+func CreateKMSENCR(
+	ctx context.Context,
+	client KMSClient,
+	keyID string,
+	cipherID uint8,
+) (*ENCR, *VaultDescriptor, error) {
 	var dek [32]byte
 	if _, err := io.ReadFull(rand.Reader, dek[:]); err != nil {
 		return nil, nil, fmt.Errorf("generate dek: %w", err)
@@ -492,4 +507,3 @@ func CreateKMSENCR(ctx context.Context, client KMSClient, keyID string, cipherID
 
 	return encr, vd, nil
 }
-

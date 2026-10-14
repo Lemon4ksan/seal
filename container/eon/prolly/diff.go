@@ -123,7 +123,8 @@ func (d *treeDiffer) diffLeaves(a, b *Node) error {
 			// Same key (namespace, name)
 			extA, extB := a.Items[i].Extent, b.Items[j].Extent
 			if extA != nil && extB != nil {
-				if extA.PayloadSize != extB.PayloadSize || extA.Hash != extB.Hash || !bytes.Equal(extA.ExtraTLVs, extB.ExtraTLVs) {
+				if extA.PayloadSize != extB.PayloadSize || extA.Hash != extB.Hash ||
+					!bytes.Equal(extA.ExtraTLVs, extB.ExtraTLVs) {
 					d.res.Modified = append(d.res.Modified, ExtentModification{
 						Old: *extA,
 						New: *extB,

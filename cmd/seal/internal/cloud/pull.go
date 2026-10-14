@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -15,8 +15,8 @@ import (
 
 	"github.com/lemon4ksan/ctrl/argkit"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/objstore"
 )
 
@@ -28,6 +28,7 @@ func (c *PullCmd) Aliases() []string { return nil }
 func (c *PullCmd) Synopsis() string {
 	return "Download and compose remote container from S3/R2/local store into monolithic .eon"
 }
+
 func (c *PullCmd) Usage() string {
 	return "aeon pull [flags] <source-uri> <archive.eon>"
 }
@@ -68,6 +69,11 @@ func (c *PullCmd) Run(ctx context.Context, args []string, stdout, stderr io.Writ
 
 	fi, _ := f.Stat()
 	elapsed := time.Since(start)
-	fmt.Fprintf(stdout, "\n✓ Successfully pulled monolithic archive in %s (%s)\n", elapsed.Round(time.Millisecond), util.FormatHumanBytes(uint64(fi.Size())))
+	fmt.Fprintf(
+		stdout,
+		"\n✓ Successfully pulled monolithic archive in %s (%s)\n",
+		elapsed.Round(time.Millisecond),
+		util.FormatHumanBytes(uint64(fi.Size())),
+	)
 	return nil
 }

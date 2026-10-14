@@ -1,4 +1,8 @@
-﻿// Package lz4stream provides the types that support reading and writing LZ4 data streams.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package lz4stream provides the types that support reading and writing LZ4 data streams.
 package lz4stream
 
 import (

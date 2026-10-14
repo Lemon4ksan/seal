@@ -11,10 +11,11 @@ import (
 	"testing"
 
 	"github.com/lemon4ksan/foundation/crypto/aead"
-	"github.com/lemon4ksan/seal/crypto/envelope"
 	"github.com/lemon4ksan/foundation/crypto/kdf"
-	"github.com/lemon4ksan/sein/crypto/kms"
 	"github.com/lemon4ksan/foundation/silicon/randkit"
+	"github.com/lemon4ksan/sein/crypto/kms"
+
+	"github.com/lemon4ksan/seal/crypto/envelope"
 )
 
 func TestEnvelope_PasswordUnlock(t *testing.T) {

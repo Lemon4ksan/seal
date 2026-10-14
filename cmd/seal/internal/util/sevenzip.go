@@ -14,10 +14,10 @@ import (
 type OverwritePolicy int
 
 const (
-	OverwriteAll OverwritePolicy = iota // -aoa (default)
-	OverwriteSkip                       // -aos
-	OverwriteRenameNew                  // -aou
-	OverwriteRenameExisting             // -aot
+	OverwriteAll            OverwritePolicy = iota // -aoa (default)
+	OverwriteSkip                                  // -aos
+	OverwriteRenameNew                             // -aou
+	OverwriteRenameExisting                        // -aot
 )
 
 func (p OverwritePolicy) String() string {
@@ -198,7 +198,9 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 			}
 
 			// Code page / Encoding: -mcp[=<codepage>] or -mcp:<codepage> or --encoding[=<enc>] or -encoding[=...]
-			if strings.HasPrefix(lower, "-mcp") || strings.HasPrefix(lower, "--encoding") || strings.HasPrefix(lower, "-encoding") || strings.HasPrefix(lower, "-charset") {
+			if strings.HasPrefix(lower, "-mcp") || strings.HasPrefix(lower, "--encoding") ||
+				strings.HasPrefix(lower, "-encoding") ||
+				strings.HasPrefix(lower, "-charset") {
 				var val string
 				if strings.HasPrefix(lower, "--encoding") {
 					val = arg[10:]
@@ -221,7 +223,9 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 			}
 
 			// Solid mode: -ms[=on|off|e|f|<size>] or -solid[=on|off|e|<size>] or --solid[=...]
-			if strings.HasPrefix(lower, "-ms") || strings.HasPrefix(lower, "-solid") || strings.HasPrefix(lower, "--solid") || lower == "--no-solid" {
+			if strings.HasPrefix(lower, "-ms") || strings.HasPrefix(lower, "-solid") ||
+				strings.HasPrefix(lower, "--solid") ||
+				lower == "--no-solid" {
 				if lower == "--no-solid" {
 					s.Solid = false
 					s.SolidExplicit = true
@@ -238,17 +242,18 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 				val = strings.TrimPrefix(val, "=")
 				val = strings.TrimPrefix(val, ":")
 				s.SolidExplicit = true
-				if val == "" || val == "on" || val == "+" {
+				switch val {
+				case "", "on", "+":
 					s.Solid = true
-				} else if val == "off" || val == "-" {
+				case "off", "-":
 					s.Solid = false
-				} else if val == "e" {
+				case "e":
 					s.Solid = true
 					s.SolidExtension = true
-				} else if val == "f" {
+				case "f":
 					s.Solid = true
 					s.SolidSize = 1 << 30 // 1 GiB full solid block
-				} else {
+				default:
 					s.Solid = true
 					if strings.Contains(val, "e") {
 						s.SolidExtension = true
@@ -262,7 +267,8 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 			}
 
 			// Exclude pattern: -x![pat] or -xr![pat] or -x=<pat> or -x <pat>
-			if strings.HasPrefix(lower, "-x!") || strings.HasPrefix(lower, "-xr!") || strings.HasPrefix(lower, "-x=") || lower == "-x" {
+			if strings.HasPrefix(lower, "-x!") || strings.HasPrefix(lower, "-xr!") || strings.HasPrefix(lower, "-x=") ||
+				lower == "-x" {
 				var pat string
 				if strings.HasPrefix(lower, "-xr!") {
 					pat = arg[5:]
@@ -281,7 +287,8 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 			}
 
 			// Include pattern: -i![pat] or -ir![pat] or -i=<pat> or -i <pat>
-			if strings.HasPrefix(lower, "-i!") || strings.HasPrefix(lower, "-ir!") || strings.HasPrefix(lower, "-i=") || lower == "-i" {
+			if strings.HasPrefix(lower, "-i!") || strings.HasPrefix(lower, "-ir!") || strings.HasPrefix(lower, "-i=") ||
+				lower == "-i" {
 				var pat string
 				if strings.HasPrefix(lower, "-ir!") {
 					pat = arg[5:]
@@ -349,7 +356,8 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 			}
 
 			// Stream redirection: -bso[0-2], -bse[0-2], -bsp[0-2]
-			if strings.HasPrefix(lower, "-bso") || strings.HasPrefix(lower, "-bse") || strings.HasPrefix(lower, "-bsp") {
+			if strings.HasPrefix(lower, "-bso") || strings.HasPrefix(lower, "-bse") ||
+				strings.HasPrefix(lower, "-bsp") {
 				streamKey := lower[1:4]
 				valStr := lower[4:]
 				if v, err := strconv.Atoi(valStr); err == nil {
@@ -553,7 +561,7 @@ func MatchPattern(pattern, entryPath string, recurse bool) bool {
 	}
 
 	// If pattern is a directory prefix: "docs/*" matching "docs/a/b.txt"
-	if before, ok :=strings.CutSuffix(normPat, "/*"); ok  {
+	if before, ok := strings.CutSuffix(normPat, "/*"); ok {
 		dirPrefix := before + "/"
 		if strings.HasPrefix(normPath, dirPrefix) {
 			return true

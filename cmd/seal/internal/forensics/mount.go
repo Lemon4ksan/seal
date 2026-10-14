@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -21,8 +21,8 @@ import (
 	"github.com/lemon4ksan/ctrl/argkit"
 	"golang.org/x/net/webdav"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/vfs"
 )
 
@@ -34,6 +34,7 @@ func (c *MountCmd) Aliases() []string { return []string{"m"} }
 func (c *MountCmd) Synopsis() string {
 	return "Mount container as a virtual read-only file system"
 }
+
 func (c *MountCmd) Usage() string {
 	return "aeon mount [flags] <archive.eon> [drive_or_mountpoint]"
 }
@@ -52,7 +53,9 @@ func (c *MountCmd) Run(ctx context.Context, args []string, stdout, stderr io.Wri
 	}
 
 	if len(remaining) < 1 {
-		return errors.New("usage: aeon mount [-p password] [--shares s1,...] [--kms keyID] [-drive Z:] [-addr :8080] <archive.eon> [drive_or_mountpoint]")
+		return errors.New(
+			"usage: aeon mount [-p password] [--shares s1,...] [--kms keyID] [-drive Z:] [-addr :8080] <archive.eon> [drive_or_mountpoint]",
+		)
 	}
 
 	archivePath := remaining[0]
@@ -105,7 +108,12 @@ func (c *MountCmd) Run(ctx context.Context, args []string, stdout, stderr io.Wri
 			_ = exec.Command("net", "use", mountedDrive, "/delete", "/yes").Run()
 			cmd := exec.Command("net", "use", mountedDrive, localURL, "/persistent:no")
 			if out, err := cmd.CombinedOutput(); err != nil {
-				fmt.Fprintf(stdout, "Notice: Windows native drive mapping requires WebClient service (%v: %s)\n", err, strings.TrimSpace(string(out)))
+				fmt.Fprintf(
+					stdout,
+					"Notice: Windows native drive mapping requires WebClient service (%v: %s)\n",
+					err,
+					strings.TrimSpace(string(out)),
+				)
 				fmt.Fprintf(stdout, "        WebDAV server is ACTIVE at: %s\n", localURL)
 				fmt.Fprintf(stdout, "        To access: In Windows Explorer -> 'Map network drive' -> %s\n", localURL)
 				mountedDrive = ""
@@ -115,7 +123,12 @@ func (c *MountCmd) Run(ctx context.Context, args []string, stdout, stderr io.Wri
 		}
 	} else if runtime.GOOS != "windows" && targetMount != "" {
 		fmt.Fprintf(stdout, "Mount point specified: %s\n", targetMount)
-		fmt.Fprintf(stdout, "Mount command: 'mount -t davfs %s %s' or macOS Finder 'Connect to Server'\n", localURL, targetMount)
+		fmt.Fprintf(
+			stdout,
+			"Mount command: 'mount -t davfs %s %s' or macOS Finder 'Connect to Server'\n",
+			localURL,
+			targetMount,
+		)
 	}
 
 	server := &http.Server{

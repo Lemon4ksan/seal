@@ -130,7 +130,7 @@ func DecomposeArchive(archivePath string, store objstore.Store, prefix string) (
 	// 32-byte Trailer
 	var trailer [spec.TrailerSize]byte
 	binary.LittleEndian.PutUint64(trailer[0:8], uint64(centralDirOffset))
-	binary.LittleEndian.PutUint64(trailer[8:16], 0) // RecoveryOffset (0 = absent)
+	binary.LittleEndian.PutUint64(trailer[8:16], 0)  // RecoveryOffset (0 = absent)
 	binary.LittleEndian.PutUint64(trailer[16:24], 0) // ArchiveStartOffset (0 = no stub)
 	binary.LittleEndian.PutUint32(trailer[24:28], uint32(flags))
 	copy(trailer[28:32], spec.MagicTrailer[:])

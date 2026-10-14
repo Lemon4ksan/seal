@@ -60,16 +60,17 @@ func NewHTTPReaderAt(rawURL string, client *http.Client) (*HTTPReaderAt, error) 
 		}
 		defer getResp.Body.Close()
 
-		if getResp.StatusCode == http.StatusPartialContent {
+		switch getResp.StatusCode {
+		case http.StatusPartialContent:
 			cr := getResp.Header.Get("Content-Range")
 			if parts := strings.Split(cr, "/"); len(parts) == 2 {
 				if total, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
 					size = total
 				}
 			}
-		} else if getResp.StatusCode == http.StatusOK {
+		case http.StatusOK:
 			return nil, fmt.Errorf("remote server does not support HTTP Range requests (status %d)", getResp.StatusCode)
-		} else {
+		default:
 			return nil, fmt.Errorf("probe failed with status: %d", getResp.StatusCode)
 		}
 	}

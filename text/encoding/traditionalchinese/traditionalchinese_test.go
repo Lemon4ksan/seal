@@ -1,24 +1,27 @@
-﻿package traditionalchinese
+package traditionalchinese
 
 // Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"testing"
 
+	"github.com/lemon4ksan/foundation/text/transform"
+
 	"github.com/lemon4ksan/seal/text/encoding"
 	"github.com/lemon4ksan/seal/text/encoding/internal"
 	"github.com/lemon4ksan/seal/text/encoding/internal/enctest"
-	"github.com/lemon4ksan/foundation/text/transform"
 )
 
 func dec(e encoding.Encoding) (dir string, t transform.Transformer, err error) {
 	return "Decode", e.NewDecoder(), nil
 }
+
 func enc(e encoding.Encoding) (dir string, t transform.Transformer, err error) {
 	return "Encode", e.NewEncoder(), internal.ErrASCIIReplacement
 }
@@ -47,12 +50,12 @@ func TestNonRepertoire(t *testing.T) {
 			src := []byte(tc.src)
 			for i := 0; i <= len(tc.src); i++ {
 				nDst, nSrc, err := tr.Transform(dst, src[:i], false)
-				if err != nil && err != transform.ErrShortSrc && err != wantErr {
+				if err != nil && !errors.Is(err, transform.ErrShortSrc) && !errors.Is(err, wantErr) {
 					t.Fatalf("error on first call to Transform: %v", err)
 				}
 				n, _, err := tr.Transform(dst[nDst:], src[nSrc:], true)
 				nDst += n
-				if err != wantErr {
+				if !errors.Is(err, wantErr) {
 					t.Fatalf("(%q|%q): got %v; want %v", tc.src[:i], tc.src[i:], err, wantErr)
 				}
 				if got := string(dst[:nDst]); got != tc.want {

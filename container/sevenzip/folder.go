@@ -11,11 +11,10 @@ import (
 	"io"
 
 	"github.com/lemon4ksan/seal/codec/compress/lzma"
-	"github.com/lemon4ksan/seal/codec/filter/bcj"
-	"github.com/lemon4ksan/seal/codec/filter/delta"
-
-	"github.com/lemon4ksan/seal/codec/filter/bcj2"
 	"github.com/lemon4ksan/seal/codec/compress/ppmd"
+	"github.com/lemon4ksan/seal/codec/filter/bcj"
+	"github.com/lemon4ksan/seal/codec/filter/bcj2"
+	"github.com/lemon4ksan/seal/codec/filter/delta"
 )
 
 // ErrUnsupportedMethod indicates a 7z coder method ID not supported.

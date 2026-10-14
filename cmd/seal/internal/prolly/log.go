@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -16,8 +16,8 @@ import (
 
 	"github.com/lemon4ksan/ctrl/argkit"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 )
 
 // LogCmd displays chronological history of snapshots.
@@ -28,6 +28,7 @@ func (c *LogCmd) Aliases() []string { return nil }
 func (c *LogCmd) Synopsis() string {
 	return "Display chronological history of snapshots"
 }
+
 func (c *LogCmd) Usage() string {
 	return "aeon log [flags] <archive.eon>"
 }

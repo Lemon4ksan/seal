@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/klauspost/compress/zstd"
+
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 

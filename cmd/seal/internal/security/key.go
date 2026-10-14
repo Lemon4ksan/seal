@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -14,11 +14,11 @@ import (
 	"strings"
 
 	"github.com/lemon4ksan/ctrl/argkit"
-	"github.com/lemon4ksan/seal/crypto/shamir"
 
-	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/cmd/seal/internal/util"
+	aeon "github.com/lemon4ksan/seal/container/eon/engine"
 	"github.com/lemon4ksan/seal/container/eon/spec"
+	"github.com/lemon4ksan/seal/crypto/shamir"
 )
 
 // KeyCmd manages encryption keys, Shamir Secret Sharing split, and combine operations.
@@ -29,6 +29,7 @@ func (c *KeyCmd) Aliases() []string { return nil }
 func (c *KeyCmd) Synopsis() string {
 	return "Manage encryption keys (Shamir Secret Sharing split/combine, KMS)"
 }
+
 func (c *KeyCmd) Usage() string {
 	return "aeon key <split|combine> [arguments]"
 }
@@ -112,7 +113,13 @@ func (c *KeyCmd) runSplit(ctx context.Context, args []string, stdout, stderr io.
 		return fmt.Errorf("splitting DEK: %w", err)
 	}
 
-	fmt.Fprintf(stdout, "\n✓ Split Master DEK into %d-of-%d Shamir Secret Shares for %s:\n", *threshold, *total, filepath.Base(archivePath))
+	fmt.Fprintf(
+		stdout,
+		"\n✓ Split Master DEK into %d-of-%d Shamir Secret Shares for %s:\n",
+		*threshold,
+		*total,
+		filepath.Base(archivePath),
+	)
 	fmt.Fprintln(stdout, strings.Repeat("-", 72))
 	for i, s := range rawShares {
 		formatted := shamir.FormatShare(s, *threshold, *total)

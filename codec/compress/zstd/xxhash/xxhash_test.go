@@ -1,4 +1,4 @@
-﻿//go:build !race
+//go:build !race
 
 // Copyright (c) 2026 Lemon4ksan All rights reserved.
 // Use of this source code is governed by a BSD-style
@@ -198,6 +198,7 @@ func TestLargeInputExceedingAsmBlock(t *testing.T) {
 		t.Fatalf("streaming large sum mismatch")
 	}
 }
+
 func TestAllocsPerRun_Sum64(t *testing.T) {
 	sample := make([]byte, 1024)
 	allocs := testing.AllocsPerRun(100, func() {
@@ -208,6 +209,7 @@ func TestAllocsPerRun_Sum64(t *testing.T) {
 		t.Errorf("Sum64 allocated %f times per run, want 0", allocs)
 	}
 }
+
 func BenchmarkSum64_16B(b *testing.B) {
 	data := make([]byte, 16)
 	b.ReportAllocs()

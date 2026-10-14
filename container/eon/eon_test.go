@@ -147,7 +147,9 @@ func TestEONRoundtrip_PRZM(t *testing.T) {
 	// Test files with structured patterns (ideal for PRZM)
 	f1, err := file.New("config.json", false)
 	require.NoError(t, err)
-	f1Content := []byte(`{"service":"analytics","timestamp":"2026-09-04T12:00:00Z","events":[{"id":1,"status":"ok"},{"id":2,"status":"ok"}]}`)
+	f1Content := []byte(
+		`{"service":"analytics","timestamp":"2026-09-04T12:00:00Z","events":[{"id":1,"status":"ok"},{"id":2,"status":"ok"}]}`,
+	)
 	f1.WithData(f1Content)
 
 	f2, err := file.New("binary.dat", false)
@@ -285,4 +287,3 @@ func TestEONMultiThreadedPRZM_LargeCorpus(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, data[1024*1024:], got2)
 }
-
