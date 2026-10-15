@@ -758,16 +758,41 @@ func (r *Reader) OpenSnapshot(snapshotID string) (*Reader, error) {
 	}
 
 	snapIdx := &catalog.Index{Extents: extents}
-	clone := *r
-	clone.indx = snapIdx
-	clone.prollyTree = tree
-	clone.activeSnapID = s.ID
-	clone.extentMap = make(map[string]catalog.Extent, len(extents))
+	clone := &Reader{
+		rAt:              r.rAt,
+		size:             r.size,
+		blockShift:       r.blockShift,
+		blockSize:        r.blockSize,
+		profile:          r.profile,
+		headerFlags:      r.headerFlags,
+		mmapData:         r.mmapData,
+		ctoc:             r.ctoc,
+		indx:             snapIdx,
+		chunkHashes:      r.chunkHashes,
+		dsig:             r.dsig,
+		dirDigest:        r.dirDigest,
+		prollyTree:       tree,
+		treeStore:        r.treeStore,
+		snapshots:        r.snapshots,
+		activeSnapID:     s.ID,
+		encr:             r.encr,
+		dek:              r.dek,
+		chunkAEAD:        r.chunkAEAD,
+		chunkAEADs:       r.chunkAEADs,
+		dirAEAD:          r.dirAEAD,
+		vaultDescriptors: r.vaultDescriptors,
+		unlockedVaults:   r.unlockedVaults,
+		chunkCache:       make(map[uint32][]byte),
+		chunkStore:       r.chunkStore,
+		chunkPrefix:      r.chunkPrefix,
+		cacheDir:         r.cacheDir,
+		extentMap:        make(map[string]catalog.Extent, len(extents)),
+	}
 	for _, ext := range extents {
 		clone.extentMap[ext.Name] = ext
 	}
 
-	return &clone, nil
+	return clone, nil
 }
 
 // Extents returns all raw universal extents recorded in the container.
