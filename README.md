@@ -55,13 +55,13 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Pack a directory into an optimized archive (.eon, .zip, .tar.gz, .7z)
-	if err := seal.ArchiveDir(ctx, "./dist", seal.ToFilePath("release.eon")); err != nil {
+	// Pack a directory into an optimized archive (.eon, .zip, .tar.gz, .7z auto-detected from extension)
+	if err := seal.Compress(ctx, "./dist", "release.eon"); err != nil {
 		log.Fatal(err)
 	}
 
 	// Safe extract (Zip Slip & Decompression Bomb shields active by default)
-	if err := seal.Unarchive(ctx, seal.FromFilePath("release.eon"), "./output"); err != nil {
+	if err := seal.Extract(ctx, "release.eon", "./output"); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -75,16 +75,19 @@ Read targeted files from huge archives without decompressing the entire file:
 ctx := context.Background()
 
 // Read a single configuration file directly into memory in <2ms
-data, err := seal.ReadFile(ctx, seal.FromFilePath("bundle.eon"), "configs/app.json")
+data, err := seal.ReadFile(ctx, "bundle.eon", "configs/app.json")
 if err != nil {
 	log.Fatal(err)
 }
 
-// Verify payload integrity across all entries via BLAKE3-256
-err = seal.Verify(ctx, seal.FromFilePath("bundle.eon"))
+// Or unmarshal JSON directly into a struct with generics
+cfg, err := seal.ReadTo[AppConfig](ctx, "bundle.eon", "configs/app.json")
+
+// Verify payload integrity across all entries
+err = seal.Verify(ctx, "bundle.eon")
 
 // Render an ASCII hierarchy tree of the archive
-tree, _ := seal.Tree(ctx, seal.FromFilePath("bundle.eon"))
+tree, _ := seal.Tree(ctx, "bundle.eon")
 fmt.Println(tree)
 ```
 

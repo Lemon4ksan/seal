@@ -55,13 +55,13 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Упаковать директорию в высокоэффективный контейнер (.eon, .zip, .tar.gz, .7z)
-	if err := seal.ArchiveDir(ctx, "./dist", seal.ToFilePath("release.eon")); err != nil {
+	// Упаковать директорию в высокоэффективный контейнер (.eon, .zip, .tar.gz, .7z автоопределяются по расширению)
+	if err := seal.Compress(ctx, "./dist", "release.eon"); err != nil {
 		log.Fatal(err)
 	}
 
 	// Безопасная распаковка (защита Zip Slip и бомб активна по умолчанию)
-	if err := seal.Unarchive(ctx, seal.FromFilePath("release.eon"), "./output"); err != nil {
+	if err := seal.Extract(ctx, "release.eon", "./output"); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -75,16 +75,19 @@ func main() {
 ctx := context.Background()
 
 // Чтение конфигурационного файла напрямую в память менее чем за 2 мс
-data, err := seal.ReadFile(ctx, seal.FromFilePath("bundle.eon"), "configs/app.json")
+data, err := seal.ReadFile(ctx, "bundle.eon", "configs/app.json")
 if err != nil {
 	log.Fatal(err)
 }
 
-// Проверка целостности всех данных через криптографическое дерево BLAKE3-256
-err = seal.Verify(ctx, seal.FromFilePath("bundle.eon"))
+// Или generic-десериализация JSON напрямую в структуру
+cfg, err := seal.ReadTo[AppConfig](ctx, "bundle.eon", "configs/app.json")
+
+// Проверка целостности всех данных
+err = seal.Verify(ctx, "bundle.eon")
 
 // Отрисовка дерева иерархии архива в виде ASCII
-tree, _ := seal.Tree(ctx, seal.FromFilePath("bundle.eon"))
+tree, _ := seal.Tree(ctx, "bundle.eon")
 fmt.Println(tree)
 ```
 

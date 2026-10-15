@@ -5,7 +5,6 @@
 package crypto
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 
@@ -48,11 +47,7 @@ func DeriveChunkNonce(masterIV []byte, chunkIdx uint32) []byte {
 	copy(info[0:6], "chunk-")
 	binary.BigEndian.PutUint32(info[6:10], chunkIdx)
 
-	nonce, err := kdf.Expand(sha256.New, masterIV, info[:], 12)
-	if err != nil {
-		panic(fmt.Sprintf("crypto: derive chunk nonce: %v", err))
-	}
-	return nonce
+	return kdf.DeriveSubkey(masterIV, string(info[:]), 12)
 }
 
 // DeriveDirectoryNonce derives a deterministic 12-byte AEAD nonce for the Central Directory.
