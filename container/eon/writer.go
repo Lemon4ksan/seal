@@ -393,9 +393,9 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 						}
 						var pxTLV [16]byte
 						binary.LittleEndian.PutUint16(pxTLV[0:2], TagPOSIXPermissions)
-						binary.LittleEndian.PutUint16(pxTLV[2:4], 8)
-						binary.LittleEndian.PutUint32(pxTLV[4:8], 0)
-						binary.LittleEndian.PutUint32(pxTLV[8:12], mode)
+						binary.LittleEndian.PutUint16(pxTLV[2:4], 12)
+						binary.LittleEndian.PutUint32(pxTLV[4:8], mode)
+						binary.LittleEndian.PutUint32(pxTLV[8:12], 0)
 						binary.LittleEndian.PutUint32(pxTLV[12:16], 0)
 
 						if task.isDir || task.totalSize == 0 {

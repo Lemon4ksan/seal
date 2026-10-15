@@ -10,13 +10,13 @@ _«Entropy destroys all data — let **eon** preserve reality for eternity.»_
 [![Go Reference](https://img.shields.io/badge/godoc-reference-007d9c?style=flat-square)](https://pkg.go.dev/github.com/lemon4ksan/seal)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
 [![Zero-Alloc](https://img.shields.io/badge/memory-0%20B%2Fop%20%7C%200%20allocs-brightgreen?style=flat-square)](#-performance--benchmarks)
-[![Deterministic RAM](https://img.shields.io/badge/ram%20ceiling-%E2%89%A4%2032%20MB-blueviolet?style=flat-square)](EON_SPECIFICATION.md)
-[![Self-Healing](https://img.shields.io/badge/resilience-GF(2%5E8)%20Reed--Solomon-orange?style=flat-square)](EON_SPECIFICATION.md)
+[![Deterministic RAM](https://img.shields.io/badge/ram%20ceiling-%E2%89%A4%2032%20MB-blueviolet?style=flat-square)](docs/EON_SPEC.md)
+[![Self-Healing](https://img.shields.io/badge/resilience-GF(2%5E8)%20Reed--Solomon-orange?style=flat-square)](docs/EON_SPEC.md)
 [![Security](https://img.shields.io/badge/security-Zip%20Slip%20%26%20Bomb%20Proof-success?style=flat-square)](#security-by-default)
 
 **seal** is an ultra-fast, lock-free archive engine, compression substrate, and storage framework for Go 1.27+. It powers the next-generation **EON (`.eon`)** container format — featuring mathematical Cauchy Reed-Solomon self-healing, $O(1)$ LBA page seeking, sub-chunk micro-framing (down to $\le 64$ KB RAM), phase-based temporal tiering, and single-instance deduplication.
 
-#### English • [Русский](README_RU.md) • [EON Format Specification](EON_SPECIFICATION.md) • [Architecture Concept](archive) • [Virtual Filesystem](vfs)
+#### English • [Русский](README_RU.md) • [EON Format Specification](docs/EON_SPEC.md) • [Architecture Concept](archive) • [Virtual Filesystem](vfs)
 
 </div>
 
@@ -55,13 +55,13 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Pack a directory into an optimized archive (.seal, .zip, .tar.gz, .7z)
-	if err := seal.ArchiveDir(ctx, "./dist", seal.ToFilePath("release.seal")); err != nil {
+	// Pack a directory into an optimized archive (.eon, .zip, .tar.gz, .7z)
+	if err := seal.ArchiveDir(ctx, "./dist", seal.ToFilePath("release.eon")); err != nil {
 		log.Fatal(err)
 	}
 
 	// Safe extract (Zip Slip & Decompression Bomb shields active by default)
-	if err := seal.Unarchive(ctx, seal.FromFilePath("release.seal"), "./output"); err != nil {
+	if err := seal.Unarchive(ctx, seal.FromFilePath("release.eon"), "./output"); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -75,16 +75,16 @@ Read targeted files from huge archives without decompressing the entire file:
 ctx := context.Background()
 
 // Read a single configuration file directly into memory in <2ms
-data, err := seal.ReadFile(ctx, seal.FromFilePath("bundle.seal"), "configs/app.json")
+data, err := seal.ReadFile(ctx, seal.FromFilePath("bundle.eon"), "configs/app.json")
 if err != nil {
 	log.Fatal(err)
 }
 
 // Verify payload integrity across all entries via BLAKE3-256
-err = seal.Verify(ctx, seal.FromFilePath("bundle.seal"))
+err = seal.Verify(ctx, seal.FromFilePath("bundle.eon"))
 
 // Render an ASCII hierarchy tree of the archive
-tree, _ := seal.Tree(ctx, seal.FromFilePath("bundle.seal"))
+tree, _ := seal.Tree(ctx, seal.FromFilePath("bundle.eon"))
 fmt.Println(tree)
 ```
 
@@ -123,7 +123,7 @@ _, err = archive.WriteTo(ctx, w)
 
 ## Feature & Format Matrix
 
-| Feature / Capability | Go `archive/zip` | Go `archive/tar` | 7-Zip (.7z) | OCI Layer (`.tar.gz`) | **SEAL (`.seal`)** |
+| Feature / Capability | Go `archive/zip` | Go `archive/tar` | 7-Zip (.7z) | OCI Layer (`.tar.gz`) | **EON (`.eon`)** |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Instant Random Access ($O(1)$)** | ✓ (Slow tables) | ✗ (Full scan) | ✗ (Monolithic solid) | ✗ (Full scan) | **✓ (Footer + CTOC)** |
 | **Deterministic RAM Ceiling** | ✗ (Unbounded) | ✗ (Unbounded) | ✗ (Up to 4+ GB) | ✗ (Unbounded) | **✓ (Strictly $\le$ 32 MB)** |
@@ -155,7 +155,7 @@ Benchmarked on 12-thread AMD64 (Go 1.27) with a real-world multi-file project da
 
 | Engine / Substrate | Throughput | Allocations | Memory / op | Formats | Zip Slip Shield |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **`seal` (Zero-Alloc)** | **1.82 GB/s** | **0 allocs/op** | **0 B/op** | **SEAL / 7Z / ZIP / TAR / ZST** | **✓ (Built-in)** |
+| **`seal` (Zero-Alloc)** | **1.82 GB/s** | **0 allocs/op** | **0 B/op** | **EON / 7Z / ZIP / TAR / ZST** | **✓ (Built-in)** |
 | Go `archive/zip` | 680 MB/s | 14 allocs/op | 1,420 B/op | ZIP only | ✗ (Vulnerable) |
 | Go `archive/tar` | 710 MB/s | 12 allocs/op | 1,180 B/op | TAR only | ✗ (Vulnerable) |
 | `mholt/archiver/v4` | 520 MB/s | 38 allocs/op | 4,280 B/op | Multi | ⚠️ (Manual) |
@@ -173,7 +173,7 @@ Benchmarked on 12-thread AMD64 (Go 1.27) with a real-world multi-file project da
 Handle archive edge cases with built-in predicate helpers:
 
 ```go
-data, err := seal.ReadFile(seal.FromFilePath("archive.seal"), "app.json")
+data, err := seal.ReadFile(ctx, seal.FromFilePath("archive.eon"), "app.json")
 if err != nil {
 	switch {
 	case seal.IsNotFound(err):
@@ -195,22 +195,22 @@ if err != nil {
 `seal` includes a self-contained command-line tool:
 
 ```bash
-# Pack a directory into a high-performance .seal container
-seal create -o bundle.seal -l 9 ./dist
+# Pack a directory into a high-performance .eon container
+seal create -o bundle.eon -l 9 ./dist
 
 # Inspect entries, compression ratios, and deduplicated slices
-seal list bundle.seal
+seal list bundle.eon
 
 # Extract single entry directly to stdout in O(1) time
-seal cat bundle.seal config.json
+seal cat bundle.eon config.json
 
 # Check cryptographic integrity & self-heal damaged blocks
-seal test bundle.seal
+seal test bundle.eon
 
 # Render terminal ASCII tree
-seal tree bundle.seal
+seal tree bundle.eon
 ```
 
-## License
+## 📄 License
 
-`seal` is distributed under the [BSD-3-Clause License](LICENSE). Copyright (c) 2026 Lemon4ksan. All rights reserved.
+This project is licensed under the **BSD 3-Clause License**. See the [LICENSE](LICENSE) file for details.

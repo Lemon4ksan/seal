@@ -33,9 +33,9 @@ func NewZipCryptoState(password string) *ZipCryptoState {
 }
 
 func (s *ZipCryptoState) UpdateKeys(b byte) {
-	s.key0 = crc32.Update(s.key0, crc32.IEEETable, []byte{b})
+	s.key0 = (s.key0 >> 8) ^ crc32.IEEETable[byte(s.key0)^b]
 	s.key1 = (s.key1+(s.key0&0xFF))*134775813 + 1
-	s.key2 = crc32.Update(s.key2, crc32.IEEETable, []byte{byte(s.key1 >> 24)})
+	s.key2 = (s.key2 >> 8) ^ crc32.IEEETable[byte(s.key2)^byte(s.key1>>24)]
 }
 
 func (s *ZipCryptoState) DecryptByte() byte {

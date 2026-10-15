@@ -13,6 +13,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"slices"
 	"strings"
 
 	"github.com/lemon4ksan/seal/container"
@@ -98,7 +100,14 @@ func EncodeBundle(entries map[ID][]byte) []byte {
 	binary.LittleEndian.PutUint16(hdr[2:4], uint16(len(entries)))
 	buf.Write(hdr[:])
 
-	for id, data := range entries {
+	ids := make([]ID, 0, len(entries))
+	for id := range entries {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+
+	for _, id := range ids {
+		data := entries[id]
 		idBytes := []byte(id)
 		var entryHdr [6]byte
 		binary.LittleEndian.PutUint16(entryHdr[0:2], uint16(len(idBytes)))
@@ -124,7 +133,7 @@ func DecodeBundle(data []byte) (map[ID][]byte, error) {
 		r := bytes.NewReader(data[idx+4:])
 
 		var hdr [4]byte
-		if _, err := r.Read(hdr[:]); err != nil {
+		if _, err := io.ReadFull(r, hdr[:]); err != nil {
 			return nil, fmt.Errorf("%w: header truncated", ErrCorruptedBundle)
 		}
 
@@ -137,19 +146,23 @@ func DecodeBundle(data []byte) (map[ID][]byte, error) {
 		result := make(map[ID][]byte, count)
 		for i := 0; i < int(count); i++ {
 			var entryHdr [6]byte
-			if _, err := r.Read(entryHdr[:]); err != nil {
+			if _, err := io.ReadFull(r, entryHdr[:]); err != nil {
 				return nil, fmt.Errorf("%w: entry %d truncated", ErrCorruptedBundle, i)
 			}
 			idLen := binary.LittleEndian.Uint16(entryHdr[0:2])
 			dataLen := binary.LittleEndian.Uint32(entryHdr[2:6])
 
+			if idLen == 0 || int64(idLen)+int64(dataLen) > int64(r.Len()) {
+				return nil, fmt.Errorf("%w: invalid entry size in bundle", ErrCorruptedBundle)
+			}
+
 			idBuf := make([]byte, idLen)
-			if _, err := r.Read(idBuf); err != nil {
+			if _, err := io.ReadFull(r, idBuf); err != nil {
 				return nil, fmt.Errorf("%w: entry ID truncated", ErrCorruptedBundle)
 			}
 
 			payload := make([]byte, dataLen)
-			if _, err := r.Read(payload); err != nil {
+			if _, err := io.ReadFull(r, payload); err != nil {
 				return nil, fmt.Errorf("%w: entry payload truncated", ErrCorruptedBundle)
 			}
 

@@ -319,6 +319,9 @@ func (f *File) IsImplicit() bool {
 // SetName updates the entry path.
 func (f *File) SetName(name string) {
 	clean := vfs.CleanPath(name)
+	if f.IsDir() && !strings.HasSuffix(clean, "/") {
+		clean += "/"
+	}
 	f.updateMeta(func(m *fileMeta) {
 		m.name = clean
 	})

@@ -184,7 +184,7 @@ func DetectExtension(filename string) Type {
 		return Cpio
 	case strings.HasSuffix(lower, ".ar"), strings.HasSuffix(lower, ".deb"), strings.HasSuffix(lower, ".a"):
 		return Ar
-	case strings.HasSuffix(lower, ".eon"):
+	case strings.HasSuffix(lower, ".eon"), strings.HasSuffix(lower, ".seal"):
 		return Eon
 	default:
 		ext := filepath.Ext(lower)

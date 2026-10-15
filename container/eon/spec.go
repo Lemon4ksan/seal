@@ -47,8 +47,8 @@ const (
 
 // Format version.
 const (
-	VersionMajor = 1
-	VersionMinor = 0
+	VersionMajor = 0
+	VersionMinor = 1
 )
 
 // Substrate profiles.

@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -23,28 +22,13 @@ import (
 
 	"github.com/lemon4ksan/seal/container/eon"
 	"github.com/lemon4ksan/seal/file"
+	"github.com/lemon4ksan/seal/vfs"
 )
 
 type ProcessCPUSnapshot struct {
 	WallTime   time.Time
 	KernelTime time.Duration
 	UserTime   time.Duration
-}
-
-func getCPUSnapshot() ProcessCPUSnapshot {
-	h, err := syscall.GetCurrentProcess()
-	if err != nil {
-		return ProcessCPUSnapshot{WallTime: time.Now()}
-	}
-	var creation, exit, kernel, user syscall.Filetime
-	if err := syscall.GetProcessTimes(h, &creation, &exit, &kernel, &user); err != nil {
-		return ProcessCPUSnapshot{WallTime: time.Now()}
-	}
-	return ProcessCPUSnapshot{
-		WallTime:   time.Now(),
-		KernelTime: time.Duration(kernel.Nanoseconds()),
-		UserTime:   time.Duration(user.Nanoseconds()),
-	}
 }
 
 func formatBytes(b int64) string {
@@ -432,26 +416,36 @@ func launchEmbedded(target *file.File, allFiles []*file.File) {
 
 	// Extract files into temp sandbox
 	for _, f := range allFiles {
-		destPath := filepath.Join(tempDir, filepath.FromSlash(f.Name()))
-		if f.IsDir() {
-			os.MkdirAll(destPath, 0o755)
+		destPath, err := vfs.SafePath(tempDir, f.Name())
+		if err != nil {
 			continue
 		}
-		os.MkdirAll(filepath.Dir(destPath), 0o755)
+		if f.IsDir() {
+			_ = os.MkdirAll(destPath, 0o755)
+			continue
+		}
+		_ = os.MkdirAll(filepath.Dir(destPath), 0o755)
 
 		rc, err := f.Open()
 		if err != nil {
 			continue
 		}
-		outF, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
-		if err == nil {
-			io.Copy(outF, rc)
-			outF.Close()
+		mode := f.Mode().Perm()
+		if mode == 0 {
+			mode = 0o755
 		}
-		rc.Close()
+		outF, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		if err == nil {
+			_, _ = io.Copy(outF, rc)
+			_ = outF.Close()
+		}
+		_ = rc.Close()
 	}
 
-	targetExe := filepath.Join(tempDir, filepath.FromSlash(target.Name()))
+	targetExe, err := vfs.SafePath(tempDir, target.Name())
+	if err != nil {
+		targetExe = filepath.Join(tempDir, filepath.FromSlash(target.Name()))
+	}
 	fmt.Printf("%s Launching %s...\n", tuikit.BadgePass(), targetExe)
 
 	cmd := exec.Command(targetExe)

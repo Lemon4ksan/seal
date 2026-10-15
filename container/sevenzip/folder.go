@@ -144,6 +144,9 @@ func decodeSingleCoder(coder CoderInfo, in io.Reader, unpackSizes []uint64, pass
 	case MethodBCJ:
 		return io.NopCloser(bcj.NewReader(in, bcj.X86)), nil
 
+	case MethodARM:
+		return io.NopCloser(bcj.NewReader(in, bcj.ARM)), nil
+
 	case MethodDelta:
 		distance := 1
 		if len(coder.Properties) > 0 {

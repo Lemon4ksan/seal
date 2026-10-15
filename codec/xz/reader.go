@@ -122,11 +122,10 @@ func (zr *Reader) readNextBlock() error {
 	}
 
 	// 2. Block Header
-	encodedHeaderSize := b0
-	realHeaderSize := int(encodedHeaderSize+1) * 4
+	realHeaderSize := (int(b0) + 1) * 4
 
 	headerBuf := make([]byte, realHeaderSize)
-	headerBuf[0] = encodedHeaderSize
+	headerBuf[0] = b0
 	for i := 1; i < realHeaderSize; i++ {
 		b, err := zr.r.ReadByte()
 		if err != nil {

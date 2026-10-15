@@ -15,8 +15,15 @@ coverage.*
 profile.cov
 *.pprof
 
-# Benchmark archives and scratch benchmarks
+# Benchmark data and temporary artifacts
+benchmark_data/
 *.7z
 *.eon
 .tmp/
 bin/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

@@ -106,6 +106,12 @@ func resolveSourceContainer(r io.Reader, rAt io.ReaderAt) (container.Container, 
 	if rAt != nil {
 		n, _ := rAt.ReadAt(header[:], 0)
 		t := container.SniffHeader(header[:n])
+		if t == container.Unknown {
+			var isoHdr [6]byte
+			if readN, _ := rAt.ReadAt(isoHdr[:], 32768); readN == 6 && string(isoHdr[1:6]) == "CD001" {
+				t = container.Iso
+			}
+		}
 		if eng, err := DefaultContainer(t); err == nil {
 			return eng, r
 		}
@@ -311,15 +317,55 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 
 					// Handle symlinks
 					if f.Mode()&os.ModeSymlink != 0 {
+						if !procCfg.security.AllowSymlinks {
+							errMu.Lock()
+							errs = append(errs, wrapErr("symlink", f.Name(), errors.New("seal: symlinks are disabled by security policy")))
+							errMu.Unlock()
+							if procCfg.onDone != nil {
+								procCfg.onDone(f.Name(), errors.New("seal: symlinks are disabled"))
+							}
+							continue
+						}
 						targetBytes, err := io.ReadAll(rc)
 						_ = rc.Close()
-						if err == nil {
-							_ = os.Remove(targetPath)
-							if err := os.Symlink(string(targetBytes), targetPath); err != nil {
-								errMu.Lock()
-								errs = append(errs, wrapErr("symlink", f.Name(), err))
-								errMu.Unlock()
+						if err != nil {
+							errMu.Lock()
+							errs = append(errs, wrapErr("symlink_read", f.Name(), err))
+							errMu.Unlock()
+							if procCfg.onDone != nil {
+								procCfg.onDone(f.Name(), err)
 							}
+							continue
+						}
+
+						symTarget := string(targetBytes)
+						resolvedTarget := symTarget
+						if !filepath.IsAbs(resolvedTarget) {
+							resolvedTarget = filepath.Join(filepath.Dir(targetPath), resolvedTarget)
+						}
+						cleanResolved := filepath.Clean(resolvedTarget)
+						cleanDest := filepath.Clean(destDir)
+						rel, relErr := filepath.Rel(cleanDest, cleanResolved)
+						if relErr != nil || strings.HasPrefix(rel, "..") || rel == ".." {
+							errMu.Lock()
+							errs = append(errs, wrapErr("symlink_escape", f.Name(), ErrInsecurePath))
+							errMu.Unlock()
+							if procCfg.onDone != nil {
+								procCfg.onDone(f.Name(), ErrInsecurePath)
+							}
+							continue
+						}
+
+						_ = os.Remove(targetPath)
+						var symErr error
+						if err := os.Symlink(symTarget, targetPath); err != nil {
+							symErr = err
+							errMu.Lock()
+							errs = append(errs, wrapErr("symlink", f.Name(), err))
+							errMu.Unlock()
+						}
+						if procCfg.onDone != nil {
+							procCfg.onDone(f.Name(), symErr)
 						}
 						continue
 					}
@@ -375,11 +421,6 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 						}
 					}
 
-					if copyErr != nil {
-						errMu.Lock()
-						errs = append(errs, wrapErr("write", f.Name(), copyErr))
-						errMu.Unlock()
-					}
 					if procCfg.onDone != nil {
 						procCfg.onDone(f.Name(), copyErr)
 					}
@@ -862,6 +903,12 @@ func ResumeArchive(ctx context.Context, archivePath string, opts ...Option) erro
 	var header [512]byte
 	n, _ := f.ReadAt(header[:], 0)
 	cType := container.SniffHeader(header[:n])
+	if cType == container.Unknown {
+		var isoHdr [6]byte
+		if readN, _ := f.ReadAt(isoHdr[:], 32768); readN == 6 && string(isoHdr[1:6]) == "CD001" {
+			cType = container.Iso
+		}
+	}
 	cnt, err := DefaultContainer(cType)
 	if err != nil {
 		_ = f.Close()
@@ -901,7 +948,7 @@ func ResumeArchive(ctx context.Context, archivePath string, opts ...Option) erro
 		arc.Add(entry)
 	}
 
-	tmpOut := archivePath + ".tmp.seal"
+	tmpOut := archivePath + ".tmp"
 	outF, err := os.Create(tmpOut)
 	if err != nil {
 		_ = f.Close()
@@ -963,6 +1010,12 @@ func VerifySignature(ctx context.Context, archivePath string, pubKey ed25519.Pub
 	var header [512]byte
 	n, _ := f.ReadAt(header[:], 0)
 	cType := container.SniffHeader(header[:n])
+	if cType == container.Unknown {
+		var isoHdr [6]byte
+		if readN, _ := f.ReadAt(isoHdr[:], 32768); readN == 6 && string(isoHdr[1:6]) == "CD001" {
+			cType = container.Iso
+		}
+	}
 
 	info := extension.ArchiveInfo{
 		Format:     cType,

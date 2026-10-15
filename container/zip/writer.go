@@ -128,6 +128,14 @@ func (w *Writer) WriteEntry(entry *file.File, src io.Reader) error {
 
 	entry.SetLocalHeaderOffset(w.offset)
 
+	if !entry.IsDir() && entry.Encryption() == file.NotEncrypted && (entry.Password() != "" || w.globalPassword != "") {
+		pwd := entry.Password()
+		if pwd == "" {
+			pwd = w.globalPassword
+		}
+		entry.SetEncryption(file.AES256, pwd)
+	}
+
 	// Check if we can stream directly via Data Descriptor (Bit 3) or if seeker is available
 	if w.seeker == nil {
 		return w.writeStreaming(entry, src)
@@ -185,6 +193,9 @@ func (w *Writer) writeStreaming(entry *file.File, src io.Reader) error {
 	var encCloser io.Closer
 	if cipher := ResolveCipher(entry.Encryption()); cipher != nil {
 		pwd := generic.Coalesce(entry.Password(), w.globalPassword)
+		if pwd == "" {
+			return ErrPasswordMismatch
+		}
 		_, dosTime := timeToMsDos(entry.ModTime())
 		checkByte := byte(dosTime >> 8)
 		res, err := cipher.Encrypt(compWriter, pwd, entry.Method(), getAESStrength(entry.Encryption()), checkByte)
@@ -227,9 +238,11 @@ func (w *Writer) writeStreaming(entry *file.File, src io.Reader) error {
 
 func (w *Writer) writeSeekable(entry *file.File, src io.Reader) error {
 	headerOffset := w.offset
-	if err := w.writeLocalFileHeader(entry, 0, 0, false); err != nil {
+	initialUncomp := entry.UncompressedSize()
+	if err := w.writeLocalFileHeader(entry, 0, initialUncomp, false); err != nil {
 		return err
 	}
+	initialHdrLen := w.offset - headerOffset
 
 	crcR := pool.GetCRCReader(src)
 	defer pool.PutCRCReader(crcR)
@@ -238,20 +251,19 @@ func (w *Writer) writeSeekable(entry *file.File, src io.Reader) error {
 	var compWriter io.Writer = byteCounter
 
 	var encCloser io.Closer
-	if entry.Encryption() == file.AES256 {
-		pwd := entry.Password()
-		if pwd == "" {
-			pwd = w.globalPassword
-		}
+	if cipher := ResolveCipher(entry.Encryption()); cipher != nil {
+		pwd := generic.Coalesce(entry.Password(), w.globalPassword)
 		if pwd == "" {
 			return ErrPasswordMismatch
 		}
-		aesW, err := NewAES256Writer(compWriter, pwd)
+		_, dosTime := timeToMsDos(entry.ModTime())
+		checkByte := byte(dosTime >> 8)
+		res, err := cipher.Encrypt(compWriter, pwd, entry.Method(), getAESStrength(entry.Encryption()), checkByte)
 		if err != nil {
 			return err
 		}
-		compWriter = aesW
-		encCloser = aesW
+		compWriter = res.Writer
+		encCloser = res.Writer
 	}
 
 	level := entry.Level()
@@ -286,6 +298,14 @@ func (w *Writer) writeSeekable(entry *file.File, src io.Reader) error {
 
 	patchedLFH := w.createLocalFileHeader(entry, entry.CompressedSize(), entry.UncompressedSize(), false)
 	patchedHdr := patchedLFH.AppendBytes(nil)
+
+	if int64(len(patchedHdr)) != initialHdrLen {
+		return fmt.Errorf(
+			"zip: seekable entry header size changed from %d to %d bytes (Zip64 transition requires known uncompressed size > 4GB or streaming writer)",
+			initialHdrLen,
+			len(patchedHdr),
+		)
+	}
 
 	if _, err := w.seeker.Write(patchedHdr); err != nil {
 		return fmt.Errorf("write patched header: %w", err)

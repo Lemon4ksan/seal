@@ -66,6 +66,9 @@ func NewDecoderCore(lc, lp, pb uint, dictSize uint32, uncompressedSize uint64) *
 	if dictSize < 4096 {
 		dictSize = 4096
 	}
+	if dictSize > 0x40000000 {
+		dictSize = 0x40000000
+	}
 	// Round up window allocation to nearest power of 2 for safe bitmask operations
 	allocSize := max(uint32(1)<<bits.Len32(dictSize-1), 4096)
 	d := &DecoderCore{
@@ -571,7 +574,7 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 		}
 		// posState isolates the lowest pb bits of uncompressed stream offset.
 		// This selects the probability sub-model aligned with 2/4/8 byte struct boundaries.
-		posState := int(uint32(totalWritten) & posMask)
+		posState := int(winPos & posMask)
 
 		// isMatch determines whether the next token is a Literal (0) or a Match/Repetition (1).
 		bit := fd.decodeBit(&d.isMatch[state][posState])
@@ -579,7 +582,7 @@ func (d *DecoderCore) DecodeToSlice(rd *RangeDecoder, dest []byte, maxUnpack uin
 		if bit == 0 {
 			// Literal decoding pathway:
 			// Select literal sub-coder using the high lc bits of the previous byte and low lp bits of position.
-			litIdx := (((winPos + uint32(totalWritten)) & lpMask) << lc) + (uint32(prevByte) >> prevShift)
+			litIdx := ((winPos & lpMask) << lc) + (uint32(prevByte) >> prevShift)
 			probs := &d.litProbs[litIdx]
 			var symbol uint32 = 1
 

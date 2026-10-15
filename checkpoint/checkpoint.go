@@ -89,7 +89,7 @@ func Decode(data []byte) (*State, error) {
 		return nil, ErrInvalidMagic
 	}
 
-	if s.Version > CurrentVersion {
+	if s.Version == 0 || s.Version > CurrentVersion {
 		return nil, fmt.Errorf("%w: got %d, max supported %d", ErrUnsupportedVersion, s.Version, CurrentVersion)
 	}
 
@@ -102,6 +102,18 @@ func StripCheckpoint(comment string) string {
 	if idx == -1 {
 		return comment
 	}
+	// Check if this is part of a JSON checkpoint object starting with '{'
+	jsonStart := strings.LastIndex(comment[:idx], "{")
+	if jsonStart != -1 {
+		jsonEnd := strings.Index(comment[idx:], "}")
+		if jsonEnd != -1 {
+			fullEnd := idx + jsonEnd + 1
+			cleaned := comment[:jsonStart] + comment[fullEnd:]
+			return strings.TrimSpace(cleaned)
+		}
+		return strings.TrimSpace(comment[:jsonStart])
+	}
+
 	if idx == 0 {
 		_, after, ok := strings.Cut(comment, "\n")
 		if !ok {

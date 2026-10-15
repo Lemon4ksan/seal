@@ -153,13 +153,16 @@ func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 		compressor := lzma.NewCompressor2(8 * 1024 * 1024)
 		return compressor.Compress(&tarBuf, dest)
 
+	case container.TarBz2:
+		return 0, errors.New("tar: bzip2 compression is read-only (use TarGz, TarZst, or TarXz for writing)")
+
 	case container.TarZst:
-		zw, err := zstd.NewWriter(dest)
+		countingW := &countingWriter{w: dest}
+		zw, err := zstd.NewWriter(countingW)
 		if err != nil {
 			return 0, err
 		}
-		countingW := &countingWriter{w: zw}
-		tw := NewWriter(countingW)
+		tw := NewWriter(zw)
 
 		if err := writeEntries(tw, files, cfg); err != nil {
 			_ = zw.Close()
@@ -179,12 +182,12 @@ func (e *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 		if level == 0 {
 			level = gzip.DefaultCompression
 		}
-		gw, err := gzip.NewWriterLevel(dest, level)
+		countingW := &countingWriter{w: dest}
+		gw, err := gzip.NewWriterLevel(countingW, level)
 		if err != nil {
 			return 0, err
 		}
-		countingW := &countingWriter{w: gw}
-		tw := NewWriter(countingW)
+		tw := NewWriter(gw)
 
 		if err := writeEntries(tw, files, cfg); err != nil {
 			_ = gw.Close()

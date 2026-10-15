@@ -115,8 +115,9 @@ type asyncPrefetchPipe struct {
 	bcjIP           uint32
 	onProgress      func(phase string, current, total int64)
 	onFileDone      func(*file.File, error)
-	ctx             context.Context
-	stoppedAtIndex  int
+	ctx            context.Context
+	cancel         context.CancelFunc
+	stoppedAtIndex int
 
 	blockChan chan prefetchBlock
 	currBlock prefetchBlock
@@ -131,6 +132,12 @@ func newAsyncPrefetchPipe(
 	onFileDone func(*file.File, error),
 	ctx context.Context,
 ) *asyncPrefetchPipe {
+	var cancel context.CancelFunc
+	if ctx == nil {
+		ctx, cancel = context.WithCancel(context.Background())
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
 	pipe := &asyncPrefetchPipe{
 		files:           files,
 		fileEntries:     make([]FileEntry, len(files)),
@@ -140,6 +147,7 @@ func newAsyncPrefetchPipe(
 		onProgress:      onProgress,
 		onFileDone:      onFileDone,
 		ctx:             ctx,
+		cancel:          cancel,
 		blockChan:       make(chan prefetchBlock, 256), // 16MB async prefetch buffer queue
 		doneChan:        make(chan struct{}),
 	}
@@ -365,6 +373,21 @@ func (p *asyncPrefetchPipe) Read(b []byte) (int, error) {
 	}
 }
 
+func (p *asyncPrefetchPipe) Close() error {
+	if p.cancel != nil {
+		p.cancel()
+	}
+	if p.currBlock.buf != nil {
+		if p.currBlock.is256K {
+			pool.Put256K(p.currBlock.buf)
+		} else {
+			pool.Put64K(p.currBlock.buf)
+		}
+		p.currBlock.buf = nil
+	}
+	return nil
+}
+
 // WriteArchive serializes files into a standard 7-Zip archive with streaming constant memory.
 func (zw *Writer) WriteArchive(files []*file.File) (int64, error) {
 	initWritten, err := writeSignatureSlot(zw.w)
@@ -440,6 +463,7 @@ func (zw *Writer) compressSolidPayload(sortedFiles []*file.File) (*solidPayload,
 	}
 
 	solidReader := newAsyncPrefetchPipe(sortedFiles, filter, onProg, zw.options.OnFileDone, zw.options.Context)
+	defer solidReader.Close()
 
 	var totalUnpackEstimate int64
 	for _, f := range sortedFiles {
@@ -521,8 +545,12 @@ func (zw *Writer) compressSolidPayload(sortedFiles []*file.File) (*solidPayload,
 
 	if solidReader.stoppedAtIndex > 0 {
 		payload.wasFrozen = true
-		payload.fileEntries = solidReader.fileEntries[:solidReader.stoppedAtIndex]
-		payload.unpackSizes = solidReader.unpackSizes[:solidReader.stoppedAtIndex]
+		if solidReader.stoppedAtIndex <= len(solidReader.fileEntries) {
+			payload.fileEntries = solidReader.fileEntries[:solidReader.stoppedAtIndex]
+		}
+		if solidReader.stoppedAtIndex <= len(solidReader.unpackSizes) {
+			payload.unpackSizes = solidReader.unpackSizes[:solidReader.stoppedAtIndex]
+		}
 
 		if zw.options.Resumable {
 			remFiles := sortedFiles[solidReader.stoppedAtIndex:]
@@ -923,6 +951,23 @@ func writeFilesInfo(buf *bytes.Buffer, fileEntries []FileEntry) {
 	}
 	_ = WriteNumber(buf, uint64(attrBuf.Len()))
 	buf.Write(attrBuf.Bytes())
+
+	// ModTime (NIDMTime)
+	buf.WriteByte(NIDMTime)
+	var mtimeBuf bytes.Buffer
+	mtimeBuf.WriteByte(1) // AllDefined = 1
+	mtimeBuf.WriteByte(0) // External = 0
+	for _, fe := range fileEntries {
+		var b [8]byte
+		var winTime uint64
+		if !fe.ModTime.IsZero() {
+			winTime = uint64(fe.ModTime.UnixNano()/100) + 116444736000000000
+		}
+		binary.LittleEndian.PutUint64(b[:], winTime)
+		mtimeBuf.Write(b[:])
+	}
+	_ = WriteNumber(buf, uint64(mtimeBuf.Len()))
+	buf.Write(mtimeBuf.Bytes())
 
 	buf.WriteByte(NIDEnd) // End FilesInfo
 }

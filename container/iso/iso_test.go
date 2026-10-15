@@ -81,3 +81,32 @@ func TestISO_CorruptedImage(t *testing.T) {
 	_, _, err := eng.OpenCatalog(bytes.NewReader(shortBytes), int64(len(shortBytes)), "", nil)
 	require.ErrorIs(t, err, iso.ErrInvalidISO)
 }
+
+func TestISO_MultiSectorDirectory(t *testing.T) {
+	t.Parallel()
+
+	var files []*file.File
+	for i := 0; i < 60; i++ {
+		f, err := file.New("deep_dir/subfile_with_a_fairly_long_name_index_"+string(rune('A'+i))+".txt", false)
+		require.NoError(t, err)
+		f.WithData([]byte("payload for file index"))
+		files = append(files, f)
+	}
+
+	eng := iso.New()
+	var buf bytes.Buffer
+	written, err := eng.WriteArchive(&buf, files, container.Config{})
+	require.NoError(t, err)
+	assert.Equal(t, int64(buf.Len()), written)
+
+	entries, _, err := eng.OpenCatalog(bytes.NewReader(buf.Bytes()), int64(buf.Len()), "", nil)
+	require.NoError(t, err)
+
+	fileCount := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			fileCount++
+		}
+	}
+	assert.Equal(t, 60, fileCount, "all 60 files must be preserved across multi-sector directory")
+}

@@ -141,6 +141,7 @@ type processConfig struct {
 	solidSize      int64
 	hasSolidExt    bool
 	solidExtension bool
+	sortStrategy   FileSortStrategy
 }
 
 // New constructs a new universal [Archive] instance with the specified options.
@@ -160,8 +161,12 @@ func New(opts ...option.Option) *Archive {
 		case option.OptContainer:
 			cfg.format = opt.Container
 		case option.OptCompression:
-			cfg.method = opt.Method
-			cfg.level = opt.Level
+			if opt.Method != 0 {
+				cfg.method = opt.Method
+			}
+			if opt.Level != 0 {
+				cfg.level = opt.Level
+			}
 		case option.OptPassword:
 			cfg.password = opt.Text
 		case option.OptComment:
@@ -179,7 +184,7 @@ func New(opts ...option.Option) *Archive {
 			if opt.TextDecoder != nil {
 				cfg.textDecoder = opt.TextDecoder
 			}
-		case option.OptCustom:
+		case option.OptCustom, option.OptSortStrategy, option.OptConflictPolicy:
 			if opt.Custom != nil {
 				opt.Custom(&cfg)
 			}
@@ -307,8 +312,12 @@ func (a *Archive) Apply(opts ...option.Option) *Archive {
 		case option.OptContainer:
 			// Container instantiation occurs during NewArchive
 		case option.OptCompression:
-			a.defaultMethod = opt.Method
-			a.defaultLevel = opt.Level
+			if opt.Method != 0 {
+				a.defaultMethod = opt.Method
+			}
+			if opt.Level != 0 {
+				a.defaultLevel = opt.Level
+			}
 		case option.OptPassword:
 			a.password = opt.Text
 		case option.OptComment:
@@ -324,7 +333,7 @@ func (a *Archive) Apply(opts ...option.Option) *Archive {
 			if opt.TextDecoder != nil {
 				a.textDecoder = opt.TextDecoder
 			}
-		case option.OptCustom:
+		case option.OptCustom, option.OptSortStrategy, option.OptConflictPolicy:
 			if opt.Custom != nil {
 				opt.Custom(a)
 			}
@@ -453,11 +462,20 @@ func (a *Archive) Add(files ...*file.File) {
 
 // AddBytes attaches an in-memory byte slice as an archive entry.
 func (a *Archive) AddBytes(data []byte, name string, opts ...option.Option) *file.File {
-	entry, _ := file.New(name, false)
+	entry, err := file.New(name, false)
+	if err != nil {
+		return nil
+	}
+	a.mu.RLock()
+	defMethod := a.defaultMethod
+	defLevel := a.defaultLevel
+	pwd := a.password
+	a.mu.RUnlock()
+
 	entry.WithData(data).
-		WithCompression(a.defaultMethod, a.defaultLevel)
-	if a.password != "" {
-		entry.WithPassword(a.password)
+		WithCompression(defMethod, defLevel)
+	if pwd != "" {
+		entry.WithPassword(pwd)
 	}
 	ApplyOption(entry, opts...)
 
@@ -480,10 +498,16 @@ func (a *Archive) AddLazy(
 	if err != nil {
 		return nil, err
 	}
-	entry.WithCompression(a.defaultMethod, a.defaultLevel).
+	a.mu.RLock()
+	defMethod := a.defaultMethod
+	defLevel := a.defaultLevel
+	pwd := a.password
+	a.mu.RUnlock()
+
+	entry.WithCompression(defMethod, defLevel).
 		WithOpenFunc(factory)
-	if a.password != "" {
-		entry.WithPassword(a.password)
+	if pwd != "" {
+		entry.WithPassword(pwd)
 	}
 	ApplyOption(entry, opts...)
 
@@ -557,6 +581,18 @@ func (a *Archive) attachEntry(incoming *file.File) {
 				incoming.SetName(newName)
 				clean = incoming.Name()
 			}
+			base := clean
+			ext := filepath.Ext(base)
+			stem := strings.TrimSuffix(base, ext)
+			idx := 1
+			for {
+				if _, ok := a.byName[clean]; !ok {
+					break
+				}
+				clean = fmt.Sprintf("%s_%d%s", stem, idx, ext)
+				incoming.SetName(clean)
+				idx++
+			}
 		case ActionReplace:
 			idx := slices.Index(a.files, existing)
 			if idx >= 0 {
@@ -598,12 +634,17 @@ func (a *Archive) Rename(oldName, newName string) error {
 
 	entry, ok := a.byName[cleanOld]
 	if !ok {
-		return errors.New("archive: file not found")
+		return fs.ErrNotExist
 	}
 
 	delete(a.byName, cleanOld)
+	if existing, exists := a.byName[cleanNew]; exists && existing != entry {
+		a.files = slices.DeleteFunc(a.files, func(f *file.File) bool {
+			return f == existing
+		})
+	}
 	entry.SetName(cleanNew)
-	a.byName[cleanNew] = entry
+	a.byName[entry.Name()] = entry
 	return nil
 }
 
@@ -632,7 +673,7 @@ func (a *Archive) File(name string) (*file.File, bool) {
 	defer a.mu.RUnlock()
 
 	f, ok := a.byName[clean]
-	if !ok && strings.HasSuffix(name, "/") {
+	if !ok {
 		f, ok = a.byName[clean+"/"]
 	}
 	return f, ok
@@ -838,7 +879,7 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 		case option.OptSolidExtension:
 			procCfg.hasSolidExt = true
 			procCfg.solidExtension = opt.SolidExtension
-		case option.OptCustom:
+		case option.OptCustom, option.OptSortStrategy:
 			if opt.Custom != nil {
 				opt.Custom(&procCfg)
 			}
@@ -852,6 +893,9 @@ func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Op
 	method := a.defaultMethod
 	level := a.defaultLevel
 	sortStrat := a.sortStrategy
+	if procCfg.sortStrategy != 0 {
+		sortStrat = procCfg.sortStrategy
+	}
 	c := a.container
 	reg := a.registry
 	solid := a.solid
@@ -1091,6 +1135,10 @@ func WithSortStrategy(s FileSortStrategy) option.Option {
 		Custom: func(target any) {
 			if cfg, ok := target.(*archiverConfig); ok {
 				cfg.sortStrategy = s
+			} else if a, ok := target.(*Archive); ok {
+				a.sortStrategy = s
+			} else if p, ok := target.(*processConfig); ok {
+				p.sortStrategy = s
 			}
 		},
 	}
@@ -1103,6 +1151,8 @@ func WithConflictHandler(h ConflictHandler) option.Option {
 		Custom: func(target any) {
 			if cfg, ok := target.(*archiverConfig); ok {
 				cfg.conflictPolicy = h
+			} else if a, ok := target.(*Archive); ok {
+				a.conflictPolicy = h
 			}
 		},
 	}

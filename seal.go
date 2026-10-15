@@ -50,6 +50,9 @@ func DefaultContainer(t ContainerType) (Container, error) {
 	case container.Rar:
 		return rar.New(), nil
 	default:
+		if c, err := container.Get(t); err == nil {
+			return c, nil
+		}
 		return nil, fmt.Errorf("seal: unsupported container type %q", t)
 	}
 }
@@ -124,5 +127,8 @@ func RegisterContainer(containerType ContainerType, factory container.Factory) {
 
 // GetContainer returns a new [Container] instance for the requested container type.
 func GetContainer(containerType ContainerType) (Container, error) {
+	if c, err := container.Get(containerType); err == nil {
+		return c, nil
+	}
 	return DefaultContainer(containerType)
 }

@@ -22,7 +22,7 @@ import (
 func (a *Archive) All() iter.Seq[*file.File] {
 	return func(yield func(*file.File) bool) {
 		a.mu.RLock()
-		files := a.files
+		files := slices.Clone(a.files)
 		a.mu.RUnlock()
 
 		for _, f := range files {
@@ -43,7 +43,7 @@ func (a *Archive) All() iter.Seq[*file.File] {
 func (a *Archive) AllWithIndex() iter.Seq2[int, *file.File] {
 	return func(yield func(int, *file.File) bool) {
 		a.mu.RLock()
-		files := a.files
+		files := slices.Clone(a.files)
 		a.mu.RUnlock()
 
 		for i, f := range files {

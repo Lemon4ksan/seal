@@ -148,6 +148,7 @@ func (cr *Reader) readODCHeader(magic string) (*Header, []byte, error) {
 		return strconv.ParseUint(strings.TrimSpace(string(s)), 8, 64)
 	}
 
+	dev, _ := parseOctal(rest[0:6])
 	ino, err := parseOctal(rest[6:12])
 	if err != nil {
 		return nil, nil, ErrCorruptedHeader
@@ -158,13 +159,14 @@ func (cr *Reader) readODCHeader(magic string) (*Header, []byte, error) {
 	}
 	uid, _ := parseOctal(rest[18:24])
 	gid, _ := parseOctal(rest[24:30])
-	nlink, _ := parseOctal(rest[30:32])
-	mtimeSec, _ := parseOctal(rest[38:49])
-	nameSize, err := parseOctal(rest[49:55])
+	nlink, _ := parseOctal(rest[30:36])
+	rdev, _ := parseOctal(rest[36:42])
+	mtimeSec, _ := parseOctal(rest[42:53])
+	nameSize, err := parseOctal(rest[53:59])
 	if err != nil || nameSize == 0 || nameSize > 65536 {
 		return nil, nil, ErrCorruptedHeader
 	}
-	fileSize, err := parseOctal(rest[55:66])
+	fileSize, err := parseOctal(rest[59:70])
 	if err != nil {
 		return nil, nil, ErrCorruptedHeader
 	}
@@ -188,15 +190,17 @@ func (cr *Reader) readODCHeader(magic string) (*Header, []byte, error) {
 	}
 
 	hdr := &Header{
-		Magic:    magic,
-		Ino:      ino,
-		Mode:     uint32(mode),
-		UID:      uid,
-		GID:      gid,
-		NLink:    nlink,
-		MTime:    time.Unix(int64(mtimeSec), 0).UTC(),
-		FileSize: int64(fileSize),
-		Name:     name,
+		Magic:     magic,
+		DevMajor:  dev,
+		Ino:       ino,
+		Mode:      uint32(mode),
+		UID:       uid,
+		GID:       gid,
+		NLink:     nlink,
+		RDevMajor: rdev,
+		MTime:     time.Unix(int64(mtimeSec), 0).UTC(),
+		FileSize:  int64(fileSize),
+		Name:      name,
 	}
 
 	return hdr, data, nil

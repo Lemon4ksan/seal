@@ -10,13 +10,13 @@ _«Энтропия разрушает любые данные — пусть **
 [![Go Reference](https://img.shields.io/badge/godoc-reference-007d9c?style=flat-square)](https://pkg.go.dev/github.com/lemon4ksan/seal)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
 [![Zero-Alloc](https://img.shields.io/badge/memory-0%20B%2Fop%20%7C%200%20allocs-brightgreen?style=flat-square)](#-производительность-и-бенчмарки)
-[![Deterministic RAM](https://img.shields.io/badge/ram%20ceiling-%E2%89%A4%2032%20MB-blueviolet?style=flat-square)](EON_SPECIFICATION.md)
-[![Self-Healing](https://img.shields.io/badge/resilience-GF(2%5E8)%20Reed--Solomon-orange?style=flat-square)](EON_SPECIFICATION.md)
+[![Deterministic RAM](https://img.shields.io/badge/ram%20ceiling-%E2%89%A4%2032%20MB-blueviolet?style=flat-square)](docs/EON_SPEC.md)
+[![Self-Healing](https://img.shields.io/badge/resilience-GF(2%5E8)%20Reed--Solomon-orange?style=flat-square)](docs/EON_SPEC.md)
 [![Security](https://img.shields.io/badge/security-Zip%20Slip%20%26%20Bomb%20Proof-success?style=flat-square)](#безопасность-по-умолчанию)
 
 **seal** — это сверхбыстрый lock-free движок архивации, компрессионный субстрат и платформа хранения данных для Go 1.27+. Он реализует формат контейнеров нового поколения **EON (`.eon`)** — оснащенный самовосстановлением Рида-Соломона над полем $GF(2^8)$, $O(1)$ LBA-поиском, микро-фреймингом (чтение файла при RAM $\le 64$ КБ), фазовым тирингом и блочной дедупликацией.
 
-#### [English](README.md) • Русский • [Спецификация формата EON](EON_SPECIFICATION.md) • [Архитектура](archive) • [Виртуальная FS](vfs)
+#### [English](README.md) • Русский • [Спецификация формата EON](docs/EON_SPEC.md) • [Архитектура](archive) • [Виртуальная FS](vfs)
 
 </div>
 
@@ -55,13 +55,13 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Упаковать директорию в высокоэффективный контейнер (.seal, .zip, .tar.gz, .7z)
-	if err := seal.ArchiveDir(ctx, "./dist", seal.ToFilePath("release.seal")); err != nil {
+	// Упаковать директорию в высокоэффективный контейнер (.eon, .zip, .tar.gz, .7z)
+	if err := seal.ArchiveDir(ctx, "./dist", seal.ToFilePath("release.eon")); err != nil {
 		log.Fatal(err)
 	}
 
 	// Безопасная распаковка (защита Zip Slip и бомб активна по умолчанию)
-	if err := seal.Unarchive(ctx, seal.FromFilePath("release.seal"), "./output"); err != nil {
+	if err := seal.Unarchive(ctx, seal.FromFilePath("release.eon"), "./output"); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -75,16 +75,16 @@ func main() {
 ctx := context.Background()
 
 // Чтение конфигурационного файла напрямую в память менее чем за 2 мс
-data, err := seal.ReadFile(ctx, seal.FromFilePath("bundle.seal"), "configs/app.json")
+data, err := seal.ReadFile(ctx, seal.FromFilePath("bundle.eon"), "configs/app.json")
 if err != nil {
 	log.Fatal(err)
 }
 
 // Проверка целостности всех данных через криптографическое дерево BLAKE3-256
-err = seal.Verify(ctx, seal.FromFilePath("bundle.seal"))
+err = seal.Verify(ctx, seal.FromFilePath("bundle.eon"))
 
 // Отрисовка дерева иерархии архива в виде ASCII
-tree, _ := seal.Tree(ctx, seal.FromFilePath("bundle.seal"))
+tree, _ := seal.Tree(ctx, seal.FromFilePath("bundle.eon"))
 fmt.Println(tree)
 ```
 
@@ -123,7 +123,7 @@ _, err = archive.WriteTo(ctx, w)
 
 ## Матрица форматов и возможностей
 
-| Возможность / Характеристика | Go `archive/zip` | Go `archive/tar` | 7-Zip (.7z) | OCI Layer (`.tar.gz`) | **SEAL (`.seal`)** |
+| Возможность / Характеристика | Go `archive/zip` | Go `archive/tar` | 7-Zip (.7z) | OCI Layer (`.tar.gz`) | **EON (`.eon`)** |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Мгновенный доступ ($O(1)$)** | ✓ (Медленно) | ✗ (Линейный скан) | ✗ (Монолитный блок) | ✗ (Линейный скан) | **✓ (Footer + CTOC)** |
 | **Детерминированный лимит RAM** | ✗ (Не ограничен) | ✗ (Не ограничен) | ✗ (До 4+ ГБ) | ✗ (Не ограничен) | **✓ (Строго $\le$ 32 МБ)** |
@@ -155,7 +155,7 @@ _, err = archive.WriteTo(ctx, w)
 
 | Движок / Субстрат | Пропускная способность | Аллокации | Память / оп | Форматы | Защита Zip Slip |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **`seal` (Zero-Alloc)** | **1.82 GB/s** | **0 allocs/op** | **0 B/op** | **SEAL / 7Z / ZIP / TAR / ZST** | **✓ (Встроена)** |
+| **`seal` (Zero-Alloc)** | **1.82 GB/s** | **0 allocs/op** | **0 B/op** | **EON / 7Z / ZIP / TAR / ZST** | **✓ (Встроена)** |
 | Go `archive/zip` | 680 MB/s | 14 allocs/op | 1,420 B/op | Только ZIP | ✗ (Уязвим) |
 | Go `archive/tar` | 710 MB/s | 12 allocs/op | 1,180 B/op | Только TAR | ✗ (Уязвим) |
 | `mholt/archiver/v4` | 520 MB/s | 38 allocs/op | 4,280 B/op | Мульти | ⚠️ (Вручную) |
@@ -173,7 +173,7 @@ _, err = archive.WriteTo(ctx, w)
 Удобная проверка ошибок с помощью встроенных предикатов:
 
 ```go
-data, err := seal.ReadFile(seal.FromFilePath("archive.seal"), "app.json")
+data, err := seal.ReadFile(ctx, seal.FromFilePath("archive.eon"), "app.json")
 if err != nil {
 	switch {
 	case seal.IsNotFound(err):
@@ -195,22 +195,22 @@ if err != nil {
 `seal` включает в себя готовую утилиту командной строки:
 
 ```bash
-# Упаковать папку в высокопроизводительный контейнер .seal
-seal create -o bundle.seal -l 9 ./dist
+# Упаковать папку в высокопроизводительный контейнер .eon
+seal create -o bundle.eon -l 9 ./dist
 
 # Посмотреть записи, коэффициенты сжатия и дедуплицированные срезы
-seal list bundle.seal
+seal list bundle.eon
 
 # Извлечь файл прямо в stdout за O(1) времени
-seal cat bundle.seal config.json
+seal cat bundle.eon config.json
 
 # Проверить крипто-целостность и восстановить битые блоки
-seal test bundle.seal
+seal test bundle.eon
 
 # Отрисовать терминальное ASCII-дерево архива
-seal tree bundle.seal
+seal tree bundle.eon
 ```
 
-## Лицензия
+## 🧾 Лицензия
 
-`seal` распространяется под лицензией [BSD-3-Clause](LICENSE). Copyright (c) 2026 Lemon4ksan. Все права защищены.
+Лицензировано под **BSD 3-Clause License**. Подробности в файле [LICENSE](LICENSE).

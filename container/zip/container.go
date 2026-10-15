@@ -19,6 +19,10 @@ type Engine struct {
 	TextDecoder TextDecoder
 }
 
+func init() {
+	container.Register(container.Zip, New)
+}
+
 // New constructs a new ZIP [container.Container] engine.
 func New() container.Container {
 	return &Engine{}
@@ -149,6 +153,9 @@ func (z *Engine) WriteArchive(dest io.Writer, files []*file.File, cfg container.
 
 		if entry.Method() == 0 && !entry.IsDir() {
 			entry.SetMethod(cfg.DefaultMethod)
+		}
+		if cfg.Password != "" && entry.Encryption() == file.NotEncrypted && !entry.IsDir() {
+			entry.SetEncryption(file.AES256, cfg.Password)
 		}
 
 		// Check if raw fast-copy is possible

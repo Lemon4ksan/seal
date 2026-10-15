@@ -5,6 +5,7 @@
 package crypto
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -122,6 +123,7 @@ type AESCTRReader struct {
 	mac        hash.Hash
 	payloadRem int64
 	storedMAC  [10]byte
+	verified   bool
 }
 
 // NewAESCTRReader constructs a WinZip AE-2 decrypting reader.
@@ -169,6 +171,16 @@ func NewAESCTRReader(src io.Reader, password string, compSize int64, keySize, sa
 
 func (r *AESCTRReader) Read(p []byte) (int, error) {
 	if r.payloadRem == 0 {
+		if !r.verified {
+			r.verified = true
+			if _, macErr := io.ReadFull(r.r, r.storedMAC[:]); macErr != nil {
+				return 0, fmt.Errorf("read AES auth tag: %w", macErr)
+			}
+			computedMAC := r.mac.Sum(nil)[:10]
+			if subtle.ConstantTimeCompare(r.storedMAC[:], computedMAC) != 1 {
+				return 0, ErrAuthenticationFail
+			}
+		}
 		return 0, io.EOF
 	}
 
@@ -181,7 +193,8 @@ func (r *AESCTRReader) Read(p []byte) (int, error) {
 		r.payloadRem -= int64(n)
 	}
 
-	if r.payloadRem == 0 && (err == nil || err == io.EOF) {
+	if r.payloadRem == 0 && !r.verified && (err == nil || err == io.EOF) {
+		r.verified = true
 		if _, macErr := io.ReadFull(r.r, r.storedMAC[:]); macErr != nil {
 			return n, fmt.Errorf("read AES auth tag: %w", macErr)
 		}
@@ -273,10 +286,11 @@ func (cw *AESCBCWriter) Close() error {
 
 // AESCBCReader wraps an input stream with 7-Zip AES-256-CBC decryption.
 type AESCBCReader struct {
-	r      io.Reader
-	mode   cipher.BlockMode
-	buf    []byte
-	bufPos int
+	r        io.Reader
+	mode     cipher.BlockMode
+	buf      []byte
+	bufPos   int
+	leftover []byte
 }
 
 // NewAESCBCReader creates an AES-256-CBC decrypting reader.
@@ -302,7 +316,9 @@ func (cr *AESCBCReader) Read(p []byte) (int, error) {
 	toRead := reqBlocks * 16
 	tmp := make([]byte, toRead)
 
-	nRead := 0
+	nRead := copy(tmp, cr.leftover)
+	cr.leftover = nil
+
 	for nRead < 16 {
 		n, err := cr.r.Read(tmp[nRead:])
 		if n > 0 {
@@ -319,6 +335,10 @@ func (cr *AESCBCReader) Read(p []byte) (int, error) {
 	aligned := (nRead / 16) * 16
 	if aligned == 0 {
 		return 0, io.EOF
+	}
+
+	if nRead > aligned {
+		cr.leftover = bytes.Clone(tmp[aligned:nRead])
 	}
 
 	cr.mode.CryptBlocks(tmp[:aligned], tmp[:aligned])

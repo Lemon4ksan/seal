@@ -59,6 +59,9 @@ func Derive7zKey(password string, salt []byte, numCyclesPower byte) [32]byte {
 	}
 
 	h := sha256.New()
+	if numCyclesPower > 24 {
+		numCyclesPower = 24
+	}
 	numCycles := uint64(1) << numCyclesPower
 
 	var counterBuf [8]byte

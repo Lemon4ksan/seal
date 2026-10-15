@@ -218,6 +218,8 @@ type vfsDir struct {
 	isRoot bool
 	entry  VFSEntry
 	fs     *FS
+	offset int
+	cached []fs.DirEntry
 }
 
 func (d *vfsDir) Stat() (fs.FileInfo, error) {
@@ -240,56 +242,76 @@ func (d *vfsDir) Read(p []byte) (int, error) {
 	return 0, &fs.PathError{Op: "read", Path: d.name, Err: errors.New("is a directory")}
 }
 
-func (d *vfsDir) Close() error { return nil }
+func (d *vfsDir) Close() error {
+	d.cached = nil
+	d.offset = 0
+	return nil
+}
 
 func (d *vfsDir) ReadDir(n int) ([]fs.DirEntry, error) {
-	dirPrefix := d.name
-	if dirPrefix == "." || dirPrefix == "" {
-		dirPrefix = ""
-	} else if !strings.HasSuffix(dirPrefix, "/") {
-		dirPrefix += "/"
-	}
-
-	seen := make(map[string]bool)
-	var result []fs.DirEntry
-
-	for _, e := range d.fs.provider.GetEntries() {
-		clean := CleanPath(e.EntryName())
-		if !strings.HasPrefix(clean, dirPrefix) {
-			continue
+	if d.cached == nil {
+		dirPrefix := d.name
+		if dirPrefix == "." || dirPrefix == "" {
+			dirPrefix = ""
+		} else if !strings.HasSuffix(dirPrefix, "/") {
+			dirPrefix += "/"
 		}
 
-		rel := strings.TrimPrefix(clean, dirPrefix)
-		if rel == "" {
-			continue
+		seen := make(map[string]bool)
+		var result []fs.DirEntry
+
+		for _, e := range d.fs.provider.GetEntries() {
+			clean := CleanPath(e.EntryName())
+			if !strings.HasPrefix(clean, dirPrefix) {
+				continue
+			}
+
+			rel := strings.TrimPrefix(clean, dirPrefix)
+			if rel == "" {
+				continue
+			}
+
+			parts := strings.SplitN(rel, "/", 2)
+			childName := parts[0]
+
+			if seen[childName] {
+				continue
+			}
+			seen[childName] = true
+
+			isDir := len(parts) > 1 || e.EntryIsDir()
+			result = append(result, &vfsDirEntry{
+				name:    childName,
+				isDir:   isDir,
+				size:    e.EntrySize(),
+				mode:    e.EntryMode(),
+				modTime: e.EntryModTime(),
+			})
 		}
 
-		parts := strings.SplitN(rel, "/", 2)
-		childName := parts[0]
-
-		if seen[childName] {
-			continue
-		}
-		seen[childName] = true
-
-		isDir := len(parts) > 1 || e.EntryIsDir()
-		result = append(result, &vfsDirEntry{
-			name:    childName,
-			isDir:   isDir,
-			size:    e.EntrySize(),
-			mode:    e.EntryMode(),
-			modTime: e.EntryModTime(),
+		sort.Slice(result, func(i, j int) bool {
+			return result[i].Name() < result[j].Name()
 		})
+		d.cached = result
 	}
 
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Name() < result[j].Name()
-	})
-
-	if n <= 0 || n >= len(result) {
-		return result, nil
+	if d.offset >= len(d.cached) && n > 0 {
+		return nil, io.EOF
 	}
-	return result[:n], nil
+
+	if n <= 0 {
+		res := d.cached[d.offset:]
+		d.offset = len(d.cached)
+		return res, nil
+	}
+
+	end := d.offset + n
+	if end > len(d.cached) {
+		end = len(d.cached)
+	}
+	res := d.cached[d.offset:end]
+	d.offset = end
+	return res, nil
 }
 
 type vfsFileInfo struct {

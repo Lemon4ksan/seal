@@ -119,12 +119,11 @@ func (s *State) Verify(expectedPubKey ed25519.PublicKey, info extension.ArchiveI
 		return fmt.Errorf("%w: got %d, max supported %d", ErrUnsupportedVersion, s.Version, CurrentVersion)
 	}
 
-	keyToUse := s.PublicKey
-	if len(expectedPubKey) > 0 {
-		if !bytes.Equal(keyToUse, expectedPubKey) {
-			return errors.New("signature: public key mismatch")
-		}
-		keyToUse = expectedPubKey
+	keyToUse := expectedPubKey
+	if len(keyToUse) == 0 {
+		keyToUse = s.PublicKey
+	} else if len(s.PublicKey) > 0 && !bytes.Equal(s.PublicKey, keyToUse) {
+		return errors.New("signature: public key mismatch")
 	}
 
 	if len(keyToUse) != ed25519.PublicKeySize {

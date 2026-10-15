@@ -144,14 +144,21 @@ func (w *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64, 
 	// Sectors 19..: Directory sectors & File payload sectors
 	nextLBA := uint32(19)
 
+	// Calculate directory sector counts and assign LBAs
+	dirSectorCount := make(map[string]uint32)
+	dirSectorCount[""] = calcDirSectors(itemsByDir[""])
+	for _, d := range allDirs {
+		dirSectorCount[d] = calcDirSectors(itemsByDir[d])
+	}
+
 	// Assign LBAs for Joliet directories
 	dirLBA := make(map[string]uint32)
 	dirLBA[""] = nextLBA // Root directory
-	nextLBA++
+	nextLBA += dirSectorCount[""]
 
 	for _, d := range allDirs {
 		dirLBA[d] = nextLBA
-		nextLBA++
+		nextLBA += dirSectorCount[d]
 	}
 
 	// Assign LBAs for file data sectors
@@ -177,14 +184,14 @@ func (w *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64, 
 
 	// 2. Write Sector 16: Primary Volume Descriptor (PVD)
 	pvd := make([]byte, SectorSize)
-	buildPVD(pvd, totalSectors, dirLBA[""], SectorSize)
+	buildPVD(pvd, totalSectors, dirLBA[""], dirSectorCount[""]*SectorSize)
 	if _, err := w.dest.Write(pvd); err != nil {
 		return 0, err
 	}
 
 	// 3. Write Sector 17: Supplementary Volume Descriptor (Joliet SVD)
 	svd := make([]byte, SectorSize)
-	buildJolietSVD(svd, totalSectors, dirLBA[""], SectorSize)
+	buildJolietSVD(svd, totalSectors, dirLBA[""], dirSectorCount[""]*SectorSize)
 	if _, err := w.dest.Write(svd); err != nil {
 		return 0, err
 	}
@@ -200,13 +207,13 @@ func (w *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64, 
 
 	// 5. Write Directory Sectors (Joliet UTF-16BE)
 	// Write root directory
-	if err := writeDirectorySector(w.dest, "", itemsByDir[""], dirLBA); err != nil {
+	if err := writeDirectorySector(w.dest, "", itemsByDir[""], dirLBA, dirSectorCount); err != nil {
 		return 0, err
 	}
 
 	// Write subdirectories
 	for _, d := range allDirs {
-		if err := writeDirectorySector(w.dest, d, itemsByDir[d], dirLBA); err != nil {
+		if err := writeDirectorySector(w.dest, d, itemsByDir[d], dirLBA, dirSectorCount); err != nil {
 			return 0, err
 		}
 	}
@@ -263,30 +270,53 @@ func buildJolietSVD(b []byte, totalSectors, rootLBA, rootSize uint32) {
 	buildDirRecord(b[156:190], rootLBA, rootSize, time.Now(), true, []byte{0})
 }
 
-func writeDirectorySector(w io.Writer, dirPath string, items []*isoItem, dirLBA map[string]uint32) error {
+func calcDirSectors(items []*isoItem) uint32 {
+	secCount := uint32(1)
+	pos := 68 // dotRec (34) + dotDotRec (34)
+	for _, item := range items {
+		nameWithVer := item.name + ";1"
+		u16Name := EncodeUTF16BE(nameWithVer)
+		recLen := 33 + len(u16Name)
+		if recLen%2 != 0 {
+			recLen++
+		}
+		if pos+recLen > SectorSize {
+			secCount++
+			pos = 0
+		}
+		pos += recLen
+	}
+	return secCount
+}
+
+func writeDirectorySector(w io.Writer, dirPath string, items []*isoItem, dirLBA map[string]uint32, dirSectorCount map[string]uint32) error {
 	sec := make([]byte, SectorSize)
 	pos := 0
 
 	now := time.Now()
 	selfLBA := dirLBA[dirPath]
+	selfSize := dirSectorCount[dirPath] * SectorSize
+
 	parentLBA := selfLBA
+	parentSize := selfSize
 	if dirPath != "" {
 		parentDir := path.Dir(dirPath)
 		if parentDir == "." {
 			parentDir = ""
 		}
 		parentLBA = dirLBA[parentDir]
+		parentSize = dirSectorCount[parentDir] * SectorSize
 	}
 
 	// 1. Record 0: '.' (current directory)
 	dotRec := make([]byte, 34)
-	buildDirRecord(dotRec, selfLBA, SectorSize, now, true, []byte{0})
+	buildDirRecord(dotRec, selfLBA, selfSize, now, true, []byte{0})
 	copy(sec[pos:], dotRec)
 	pos += len(dotRec)
 
 	// 2. Record 1: '..' (parent directory)
 	dotDotRec := make([]byte, 34)
-	buildDirRecord(dotDotRec, parentLBA, SectorSize, now, true, []byte{1})
+	buildDirRecord(dotDotRec, parentLBA, parentSize, now, true, []byte{1})
 	copy(sec[pos:], dotDotRec)
 	pos += len(dotDotRec)
 
@@ -301,7 +331,11 @@ func writeDirectorySector(w io.Writer, dirPath string, items []*isoItem, dirLBA 
 		}
 
 		if pos+recLen > SectorSize {
-			break
+			if _, err := w.Write(sec); err != nil {
+				return err
+			}
+			sec = make([]byte, SectorSize)
+			pos = 0
 		}
 
 		var extLBA uint32
@@ -309,7 +343,7 @@ func writeDirectorySector(w io.Writer, dirPath string, items []*isoItem, dirLBA 
 		if item.isDir {
 			fullSub := item.cleanPath
 			extLBA = dirLBA[fullSub]
-			dataLen = SectorSize
+			dataLen = dirSectorCount[fullSub] * SectorSize
 		} else {
 			extLBA = item.extentLBA
 			dataLen = uint32(len(item.data))
