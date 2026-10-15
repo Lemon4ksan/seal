@@ -11,7 +11,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/nwaples/rardecode/v2"
+	"github.com/lemon4ksan/seal/container/rar/internal/rardecode"
 
 	"github.com/lemon4ksan/seal/file"
 )

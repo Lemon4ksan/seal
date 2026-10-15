@@ -1,5 +1,9 @@
-github.com/nwaples/rardecode/v2 v2.4.1 h1:F7zNW2LdAuuBThHWXQaiFUGVD/sef299NfWSB1nHAl4=
-github.com/nwaples/rardecode/v2 v2.4.1/go.mod h1:7uz379lSxPe6j9nvzxUZ+n7mnJNgjsRNb6IbvGVHRmw=
+github.com/lemon4ksan/ctrl v0.1.0 h1:ndmEPGUhZxIf8KHz6k7JLpQwc3wDnPfTxrwthpOXtog=
+github.com/lemon4ksan/ctrl v0.1.0/go.mod h1:jYbJokscyl7+E89Bnx961z2sCHve3q1cP458uI999w4=
+github.com/lemon4ksan/foundation v0.2.0 h1:DwAMOE70fxPqWPIGVoTa1080AUfa0fAxEKilDZhAdD4=
+github.com/lemon4ksan/foundation v0.2.0/go.mod h1:8/8JZihcnJnnv03Pu45v48gA6Qwgr3HNLlz0Y3lkkpo=
+github.com/lemon4ksan/przm v0.1.0 h1:/zaKQhQxvxqW1CU2T5eYs3MrpamIGH8xaDD/hxmeml8=
+github.com/lemon4ksan/przm v0.1.0/go.mod h1:PJjJNzKT9VggSVvwJP+DcxKztErTIWqjz/+0jCFqFxw=
 golang.org/x/crypto v0.58.0 h1:COkYLr4k7nDI4r6QtMML2AfzeIswWHAJthLS6K/M/54=
 golang.org/x/crypto v0.58.0/go.mod h1:Xh+kl5A+M0gMiWDytH2Hhr5Z7WbNCpv/eB/EFgfSk+w=
 golang.org/x/net v0.61.0 h1:RR+6j/BTBCrggOLugxa+66R8FvoN6MHlzDlZIbN9YFw=
