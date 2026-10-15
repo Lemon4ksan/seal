@@ -9,8 +9,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/klauspost/compress/zstd"
-
+	"github.com/lemon4ksan/seal/codec/compress/zstd"
 	"github.com/lemon4ksan/seal/container/eon/spec"
 )
 

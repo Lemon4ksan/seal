@@ -13,10 +13,35 @@ import (
 	"github.com/lemon4ksan/foundation/crypto/aead"
 	"github.com/lemon4ksan/foundation/crypto/kdf"
 	"github.com/lemon4ksan/foundation/silicon/randkit"
-	"github.com/lemon4ksan/sein/crypto/kms"
 
 	"github.com/lemon4ksan/seal/crypto/envelope"
 )
+
+type mockKMSClient struct {
+	key [32]byte
+}
+
+func newMockKMS() *mockKMSClient {
+	var k [32]byte
+	copy(k[:], randkit.MustSecureBytes(32))
+	return &mockKMSClient{key: k}
+}
+
+func (m *mockKMSClient) Encrypt(_ context.Context, _ string, plaintext []byte) ([]byte, error) {
+	ct := make([]byte, len(plaintext))
+	for i, b := range plaintext {
+		ct[i] = b ^ m.key[i%32]
+	}
+	return ct, nil
+}
+
+func (m *mockKMSClient) Decrypt(_ context.Context, _ string, ciphertext []byte) ([]byte, error) {
+	pt := make([]byte, len(ciphertext))
+	for i, b := range ciphertext {
+		pt[i] = b ^ m.key[i%32]
+	}
+	return pt, nil
+}
 
 func TestEnvelope_PasswordUnlock(t *testing.T) {
 	secret := []byte("secret-dek-for-container-encryption")
@@ -69,7 +94,7 @@ func TestEnvelope_MultiSlotDualControl(t *testing.T) {
 	}
 
 	// Slot 2: KMS Mock
-	kmsClient := kms.NewMockClient()
+	kmsClient := newMockKMS()
 	keyURI := "mock://company-escrow-key"
 	if err := env.AddKMSSlot(ctx, kmsClient, keyURI, "Cloud Escrow"); err != nil {
 		t.Fatalf("add kms: %v", err)
@@ -122,7 +147,7 @@ func TestEnvelope_MultiSlotDualControl(t *testing.T) {
 	}
 
 	// 5. Wrong KMS client should fail
-	wrongKMS := kms.NewMockClient()
+	wrongKMS := newMockKMS()
 	_, err = parsedEnv.UnlockWithKMS(ctx, wrongKMS)
 	if !errors.Is(err, envelope.ErrNoMatchingSlot) {
 		t.Fatalf("expected ErrNoMatchingSlot for wrong KMS, got %v", err)

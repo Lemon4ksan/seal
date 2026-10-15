@@ -25,11 +25,12 @@ type Writer struct {
 	headerW  bool
 }
 
+// Encoder is an alias to Writer for compatibility.
+type Encoder = Writer
+
 // NewWriter creates a new Zstandard writer compressing to w.
+// If w is nil, Reset must be called before streaming writes, or methods like EncodeAll can be used.
 func NewWriter(w io.Writer, opts ...EncoderOption) (*Writer, error) {
-	if w == nil {
-		return nil, errors.New("zstd: nil writer")
-	}
 	cfg := defaultEncoderOptions()
 	for _, opt := range opts {
 		if err := opt(&cfg); err != nil {
@@ -50,6 +51,9 @@ func NewWriter(w io.Writer, opts ...EncoderOption) (*Writer, error) {
 func (w *Writer) writeHeader() error {
 	if w.headerW {
 		return nil
+	}
+	if w.w == nil {
+		return errors.New("zstd: nil writer")
 	}
 	// Magic Number: 0xFD2FB528 (4 bytes little-endian)
 	var hdr [6]byte

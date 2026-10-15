@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/lemon4ksan/ctrl/tuikit"
 	"github.com/lemon4ksan/przm"
 
+	"github.com/lemon4ksan/seal/codec/compress/zstd"
 	"github.com/lemon4ksan/seal/container/eon"
 	"github.com/lemon4ksan/seal/file"
 	"github.com/lemon4ksan/seal/vfs"

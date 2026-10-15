@@ -19,8 +19,13 @@ import (
 	"github.com/lemon4ksan/foundation/crypto/aead"
 	"github.com/lemon4ksan/foundation/crypto/kdf"
 	"github.com/lemon4ksan/foundation/silicon/randkit"
-	"github.com/lemon4ksan/sein/crypto/kms"
 )
+
+// KMSClient defines the interface for key management service providers (Vault, AWS KMS, GCP KMS, mock).
+type KMSClient interface {
+	Encrypt(ctx context.Context, keyID string, plaintext []byte) ([]byte, error)
+	Decrypt(ctx context.Context, keyID string, ciphertext []byte) ([]byte, error)
+}
 
 // MagicEnvelope is the 4-byte magic identifier ('FENV') prefixed to binary envelope headers.
 var MagicEnvelope = [4]byte{'F', 'E', 'N', 'V'}
@@ -154,7 +159,7 @@ func (e *Envelope) AddPasswordSlot(password string, profile kdf.Argon2idProfile,
 }
 
 // AddKMSSlot wraps the envelope's secret using an envelope KEK encrypted via the provided KMS client.
-func (e *Envelope) AddKMSSlot(ctx context.Context, client kms.Client, keyURI string, label ...string) error {
+func (e *Envelope) AddKMSSlot(ctx context.Context, client KMSClient, keyURI string, label ...string) error {
 	if len(e.secret) == 0 {
 		return errors.New("envelope: no secret set to wrap")
 	}
@@ -272,7 +277,7 @@ func (e *Envelope) UnlockWithPassword(password string) ([]byte, error) {
 }
 
 // UnlockWithKMS attempts to decrypt any KMS slot using the provided KMS client.
-func (e *Envelope) UnlockWithKMS(ctx context.Context, client kms.Client) ([]byte, error) {
+func (e *Envelope) UnlockWithKMS(ctx context.Context, client KMSClient) ([]byte, error) {
 	if client == nil {
 		return nil, errors.New("envelope: nil KMS client")
 	}
