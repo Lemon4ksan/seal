@@ -19,6 +19,31 @@ import (
 	"github.com/lemon4ksan/seal/extension/signature"
 )
 
+// ExampleCompress demonstrates compressing a directory with automatic format inference from filename extension.
+func ExampleCompress() {
+	ctx := context.Background()
+	tmpDir, _ := os.MkdirTemp("", "seal-example-*")
+	defer os.RemoveAll(tmpDir)
+
+	srcDir := filepath.Join(tmpDir, "src")
+	_ = os.MkdirAll(srcDir, 0o755)
+	_ = os.WriteFile(filepath.Join(srcDir, "hello.txt"), []byte("Hello Seal!"), 0o644)
+
+	destArchive := filepath.Join(tmpDir, "archive.eon")
+
+	err := seal.Compress(ctx, srcDir, destArchive)
+	if err != nil {
+		fmt.Printf("Compress error: %v\n", err)
+		return
+	}
+
+	exists, _ := seal.ExistsIn(ctx, destArchive, "hello.txt")
+	fmt.Printf("hello.txt in archive: %v\n", exists)
+
+	// Output:
+	// hello.txt in archive: true
+}
+
 // ExampleArchiveDir demonstrates compressing a directory with cancellation support.
 func ExampleArchiveDir() {
 	ctx := context.Background()

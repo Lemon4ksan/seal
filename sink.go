@@ -6,6 +6,7 @@ package seal
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,6 +17,16 @@ import (
 type fileSink struct {
 	file *os.File
 	path string
+}
+
+func (s *fileSink) Path() string {
+	if s.path != "" {
+		return s.path
+	}
+	if s.file != nil {
+		return s.file.Name()
+	}
+	return ""
 }
 
 func (s *fileSink) Create() (io.Writer, error) {
@@ -86,8 +97,39 @@ func ToBuffer(buf *bytes.Buffer) Sink {
 	return &writerSink{writer: buf}
 }
 
-// UseSink acquires an output writer from sink, executes fn, and ensures proper stream flushing and closing.
-func UseSink(sink Sink, fn func(w io.Writer) error) (err error) {
+// AsSink wraps any compatible destination into a [Sink]:
+//   - [Sink]: returned as-is
+//   - string: filesystem path (wrapped via [ToFilePath])
+//   - [pathkit.Path]: path (wrapped via [ToPath])
+//   - [*os.File]: open file (wrapped via [ToFile])
+//   - [*bytes.Buffer]: buffer (wrapped via [ToBuffer])
+//   - [io.Writer]: writer (wrapped via [ToWriter])
+func AsSink(v any) (Sink, error) {
+	switch val := v.(type) {
+	case Sink:
+		return val, nil
+	case string:
+		return ToFilePath(val), nil
+	case pathkit.Path:
+		return ToPath(val), nil
+	case *os.File:
+		return ToFile(val), nil
+	case *bytes.Buffer:
+		return ToBuffer(val), nil
+	case io.Writer:
+		return ToWriter(val), nil
+	default:
+		return nil, fmt.Errorf("seal: unsupported sink type %T", v)
+	}
+}
+
+// UseSink acquires an output writer from dest (which can be a [Sink], string path, [*os.File], [*bytes.Buffer], or [io.Writer]),
+// executes fn, and ensures proper stream flushing and closing.
+func UseSink(dest any, fn func(w io.Writer) error) (err error) {
+	sink, err := AsSink(dest)
+	if err != nil {
+		return err
+	}
 	w, err := sink.Create()
 	if err != nil {
 		return err

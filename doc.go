@@ -20,15 +20,16 @@
 //  1. Tier 1: Single-Line Zero Config (Quick Tasks & Scripts):
 //     Compress, extract, read, and verify archives with zero boilerplate or manual setup:
 //
-//     err := seal.ArchiveDir(ctx, "./dist", seal.ToFilePath("bundle.zip"))
-//     err = seal.Unarchive(ctx, seal.FromFilePath("bundle.zip"), "./out")
-//     data, err := seal.ReadFile(ctx, seal.FromFilePath("bundle.zip"), "app.json")
-//     err = seal.Verify(ctx, seal.FromFilePath("bundle.zip"))
+//     err := seal.Compress(ctx, "./dist", "bundle.eon")
+//     err = seal.Extract(ctx, "bundle.eon", "./out")
+//     data, err := seal.ReadFile(ctx, "bundle.eon", "app.json")
+//     cfg, err := seal.ReadTo[AppConfig](ctx, "bundle.eon", "config.json")
+//     err = seal.Verify(ctx, "bundle.eon")
 //
 //  2. Tier 2: Fluent In-Memory Programmatic Builder (Microservices & APIs):
 //     Construct dynamic archive bundles in memory with lazy streams, collision handling, and VFS export:
 //
-//     a := seal.NewArchive(seal.WithContainer(container.Zip), seal.WithPassword("secret"))
+//     a := seal.NewEon(seal.WithPassword("secret"))
 //     a.AddBytes([]byte("..."), "data.json")
 //     a.AddLazy("stream.log", logReaderFactory)
 //     a.Rename("data.json", "docs/data.json")
@@ -37,7 +38,7 @@
 //  3. Tier 3: Raw Container Streaming Engines (Ultra High Performance):
 //     Directly control wire-level serialization and decompression framing via [github.com/lemon4ksan/seal/container]:
 //
-//     engine, _ := seal.DefaultContainer(container.Zip)
+//     engine, _ := seal.DefaultContainer(container.Eon)
 //     files, comment, err := engine.ReadIndex(r, rAt, size, password, reg)
 //
 // # Domain Architecture & Subpackages
@@ -62,7 +63,7 @@
 //
 // Error handling is fully integrated with standard Go [errors.Is] and single-line predicate helpers:
 //
-//	data, err := seal.ReadFile(ctx, seal.FromFilePath("bundle.zip"), "config.json")
+//	data, err := seal.ReadFile(ctx, "bundle.eon", "config.json")
 //	if seal.IsNotFound(err) {
 //	    // Entry does not exist in archive
 //	}
@@ -73,7 +74,7 @@
 //	    // Path traversal attack detected
 //	}
 //	if seal.IsCorrupted(err) {
-//	    // CRC-32 checksum mismatch or header corruption
+//	    // Checksum mismatch or header corruption
 //	}
 //
 // # Basic Usage
@@ -90,13 +91,13 @@
 //	func main() {
 //		ctx := context.Background()
 //
-//		// Pack a directory into a zip archive
-//		if err := seal.ArchiveDir(ctx, "./dist", seal.ToFilePath("bundle.zip")); err != nil {
+//		// Pack a directory into an EON container (or .zip, .tar.gz, .7z auto-inferred from extension)
+//		if err := seal.Compress(ctx, "./dist", "bundle.eon"); err != nil {
 //			log.Fatalf("pack failed: %v", err)
 //		}
 //
 //		// Extract archive with safety guarantees
-//		if err := seal.Unarchive(ctx, seal.FromFilePath("bundle.zip"), "./extracted"); err != nil {
+//		if err := seal.Extract(ctx, "bundle.eon", "./extracted"); err != nil {
 //			log.Fatalf("unpack failed: %v", err)
 //		}
 //	}

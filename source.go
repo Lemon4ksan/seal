@@ -19,6 +19,16 @@ type fileSource struct {
 	path string
 }
 
+func (s *fileSource) Path() string {
+	if s.path != "" {
+		return s.path
+	}
+	if s.file != nil {
+		return s.file.Name()
+	}
+	return ""
+}
+
 func (s *fileSource) Open() (io.Reader, int64, error) {
 	if s.file != nil {
 		stat, err := s.file.Stat()
@@ -149,14 +159,45 @@ func FromURL(url string, client *http.Client) Source {
 	return &httpSource{url: url, client: client}
 }
 
-// UseSource opens the source, dispatches random-access or stream readers, and guarantees cleanup.
-func UseSource(src Source, fn func(r io.Reader, rAt io.ReaderAt, size int64) error) (err error) {
-	r, size, err := src.Open()
+// AsSource wraps any compatible source into a [Source]:
+//   - [Source]: returned as-is
+//   - string: filesystem path or URL (wrapped via [FromFilePath] or [FromURL])
+//   - [pathkit.Path]: path (wrapped via [FromPath])
+//   - [*os.File]: open file (wrapped via [FromFile])
+//   - []byte: byte slice (wrapped via [FromBytes])
+//   - [io.Reader]: stream (wrapped via [FromReader] with size -1)
+func AsSource(v any) (Source, error) {
+	switch val := v.(type) {
+	case Source:
+		return val, nil
+	case string:
+		return FromFilePath(val), nil
+	case pathkit.Path:
+		return FromPath(val), nil
+	case *os.File:
+		return FromFile(val), nil
+	case []byte:
+		return FromBytes(val), nil
+	case io.Reader:
+		return FromReader(val, -1), nil
+	default:
+		return nil, fmt.Errorf("seal: unsupported source type %T", v)
+	}
+}
+
+// UseSource opens the source (which can be a [Source], string path, [*os.File], []byte, or [io.Reader]),
+// dispatches random-access or stream readers, and guarantees cleanup.
+func UseSource(src any, fn func(r io.Reader, rAt io.ReaderAt, size int64) error) (err error) {
+	s, err := AsSource(src)
+	if err != nil {
+		return err
+	}
+	r, size, err := s.Open()
 	if err != nil {
 		return err
 	}
 	defer func() {
-		closeErr := src.Close()
+		closeErr := s.Close()
 		if err == nil {
 			err = closeErr
 		}

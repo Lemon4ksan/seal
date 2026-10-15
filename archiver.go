@@ -132,15 +132,42 @@ func resolveSourceContainer(r io.Reader, rAt io.ReaderAt) (container.Container, 
 }
 
 // ArchiveDir creates an archive containing the specified directory tree and writes it to dest with cancellation support.
-func (a *Archiver) ArchiveDir(ctx context.Context, dirPath string, dest Sink, opts ...Option) error {
+// dest can be a string path (e.g. "bundle.eon", "data.tar.gz"), [Sink], [*os.File], [*bytes.Buffer], or [io.Writer].
+// If no container type is explicitly configured in opts, it is automatically inferred from the destination filename extension.
+func (a *Archiver) ArchiveDir(ctx context.Context, dirPath string, dest any, opts ...Option) error {
+	destSink, err := AsSink(dest)
+	if err != nil {
+		return err
+	}
 	allOpts := slices.Concat(a.containerOptions, opts)
+
+	// Infer container format from dest filename if not explicitly configured in opts
+	var hasExplicitContainer bool
+	for _, opt := range allOpts {
+		if opt.Kind == option.OptContainer {
+			hasExplicitContainer = true
+			break
+		}
+	}
+	if !hasExplicitContainer {
+		var destName string
+		if named, ok := destSink.(interface{ Path() string }); ok {
+			destName = named.Path()
+		}
+		if destName != "" {
+			if inferred := container.DetectExtension(destName); inferred != container.Unknown {
+				allOpts = append([]Option{WithContainer(inferred)}, allOpts...)
+			}
+		}
+	}
+
 	allOpts = append(allOpts, WithSourceDir(dirPath))
 	arc := NewArchive(allOpts...)
 	if _, err := arc.AddDir(dirPath); err != nil {
 		return err
 	}
 
-	return UseSink(dest, func(w io.Writer) error {
+	return UseSink(destSink, func(w io.Writer) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -151,7 +178,8 @@ func (a *Archiver) ArchiveDir(ctx context.Context, dirPath string, dest Sink, op
 }
 
 // Unarchive extracts an archive from src into destDir with context awareness, format auto-detection, and resource limit enforcement.
-func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, opts ...Option) error {
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func (a *Archiver) Unarchive(ctx context.Context, src any, destDir string, opts ...Option) error {
 	allOpts := slices.Concat(a.containerOptions, opts)
 	procCfg := processConfig{workers: 1}
 	for _, opt := range allOpts {
@@ -434,12 +462,14 @@ func (a *Archiver) Unarchive(ctx context.Context, src Source, destDir string, op
 }
 
 // Extract extracts an archive from src into destDir using automatic format detection.
-func Extract(ctx context.Context, src Source, destDir string, opts ...Option) error {
+// src can be a string path (e.g. "bundle.eon", "archive.zip"), [Source], [*os.File], []byte, or [io.Reader].
+func Extract(ctx context.Context, src any, destDir string, opts ...Option) error {
 	return NewArchiver().Unarchive(ctx, src, destDir, opts...)
 }
 
 // ExtractFile extracts an individual named file from an archive into destPath.
-func ExtractFile(ctx context.Context, src Source, targetFile, destPath string, opts ...Option) error {
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func ExtractFile(ctx context.Context, src any, targetFile, destPath string, opts ...Option) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -470,7 +500,8 @@ func ExtractFile(ctx context.Context, src Source, targetFile, destPath string, o
 }
 
 // ReadFile reads an individual named file from an archive into memory.
-func ReadFile(ctx context.Context, src Source, targetFile string, opts ...Option) ([]byte, error) {
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func ReadFile(ctx context.Context, src any, targetFile string, opts ...Option) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -507,16 +538,17 @@ func ReadFile(ctx context.Context, src Source, targetFile string, opts ...Option
 }
 
 // ReadFile reads an individual named file from an archive into memory.
-func (a *Archiver) ReadFile(ctx context.Context, src Source, targetFile string, opts ...Option) ([]byte, error) {
+func (a *Archiver) ReadFile(ctx context.Context, src any, targetFile string, opts ...Option) ([]byte, error) {
 	allOpts := slices.Concat(a.containerOptions, opts)
 	return ReadFile(ctx, src, targetFile, allOpts...)
 }
 
 // ReadTo reads an individual named file from an archive and unmarshals its content into *T.
 // If unmarshaler is omitted, json.Unmarshal is used by default.
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
 func ReadTo[T any](
 	ctx context.Context,
-	src Source,
+	src any,
 	targetFile string,
 	unmarshaler ...func([]byte, any) error,
 ) (*T, error) {
@@ -536,9 +568,10 @@ func ReadTo[T any](
 }
 
 // ReadInto reads an individual named file from an archive and unmarshals its content directly into target.
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
 func ReadInto[T any](
 	ctx context.Context,
-	src Source,
+	src any,
 	targetFile string,
 	target *T,
 	unmarshaler ...func([]byte, any) error,
@@ -560,7 +593,7 @@ func ReadInto[T any](
 // ReadTo reads an individual named file from an archive and unmarshals its content into *T.
 func (a *Archiver) ReadTo[T any](
 	ctx context.Context,
-	src Source,
+	src any,
 	targetFile string,
 	unmarshaler ...func([]byte, any) error,
 ) (*T, error) {
@@ -582,7 +615,7 @@ func (a *Archiver) ReadTo[T any](
 // ReadInto reads an individual named file from an archive and unmarshals its content directly into target.
 func (a *Archiver) ReadInto[T any](
 	ctx context.Context,
-	src Source,
+	src any,
 	targetFile string,
 	target *T,
 	unmarshaler ...func([]byte, any) error,
@@ -602,13 +635,13 @@ func (a *Archiver) ReadInto[T any](
 }
 
 // Verify checks the integrity of all file entries and checksums within an archive.
-func (a *Archiver) Verify(ctx context.Context, src Source, opts ...Option) error {
+func (a *Archiver) Verify(ctx context.Context, src any, opts ...Option) error {
 	allOpts := slices.Concat(a.containerOptions, opts)
 	return Verify(ctx, src, allOpts...)
 }
 
 // GetEntries returns a metadata snapshot of all file entries in the archive.
-func (a *Archiver) GetEntries(ctx context.Context, src Source) ([]*File, error) {
+func (a *Archiver) GetEntries(ctx context.Context, src any) ([]*File, error) {
 	var files []*File
 	err := UseSource(src, func(r io.Reader, rAt io.ReaderAt, size int64) error {
 		if err := ctx.Err(); err != nil {
@@ -629,12 +662,14 @@ func (a *Archiver) GetEntries(ctx context.Context, src Source) ([]*File, error) 
 }
 
 // List returns a list of archive entries from src.
-func List(ctx context.Context, src Source, opts ...Option) ([]*File, error) {
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func List(ctx context.Context, src any, opts ...Option) ([]*File, error) {
 	return NewArchiver(opts...).GetEntries(ctx, src)
 }
 
 // Verify checks the integrity of all file entries and checksums within an archive.
-func Verify(ctx context.Context, src Source, opts ...Option) error {
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func Verify(ctx context.Context, src any, opts ...Option) error {
 	return UseSource(src, func(r io.Reader, rAt io.ReaderAt, size int64) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -697,18 +732,28 @@ func Verify(ctx context.Context, src Source, opts ...Option) error {
 
 // Top-level 1-line zero-config convenience helpers.
 
-// ArchiveDir compresses a physical directory into a destination Sink.
-func ArchiveDir(ctx context.Context, dirPath string, dest Sink, opts ...Option) error {
+// ArchiveDir compresses a physical directory into dest with cancellation support.
+// dest can be a string path (e.g. "bundle.eon", "data.tar.gz"), [Sink], [*os.File], [*bytes.Buffer], or [io.Writer].
+// If no container type is explicitly configured in opts, it is automatically inferred from the destination filename extension.
+func ArchiveDir(ctx context.Context, dirPath string, dest any, opts ...Option) error {
 	return NewArchiver(opts...).ArchiveDir(ctx, dirPath, dest)
 }
 
-// Unarchive extracts an archive from Source into destDir.
-func Unarchive(ctx context.Context, src Source, destDir string, opts ...Option) error {
+// Compress is an ergonomic alias for [ArchiveDir], compressing a directory tree into dest.
+// dest can be a string path (e.g. "bundle.eon", "data.tar.gz"), [Sink], [*os.File], [*bytes.Buffer], or [io.Writer].
+func Compress(ctx context.Context, dirPath string, dest any, opts ...Option) error {
+	return ArchiveDir(ctx, dirPath, dest, opts...)
+}
+
+// Unarchive extracts an archive from src into destDir using automatic format detection.
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func Unarchive(ctx context.Context, src any, destDir string, opts ...Option) error {
 	return NewArchiver().Unarchive(ctx, src, destDir, opts...)
 }
 
 // FileCount returns the number of entries in the archive.
-func FileCount(ctx context.Context, src Source) (int, error) {
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func FileCount(ctx context.Context, src any) (int, error) {
 	entries, err := List(ctx, src)
 	if err != nil {
 		return 0, err
@@ -717,7 +762,8 @@ func FileCount(ctx context.Context, src Source) (int, error) {
 }
 
 // ExistsIn reports whether targetFile exists inside the archive.
-func ExistsIn(ctx context.Context, src Source, targetFile string) (bool, error) {
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func ExistsIn(ctx context.Context, src any, targetFile string) (bool, error) {
 	clean := vfs.CleanPath(targetFile)
 	entries, err := List(ctx, src)
 	if err != nil {
@@ -729,7 +775,8 @@ func ExistsIn(ctx context.Context, src Source, targetFile string) (bool, error) 
 }
 
 // Tree returns an ASCII visual hierarchy string from an archive source.
-func Tree(ctx context.Context, src Source) (string, error) {
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func Tree(ctx context.Context, src any) (string, error) {
 	entries, err := List(ctx, src)
 	if err != nil {
 		return "", err
@@ -749,56 +796,63 @@ func Tree(ctx context.Context, src Source) (string, error) {
 	return vfs.RenderTree(root), nil
 }
 
-// ReadExtensionBundle extracts all embedded stealth extensions from an archive file.
-func ReadExtensionBundle(ctx context.Context, archivePath string) (map[extension.ID][]byte, error) {
+// ReadExtensionBundle extracts all embedded stealth extensions from an archive file or source.
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func ReadExtensionBundle(ctx context.Context, src any) (map[extension.ID][]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	f, err := os.Open(archivePath)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	size := fi.Size()
-	if size < 22 {
-		return nil, nil
-	}
-
-	var header [512]byte
-	n, _ := f.ReadAt(header[:], 0)
-	cType := container.SniffHeader(header[:n])
-
 	var rawData []byte
-	switch cType {
-	case container.SevenZip:
-		zr, err := sevenzip.NewReader(f, size, "")
-		if err != nil {
-			return nil, err
+	err := UseSource(src, func(r io.Reader, rAt io.ReaderAt, size int64) error {
+		if size < 22 {
+			return nil
 		}
-		if data, ok := zr.ExtensionData(); ok {
-			rawData = data
+
+		var header [512]byte
+		var n int
+		if rAt != nil {
+			n, _ = rAt.ReadAt(header[:], 0)
+		} else if br, ok := r.(*bufio.Reader); ok {
+			peeked, _ := br.Peek(512)
+			copy(header[:], peeked)
+			n = len(peeked)
 		}
-	case container.Zip:
-		zr, err := zip.NewReader(f, size, "", nil)
-		if err != nil {
-			return nil, err
-		}
-		if data, ok := zr.ExtensionData(); ok {
-			rawData = data
-		}
-	default:
-		// Fallback to checking comment or pax records via DefaultContainer
-		if eng, err := DefaultContainer(cType); err == nil {
-			_, comment, err := eng.OpenCatalog(f, size, "", nil)
-			if err == nil && comment != "" {
-				rawData = []byte(comment)
+		cType := container.SniffHeader(header[:n])
+
+		switch cType {
+		case container.SevenZip:
+			if rAt != nil {
+				zr, err := sevenzip.NewReader(rAt, size, "")
+				if err != nil {
+					return err
+				}
+				if data, ok := zr.ExtensionData(); ok {
+					rawData = data
+				}
+			}
+		case container.Zip:
+			if rAt != nil {
+				zr, err := zip.NewReader(rAt, size, "", nil)
+				if err != nil {
+					return err
+				}
+				if data, ok := zr.ExtensionData(); ok {
+					rawData = data
+				}
+			}
+		default:
+			// Fallback to checking comment or pax records via DefaultContainer
+			if eng, err := DefaultContainer(cType); err == nil {
+				_, comment, err := eng.OpenCatalog(rAt, size, "", nil)
+				if err == nil && comment != "" {
+					rawData = []byte(comment)
+				}
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	if len(rawData) == 0 {
@@ -809,8 +863,9 @@ func ReadExtensionBundle(ctx context.Context, archivePath string) (map[extension
 }
 
 // InspectExtensions populates the provided extension instances with metadata found in the archive.
-func InspectExtensions(ctx context.Context, archivePath string, exts ...extension.Extension) error {
-	bundle, err := ReadExtensionBundle(ctx, archivePath)
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func InspectExtensions(ctx context.Context, src any, exts ...extension.Extension) error {
+	bundle, err := ReadExtensionBundle(ctx, src)
 	if err != nil {
 		return err
 	}
@@ -829,8 +884,9 @@ func InspectExtensions(ctx context.Context, archivePath string, exts ...extensio
 }
 
 // GetExtension extracts a single extension payload from the archive by its ID.
-func GetExtension(ctx context.Context, archivePath string, id extension.ID) ([]byte, error) {
-	bundle, err := ReadExtensionBundle(ctx, archivePath)
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func GetExtension(ctx context.Context, src any, id extension.ID) ([]byte, error) {
+	bundle, err := ReadExtensionBundle(ctx, src)
 	if err != nil {
 		return nil, err
 	}
@@ -842,13 +898,14 @@ func GetExtension(ctx context.Context, archivePath string, id extension.ID) ([]b
 
 // GetExtensionTo extracts a single extension payload from the archive and unmarshals it into *T.
 // If unmarshaler is omitted, json.Unmarshal is used by default.
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
 func GetExtensionTo[T any](
 	ctx context.Context,
-	archivePath string,
+	src any,
 	id extension.ID,
 	unmarshaler ...func([]byte, any) error,
 ) (*T, error) {
-	data, err := GetExtension(ctx, archivePath, id)
+	data, err := GetExtension(ctx, src, id)
 	if err != nil {
 		return nil, err
 	}
@@ -863,9 +920,10 @@ func GetExtensionTo[T any](
 	return &res, nil
 }
 
-// CanResume inspects an archive file and returns whether an embedded stealth checkpoint is present.
-func CanResume(ctx context.Context, archivePath string) (*checkpoint.State, bool, error) {
-	data, err := GetExtension(ctx, archivePath, "seal.checkpoint")
+// CanResume inspects an archive and returns whether an embedded stealth checkpoint is present.
+// src can be a string path, [Source], [*os.File], []byte, or [io.Reader].
+func CanResume(ctx context.Context, src any) (*checkpoint.State, bool, error) {
+	data, err := GetExtension(ctx, src, "seal.checkpoint")
 	if err != nil {
 		if errors.Is(err, extension.ErrExtensionNotFound) {
 			return nil, false, nil

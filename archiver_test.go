@@ -176,3 +176,114 @@ func TestArchiver_ArchiveDirAndUnarchive_SevenZip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "7z Substream payload", string(outBinary))
 }
+
+type sampleConfig struct {
+	AppName string `json:"app_name"`
+	Port    int    `json:"port"`
+}
+
+func TestPolymorphicAPI_StringsAndAutoDetect(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	tempDir := t.TempDir()
+	srcDir := filepath.Join(tempDir, "src_eon")
+	destEon := filepath.Join(tempDir, "release.eon")
+	outDir := filepath.Join(tempDir, "extracted_eon")
+
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "hello.txt"), []byte("Pure Go EON Container!"), 0o644))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(srcDir, "config.json"),
+		[]byte(`{"app_name":"seal-app","port":8080}`),
+		0o644,
+	))
+
+	// 1. seal.Compress with plain string paths and automatic .eon container inference
+	err := seal.Compress(ctx, srcDir, destEon)
+	require.NoError(t, err)
+
+	// Verify the file header has the EON! magic
+	hdr, err := os.ReadFile(destEon)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(hdr), 4)
+	assert.Equal(t, "EON!", string(hdr[:4]))
+
+	// 2. seal.FileCount and seal.ExistsIn with plain string path
+	count, err := seal.FileCount(ctx, destEon)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+
+	exists, err := seal.ExistsIn(ctx, destEon, "config.json")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	// 3. seal.ReadFile with plain string path
+	data, err := seal.ReadFile(ctx, destEon, "hello.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "Pure Go EON Container!", string(data))
+
+	// 4. seal.ReadTo[T] with generic JSON deserialization and plain string path
+	cfg, err := seal.ReadTo[sampleConfig](ctx, destEon, "config.json")
+	require.NoError(t, err)
+	assert.Equal(t, "seal-app", cfg.AppName)
+	assert.Equal(t, 8080, cfg.Port)
+
+	// 5. seal.List, seal.Verify, and seal.Tree with plain string path
+	files, err := seal.List(ctx, destEon)
+	require.NoError(t, err)
+	assert.Equal(t, 2, len(files))
+
+	err = seal.Verify(ctx, destEon)
+	require.NoError(t, err)
+
+	tree, err := seal.Tree(ctx, destEon)
+	require.NoError(t, err)
+	assert.NotEmpty(t, tree)
+
+	// 6. seal.Extract with plain string path
+	err = seal.Extract(ctx, destEon, outDir)
+	require.NoError(t, err)
+
+	outHello, err := os.ReadFile(filepath.Join(outDir, "hello.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "Pure Go EON Container!", string(outHello))
+}
+
+func TestAutoDetect_Extensions(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	tempDir := t.TempDir()
+	srcDir := filepath.Join(tempDir, "src")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "test.txt"), []byte("payload"), 0o644))
+
+	// Test .tar.gz auto-detection
+	destTarGz := filepath.Join(tempDir, "out.tar.gz")
+	require.NoError(t, seal.Compress(ctx, srcDir, destTarGz))
+	b, err := os.ReadFile(destTarGz)
+	require.NoError(t, err)
+	require.True(t, len(b) >= 2 && b[0] == 0x1F && b[1] == 0x8B, "expected GZIP magic")
+
+	// Test .7z auto-detection
+	dest7z := filepath.Join(tempDir, "out.7z")
+	require.NoError(t, seal.Compress(ctx, srcDir, dest7z))
+	b7z, err := os.ReadFile(dest7z)
+	require.NoError(t, err)
+	require.True(t, len(b7z) >= 6 && string(b7z[:2]) == "7z", "expected 7z magic")
+
+	// Test .zip auto-detection
+	destZip := filepath.Join(tempDir, "out.zip")
+	require.NoError(t, seal.Compress(ctx, srcDir, destZip))
+	bZip, err := os.ReadFile(destZip)
+	require.NoError(t, err)
+	require.True(t, len(bZip) >= 4 && bZip[0] == 'P' && bZip[1] == 'K', "expected ZIP magic")
+
+	// Test .eon auto-detection
+	destEon := filepath.Join(tempDir, "out.eon")
+	require.NoError(t, seal.Compress(ctx, srcDir, destEon))
+	bEon, err := os.ReadFile(destEon)
+	require.NoError(t, err)
+	require.True(t, len(bEon) >= 4 && string(bEon[:4]) == "EON!", "expected EON magic")
+}
