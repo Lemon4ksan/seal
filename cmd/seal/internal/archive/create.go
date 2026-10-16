@@ -58,6 +58,9 @@ Examples:
 }
 
 func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	sz, err := util.ParseSevenZipArgs("a", args)
 	if err != nil {
 		return err

@@ -351,6 +351,9 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 	if parentCtx == nil {
 		parentCtx = context.Background()
 	}
+	if err := parentCtx.Err(); err != nil {
+		return 0, err
+	}
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
@@ -365,11 +368,17 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 			buf := make([]byte, 0, targetChunkSize+64*1024)
 
 			for {
+				if ctx.Err() != nil {
+					return
+				}
 				select {
 				case <-ctx.Done():
 					return
 				case job, ok := <-jobChan:
 					if !ok {
+						return
+					}
+					if ctx.Err() != nil {
 						return
 					}
 					buf = buf[:0]
@@ -490,6 +499,10 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 						}
 					}
 
+					if ctx.Err() != nil {
+						return
+					}
+
 					var compPayload []byte
 					var compErr error
 					switch ew.codecID {
@@ -528,6 +541,9 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 	go func() {
 		defer close(jobChan)
 		for _, job := range jobs {
+			if ctx.Err() != nil {
+				return
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -595,7 +611,7 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 		}
 
 		for c := range compQueue {
-			if writerErr != nil {
+			if writerErr != nil || ctx.Err() != nil {
 				continue
 			}
 			pending[c.idx] = c

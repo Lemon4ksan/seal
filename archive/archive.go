@@ -845,6 +845,9 @@ func (a *Archive) LoadFromReader(r io.Reader, engines ...container.Container) ([
 
 // WriteTo serializes all entries in the archive into dest using the active container engine.
 func (a *Archive) WriteTo(ctx context.Context, dest io.Writer, opts ...option.Option) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	procCfg := processConfig{workers: 1}
 	for _, opt := range opts {
 		switch opt.Kind {
