@@ -175,12 +175,12 @@ func OpenFile(path string, opts ...ReaderOption) (*Reader, io.Closer, error) {
 	}
 	stat, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, nil, err
 	}
 	r, err := OpenReader(f, stat.Size(), opts...)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, nil, err
 	}
 	return r, f, nil

@@ -121,7 +121,7 @@ func (c *VaultCmd) runCreate(ctx context.Context, args []string, stdout, stderr 
 	}
 	defer outFile.Close()
 
-	codecID := spec.CodecZSTD
+	var codecID uint8
 	switch strings.ToLower(*codecName) {
 	case "lz4":
 		codecID = spec.CodecLZ4
@@ -381,8 +381,7 @@ func (c *VaultCmd) runInfo(ctx context.Context, args []string, stdout, stderr io
 	}
 
 	if unlockedCount > 0 {
-		var rOpts []aeon.ReaderOption
-		rOpts = append(rOpts, aeon.WithReaderPasswords(passwords...))
+		rOpts := []aeon.ReaderOption{aeon.WithReaderPasswords(passwords...)}
 		if r, rFile, err := aeon.OpenFile(archivePath, rOpts...); err == nil {
 			defer rFile.Close()
 			fmt.Fprintf(stdout, "Extents visible under provided keys: %d (Active Vault: %s)\n",

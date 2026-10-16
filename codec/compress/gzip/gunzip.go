@@ -267,7 +267,7 @@ func (z *Reader) readHeader() (hdr Header, err error) {
 	if z.decompressor == nil {
 		z.decompressor = flate.NewReader(z.r)
 	} else {
-		z.decompressor.(flate.Resetter).Reset(z.r, nil)
+		_ = z.decompressor.(flate.Resetter).Reset(z.r, nil)
 	}
 
 	return hdr, nil

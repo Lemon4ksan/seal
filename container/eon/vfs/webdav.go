@@ -80,7 +80,7 @@ func (w *WebDAVFS) OpenFile(ctx context.Context, name string, flag int, perm os.
 	}
 
 	data, err := io.ReadAll(f)
-	f.Close()
+	_ = f.Close()
 	if err != nil {
 		return nil, err
 	}

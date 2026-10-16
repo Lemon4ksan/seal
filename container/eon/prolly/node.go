@@ -241,7 +241,5 @@ func DeserializeNode(data []byte) (*Node, error) {
 // Returns the index and whether an exact match was found.
 // If exact match not found, returns the insertion/branch index.
 func (n *Node) BinarySearch(ns uint16, name string) (int, bool) {
-	return slices.BinarySearchFunc(n.Items, Item{Namespace: ns, Name: name}, func(a, target Item) int {
-		return CompareItems(a, target)
-	})
+	return slices.BinarySearchFunc(n.Items, Item{Namespace: ns, Name: name}, CompareItems)
 }

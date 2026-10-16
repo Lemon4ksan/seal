@@ -77,13 +77,45 @@ linters:
         path: "_test\\.go"
         text: "exported: (exported|comment on exported)"
 
-      - linters: [gosec, errcheck, prealloc]
+      - linters: [gosec, errcheck, prealloc, staticcheck, errorlint, gocritic, unused, perfsprint, ineffassign]
         path: "_test\\.go"
 
+      - linters: [ineffassign, gocritic, gosec, unused, staticcheck, errcheck]
+        path: "codec/compress/brotli/.*"
+
+      - linters: [errorlint, gocritic, gosec, perfsprint, staticcheck, unused, gofumpt]
+        path: "container/rar/internal/rardecode/.*"
+
+      - linters: [unused, staticcheck, ineffassign]
+        path: "codec/compress/flate/.*"
+
+      - linters: [gocritic, unused, ineffassign, gosec]
+        path: "codec/compress/huff0/.*"
+
+      - linters: [errcheck, gocritic]
+        path: "codec/compress/zstd/.*"
+
+      - linters: [unused]
+        path: "codec/compress/lzma/.*"
+
+      - linters: [ineffassign]
+        path: "text/encoding/.*"
+
       - linters: [gosec]
-        text: "G703:|G706:"
+        text: "G703:|G706:|G104:"
         path: "(cmd|examples)/.*"
+
+      - linters: [gocritic]
+        text: "commentFormatting:"
+        path: "libeon/.*"
 
     paths:
       - "examples/.*"
       - "tests/.*"
+      - "codec/compress/brotli/.*"
+      - "codec/compress/flate/.*"
+      - "codec/compress/huff0/.*"
+      - "codec/compress/zstd/.*"
+      - "codec/compress/lzma/.*"
+      - "container/rar/internal/rardecode/.*"
+      - "text/encoding/.*"

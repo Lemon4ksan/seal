@@ -132,7 +132,8 @@ func (c *MountCmd) Run(ctx context.Context, args []string, stdout, stderr io.Wri
 	}
 
 	server := &http.Server{
-		Handler: handler,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {

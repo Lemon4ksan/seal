@@ -126,7 +126,7 @@ func main() {
 	)
 	box.AddRow("Primary Codec", "PRZM v2.0 (Zero-Alloc Dual-Hash)")
 	box.AddRow("Mount Strategy", "In-Situ Direct-Memory (Zero-Staging)")
-	box.Render(os.Stdout)
+	_ = box.Render(os.Stdout)
 
 	fmt.Println()
 	runLiveStreamingDemo(reader, files, chunks)
@@ -251,7 +251,7 @@ func runLiveStreamingDemo(r *eon.Reader, files []*file.File, chunks []eon.CTOCEn
 	)
 	resBox.AddRow("CPU Cost per Byte", fmt.Sprintf("%.2f ns/byte (~%.2f CPU clock cycles)", nsPerByte, nsPerByte*3.6))
 	resBox.AddRow("Hot-Path Allocations", "0 bytes (Pure Stack & In-Place Slices)")
-	resBox.Render(os.Stdout)
+	_ = resBox.Render(os.Stdout)
 }
 
 func runHeadToHeadBattle(chunks []eon.CTOCEntry, r *eon.Reader) {
@@ -298,7 +298,7 @@ func runHeadToHeadBattle(chunks []eon.CTOCEntry, r *eon.Reader) {
 	// Prepare ZSTD compressed buffer
 	var zstdBuf bytes.Buffer
 	zw, _ := zstd.NewWriter(&zstdBuf, zstd.WithEncoderLevel(zstd.SpeedFastest))
-	zw.Write(rawData)
+	_, _ = zw.Write(rawData)
 	zw.Close()
 	zstdCompressed := zstdBuf.Bytes()
 
@@ -380,7 +380,7 @@ func runHeadToHeadBattle(chunks []eon.CTOCEntry, r *eon.Reader) {
 		"Negligible load",
 	)
 	tbl.AddRow("Hot-Path Heap Allocations", "0 bytes / iteration", "Huffman/FSE trees", "Zero GC pressure")
-	tbl.Render(os.Stdout)
+	_ = tbl.Render(os.Stdout)
 
 	fmt.Println(
 		"\n" + tuikit.Bold(
@@ -463,5 +463,5 @@ func launchEmbedded(target *file.File, allFiles []*file.File) {
 
 func waitExit() {
 	fmt.Println("\nPress Enter to exit...")
-	bufio.NewReader(os.Stdin).ReadBytes('\n')
+	_, _ = bufio.NewReader(os.Stdin).ReadBytes('\n')
 }

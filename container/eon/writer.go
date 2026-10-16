@@ -245,7 +245,6 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 			currentChunkIdx++
 			curJob = &chunkJob{idx: currentChunkIdx}
 			curJobSize = 0
-			curJobExt = ""
 		}
 		curJobExt = ext
 
@@ -330,14 +329,15 @@ func (ew *Writer) WriteArchive(files []*file.File, cfg container.Config) (int64,
 		jobs = append(jobs, &chunkJob{idx: 0})
 	}
 
-	numWorkers := 1
-	if cfg.Workers > 0 {
+	var numWorkers int
+	switch {
+	case cfg.Workers > 0:
 		numWorkers = cfg.Workers
-	} else if os.Getenv("PRZM_GPU") == "1" && ew.codecID == CodecPRZM {
+	case os.Getenv("PRZM_GPU") == "1" && ew.codecID == CodecPRZM:
 		// With GPU acceleration, 4 workers reading ahead from disk saturate the SATA NCQ buffer
 		// without CPU contention, pipelining directly to the GPU.
 		numWorkers = 4
-	} else {
+	default:
 		numWorkers = runtime.NumCPU() - 1
 		if numWorkers < 1 {
 			numWorkers = 1

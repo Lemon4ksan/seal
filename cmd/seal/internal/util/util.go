@@ -57,16 +57,17 @@ func ParseByteSize(s string) (int64, error) {
 		return 0, errors.New("empty byte size")
 	}
 	multiplier := int64(1)
-	if strings.HasSuffix(s, "g") || strings.HasSuffix(s, "gb") || strings.HasSuffix(s, "gib") {
+	switch {
+	case strings.HasSuffix(s, "g") || strings.HasSuffix(s, "gb") || strings.HasSuffix(s, "gib"):
 		multiplier = 1024 * 1024 * 1024
 		s = strings.TrimRight(s, "gib")
-	} else if strings.HasSuffix(s, "m") || strings.HasSuffix(s, "mb") || strings.HasSuffix(s, "mib") {
+	case strings.HasSuffix(s, "m") || strings.HasSuffix(s, "mb") || strings.HasSuffix(s, "mib"):
 		multiplier = 1024 * 1024
 		s = strings.TrimRight(s, "mib")
-	} else if strings.HasSuffix(s, "k") || strings.HasSuffix(s, "kb") || strings.HasSuffix(s, "kib") {
+	case strings.HasSuffix(s, "k") || strings.HasSuffix(s, "kb") || strings.HasSuffix(s, "kib"):
 		multiplier = 1024
 		s = strings.TrimRight(s, "kib")
-	} else if strings.HasSuffix(s, "b") {
+	case strings.HasSuffix(s, "b"):
 		s = strings.TrimSuffix(s, "b")
 	}
 

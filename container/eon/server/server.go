@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"mime"
 	"net"
 	"net/http"
@@ -265,7 +266,7 @@ func (s *Server) serveDirectory(w http.ResponseWriter, r *http.Request, dir stri
 
 	if r.Header.Get("Accept") == "application/json" {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		var items []map[string]any
+		items := make([]map[string]any, 0, len(entries))
 		for name, isSubDir := range entries {
 			items = append(items, map[string]any{
 				"name":   name,
@@ -277,18 +278,20 @@ func (s *Server) serveDirectory(w http.ResponseWriter, r *http.Request, dir stri
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, "<!DOCTYPE html><html><head><title>Index of /%s</title>", dir)
+	escapedDir := html.EscapeString(dir)
+	fmt.Fprintf(w, "<!DOCTYPE html><html><head><title>Index of /%s</title>", escapedDir)
 	fmt.Fprintf(
 		w,
 		"<style>body{font-family:monospace;padding:20px;} a{text-decoration:none;} a:hover{text-decoration:underline;}</style></head><body>",
 	)
-	fmt.Fprintf(w, "<h2>Aeon CDN Gateway: /%s</h2><hr/><ul>", dir)
+	fmt.Fprintf(w, "<h2>Aeon CDN Gateway: /%s</h2><hr/><ul>", escapedDir)
 	if dir != "" {
 		parent := path.Dir(strings.TrimSuffix(dir, "/"))
 		if parent == "." {
 			parent = ""
 		}
-		fmt.Fprintf(w, "<li><a href=\"/%s\">📁 ../</a></li>", parent)
+		escapedParent := html.EscapeString(parent)
+		fmt.Fprintf(w, "<li><a href=\"/%s\">📁 ../</a></li>", escapedParent)
 	}
 	for name, isSubDir := range entries {
 		icon := "📄"
@@ -297,7 +300,9 @@ func (s *Server) serveDirectory(w http.ResponseWriter, r *http.Request, dir stri
 			icon = "📁"
 			name += "/"
 		}
-		fmt.Fprintf(w, "<li>%s <a href=\"%s\">%s</a></li>", icon, target, name)
+		escapedTarget := html.EscapeString(target)
+		escapedName := html.EscapeString(name)
+		fmt.Fprintf(w, "<li>%s <a href=\"%s\">%s</a></li>", icon, escapedTarget, escapedName)
 	}
 	fmt.Fprintf(w, "</ul><hr/><small>Served by Aeon Edge CDN v%s</small></body></html>", engine.Version)
 }

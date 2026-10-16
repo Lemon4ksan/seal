@@ -106,20 +106,20 @@ func (d *treeDiffer) diff(a, b *Node) error {
 func (d *treeDiffer) diffLeaves(a, b *Node) error {
 	var i, j int
 	for i < len(a.Items) && j < len(b.Items) {
-		cmp := CompareItems(a.Items[i], b.Items[j])
-		if cmp < 0 {
+		switch cmp := CompareItems(a.Items[i], b.Items[j]); {
+		case cmp < 0:
 			// Item in A but not in B: Deleted
 			if a.Items[i].Extent != nil {
 				d.res.Deleted = append(d.res.Deleted, *a.Items[i].Extent)
 			}
 			i++
-		} else if cmp > 0 {
+		case cmp > 0:
 			// Item in B but not in A: Added
 			if b.Items[j].Extent != nil {
 				d.res.Added = append(d.res.Added, *b.Items[j].Extent)
 			}
 			j++
-		} else {
+		default:
 			// Same key (namespace, name)
 			extA, extB := a.Items[i].Extent, b.Items[j].Extent
 			if extA != nil && extB != nil {

@@ -306,11 +306,6 @@ func DecompressArchivalPNGTo(src, dst []byte) ([]byte, error) {
 	return dst[:origLen], nil
 }
 
-// unpackArchivalPNG decompresses an Archival PNG container bitstream into dst with strictly 0 heap allocations.
-func unpackArchivalPNG(src, dst []byte) ([]byte, error) {
-	return DecompressArchivalPNGTo(src, dst)
-}
-
 // ============================================================================
 // Approximate Matching Engine (Hamming <= 2 Pigeonhole Sub-Chunk Indexer)
 // ============================================================================
@@ -329,10 +324,6 @@ type approxEntry struct {
 type ApproxSubChunkIndex struct {
 	tables [4][ApproxTableSize]approxEntry
 }
-
-var approxPool = generic.NewPool(func() *ApproxSubChunkIndex {
-	return &ApproxSubChunkIndex{}
-})
 
 func (idx *ApproxSubChunkIndex) Reset() {
 	clear(idx.tables[0][:])

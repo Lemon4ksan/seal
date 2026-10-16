@@ -251,41 +251,31 @@ func ComposeArchive(store objstore.Store, prefix string, w io.Writer) error {
 		WarmChunksCount: r.ctoc.WarmChunksCount,
 		Entries:         newCTOCEntries,
 	}
-	n, err := newCTOC.Write(w)
-	if err != nil {
+	if _, err := newCTOC.Write(w); err != nil {
 		return fmt.Errorf("write ctoc: %w", err)
 	}
-	totalWritten += n
 
 	// Write INDX
-	n, err = r.indx.Write(w)
-	if err != nil {
+	if _, err := r.indx.Write(w); err != nil {
 		return fmt.Errorf("write indx: %w", err)
 	}
-	totalWritten += n
 
 	// Write TREE & SNPS if present
 	if r.snapshots != nil && r.treeStore != nil {
-		n, err = r.snapshots.Write(w)
-		if err != nil {
+		if _, err := r.snapshots.Write(w); err != nil {
 			return fmt.Errorf("write snapshots: %w", err)
 		}
-		totalWritten += n
 
-		n, err = writeTreeNodes(w, r.treeStore)
-		if err != nil {
+		if _, err := writeTreeNodes(w, r.treeStore); err != nil {
 			return fmt.Errorf("write tree nodes: %w", err)
 		}
-		totalWritten += n
 	}
 
 	// Write DSIG if present
 	if r.dsig != nil {
-		n, err = r.dsig.Write(w)
-		if err != nil {
+		if _, err = r.dsig.Write(w); err != nil {
 			return fmt.Errorf("write dsig: %w", err)
 		}
-		totalWritten += n
 	}
 
 	// Write Trailer (32 bytes)

@@ -213,11 +213,12 @@ func (c *CreateCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer)
 
 	solidStr := "off"
 	if isSolid {
-		if sz.SolidSize > 0 {
+		switch {
+		case sz.SolidSize > 0:
 			solidStr = util.FormatBytes(sz.SolidSize)
-		} else if cType == container.Eon {
+		case cType == container.Eon:
 			solidStr = "64 MiB"
-		} else {
+		default:
 			solidStr = "on"
 		}
 		if sz.SolidExtension {

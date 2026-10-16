@@ -115,9 +115,9 @@ type asyncPrefetchPipe struct {
 	bcjIP           uint32
 	onProgress      func(phase string, current, total int64)
 	onFileDone      func(*file.File, error)
-	ctx            context.Context
-	cancel         context.CancelFunc
-	stoppedAtIndex int
+	ctx             context.Context
+	cancel          context.CancelFunc
+	stoppedAtIndex  int
 
 	blockChan chan prefetchBlock
 	currBlock prefetchBlock

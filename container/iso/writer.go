@@ -289,7 +289,12 @@ func calcDirSectors(items []*isoItem) uint32 {
 	return secCount
 }
 
-func writeDirectorySector(w io.Writer, dirPath string, items []*isoItem, dirLBA map[string]uint32, dirSectorCount map[string]uint32) error {
+func writeDirectorySector(
+	w io.Writer,
+	dirPath string,
+	items []*isoItem,
+	dirLBA, dirSectorCount map[string]uint32,
+) error {
 	sec := make([]byte, SectorSize)
 	pos := 0
 

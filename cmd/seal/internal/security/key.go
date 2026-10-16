@@ -133,7 +133,7 @@ func (c *KeyCmd) runSplit(ctx context.Context, args []string, stdout, stderr io.
 
 func (c *KeyCmd) runCombine(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) < 2 {
-		return errors.New("usage: aeon key combine <share1> <share2> ...")
+		return errors.New("usage: aeon key combine <share1> <share2> [shares]")
 	}
 
 	var parsedShares []shamir.Share

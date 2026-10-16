@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/lemon4ksan/seal/container/rar/internal/rardecode"
-
 	"github.com/lemon4ksan/seal/file"
 )
 

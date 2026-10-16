@@ -289,10 +289,8 @@ func (z *Writer) Flush() error {
 	}
 
 	if !z.wroteHeader {
-		z.Write(nil)
-
-		if z.err != nil {
-			return z.err
+		if _, err := z.Write(nil); err != nil {
+			return err
 		}
 	}
 
@@ -314,10 +312,8 @@ func (z *Writer) Close() error {
 
 	z.closed = true
 	if !z.wroteHeader {
-		z.Write(nil)
-
-		if z.err != nil {
-			return z.err
+		if _, err := z.Write(nil); err != nil {
+			return err
 		}
 	}
 

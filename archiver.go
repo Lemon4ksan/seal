@@ -347,7 +347,14 @@ func (a *Archiver) Unarchive(ctx context.Context, src any, destDir string, opts 
 					if f.Mode()&os.ModeSymlink != 0 {
 						if !procCfg.security.AllowSymlinks {
 							errMu.Lock()
-							errs = append(errs, wrapErr("symlink", f.Name(), errors.New("seal: symlinks are disabled by security policy")))
+							errs = append(
+								errs,
+								wrapErr(
+									"symlink",
+									f.Name(),
+									errors.New("seal: symlinks are disabled by security policy"),
+								),
+							)
 							errMu.Unlock()
 							if procCfg.onDone != nil {
 								procCfg.onDone(f.Name(), errors.New("seal: symlinks are disabled"))
@@ -442,11 +449,9 @@ func (a *Archiver) Unarchive(ctx context.Context, src any, destDir string, opts 
 						errMu.Lock()
 						errs = append(errs, wrapErr("write", f.Name(), copyErr))
 						errMu.Unlock()
-					} else {
+					} else if !f.ModTime().IsZero() {
 						// Restore file modification time (mtime)
-						if !f.ModTime().IsZero() {
-							_ = os.Chtimes(targetPath, f.ModTime(), f.ModTime())
-						}
+						_ = os.Chtimes(targetPath, f.ModTime(), f.ModTime())
 					}
 
 					if procCfg.onDone != nil {

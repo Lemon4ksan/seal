@@ -93,15 +93,12 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 
 			// Output directory: -o<dir> or -o <dir>
 			if strings.HasPrefix(arg, "-o") {
-				val := arg[2:]
-				if strings.HasPrefix(val, "=") {
-					val = val[1:]
-				}
+				val := strings.TrimPrefix(arg[2:], "=")
 				if val != "" {
 					s.OutputDir = val
-				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+				} else if i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-") {
+					s.OutputDir = rawArgs[i+1]
 					i++
-					s.OutputDir = rawArgs[i]
 				}
 				continue
 			}
@@ -111,9 +108,9 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 				val := ""
 				if len(arg) > 2 && arg[2] == '=' {
 					val = arg[3:]
-				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+				} else if i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-") {
+					val = rawArgs[i+1]
 					i++
-					val = rawArgs[i]
 				}
 				if val != "" {
 					s.OutputDir = val
@@ -127,22 +124,20 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 					val := strings.TrimPrefix(arg, "-password")
 					if strings.HasPrefix(val, "=") {
 						s.Password = val[1:]
-					} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+					} else if i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-") {
+						s.Password = rawArgs[i+1]
 						i++
-						s.Password = rawArgs[i]
 					}
 					continue
 				}
-				val := arg[2:]
-				if strings.HasPrefix(val, "=") {
-					val = val[1:]
-				}
-				if val != "" {
+				val := strings.TrimPrefix(arg[2:], "=")
+				switch {
+				case val != "":
 					s.Password = val
-				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+				case i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-"):
+					s.Password = rawArgs[i+1]
 					i++
-					s.Password = rawArgs[i]
-				} else {
+				default:
 					s.Password = ""
 				}
 				continue
@@ -163,13 +158,14 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 			// Compression method: -m0=<method> or -m=<method> or -m <method>
 			if strings.HasPrefix(lower, "-m0=") || strings.HasPrefix(lower, "-m=") || lower == "-m" {
 				var val string
-				if strings.HasPrefix(lower, "-m0=") {
+				switch {
+				case strings.HasPrefix(lower, "-m0="):
 					val = arg[5:]
-				} else if strings.HasPrefix(lower, "-m=") {
+				case strings.HasPrefix(lower, "-m="):
 					val = arg[3:]
-				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+				case i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-"):
+					val = rawArgs[i+1]
 					i++
-					val = rawArgs[i]
 				}
 				if val != "" {
 					s.Method = val
@@ -202,22 +198,23 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 				strings.HasPrefix(lower, "-encoding") ||
 				strings.HasPrefix(lower, "-charset") {
 				var val string
-				if strings.HasPrefix(lower, "--encoding") {
+				switch {
+				case strings.HasPrefix(lower, "--encoding"):
 					val = arg[10:]
-				} else if strings.HasPrefix(lower, "-encoding") {
+				case strings.HasPrefix(lower, "-encoding"):
 					val = arg[9:]
-				} else if strings.HasPrefix(lower, "-charset") {
+				case strings.HasPrefix(lower, "-charset"):
 					val = arg[8:]
-				} else {
+				default:
 					val = arg[4:]
 				}
 				val = strings.TrimPrefix(val, "=")
 				val = strings.TrimPrefix(val, ":")
 				if val != "" {
 					s.Encoding = val
-				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+				} else if i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-") {
+					s.Encoding = rawArgs[i+1]
 					i++
-					s.Encoding = rawArgs[i]
 				}
 				continue
 			}
@@ -232,11 +229,12 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 					continue
 				}
 				val := ""
-				if strings.HasPrefix(lower, "--solid") {
+				switch {
+				case strings.HasPrefix(lower, "--solid"):
 					val = strings.TrimPrefix(lower, "--solid")
-				} else if strings.HasPrefix(lower, "-solid") {
+				case strings.HasPrefix(lower, "-solid"):
 					val = strings.TrimPrefix(lower, "-solid")
-				} else {
+				default:
 					val = strings.TrimPrefix(lower, "-ms")
 				}
 				val = strings.TrimPrefix(val, "=")
@@ -270,15 +268,16 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 			if strings.HasPrefix(lower, "-x!") || strings.HasPrefix(lower, "-xr!") || strings.HasPrefix(lower, "-x=") ||
 				lower == "-x" {
 				var pat string
-				if strings.HasPrefix(lower, "-xr!") {
+				switch {
+				case strings.HasPrefix(lower, "-xr!"):
 					pat = arg[5:]
-				} else if strings.HasPrefix(lower, "-x!") {
+				case strings.HasPrefix(lower, "-x!"):
 					pat = arg[3:]
-				} else if strings.HasPrefix(lower, "-x=") {
+				case strings.HasPrefix(lower, "-x="):
 					pat = arg[3:]
-				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+				case i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-"):
+					pat = rawArgs[i+1]
 					i++
-					pat = rawArgs[i]
 				}
 				if pat != "" {
 					s.ExcludePatterns = append(s.ExcludePatterns, pat)
@@ -290,15 +289,16 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 			if strings.HasPrefix(lower, "-i!") || strings.HasPrefix(lower, "-ir!") || strings.HasPrefix(lower, "-i=") ||
 				lower == "-i" {
 				var pat string
-				if strings.HasPrefix(lower, "-ir!") {
+				switch {
+				case strings.HasPrefix(lower, "-ir!"):
 					pat = arg[5:]
-				} else if strings.HasPrefix(lower, "-i!") {
+				case strings.HasPrefix(lower, "-i!"):
 					pat = arg[3:]
-				} else if strings.HasPrefix(lower, "-i=") {
+				case strings.HasPrefix(lower, "-i="):
 					pat = arg[3:]
-				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+				case i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-"):
+					pat = rawArgs[i+1]
 					i++
-					pat = rawArgs[i]
 				}
 				if pat != "" {
 					s.IncludePatterns = append(s.IncludePatterns, pat)
@@ -384,11 +384,11 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 					if lvl, err := strconv.Atoi(val); err == nil {
 						s.Level = lvl
 					}
-				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
-					i++
-					if lvl, err := strconv.Atoi(rawArgs[i]); err == nil {
+				} else if i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-") {
+					if lvl, err := strconv.Atoi(rawArgs[i+1]); err == nil {
 						s.Level = lvl
 					}
+					i++
 				}
 				continue
 			}
@@ -399,9 +399,9 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 				val = strings.TrimPrefix(val, "=")
 				if val != "" {
 					s.Filter = val
-				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+				} else if i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-") {
+					s.Filter = rawArgs[i+1]
 					i++
-					s.Filter = rawArgs[i]
 				}
 				continue
 			}
@@ -412,9 +412,9 @@ func ParseSevenZipArgs(cmdName string, rawArgs []string) (*SevenZipArgs, error) 
 				val = strings.TrimPrefix(val, "=")
 				if val != "" {
 					s.Comment = val
-				} else if i+1 < n && !strings.HasPrefix(rawArgs[i+1], "-") {
+				} else if i+1 < len(rawArgs) && !strings.HasPrefix(rawArgs[i+1], "-") {
+					s.Comment = rawArgs[i+1]
 					i++
-					s.Comment = rawArgs[i]
 				}
 				continue
 			}

@@ -177,6 +177,7 @@ func WithCustom(fn func(any)) Option {
 }
 
 // Custom attaches a custom closure callback for arbitrary runtime manipulation.
+//
 // Deprecated: Use WithCustom instead for consistency with the With... option convention.
 func Custom(fn func(any)) Option {
 	return option.WithCustom(fn)

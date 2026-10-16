@@ -96,15 +96,16 @@ func eon_open(cPath, cPassword *C.char, outErr *C.int) C.uint64_t {
 	if err != nil {
 		setLastError(err)
 		if outErr != nil {
-			if errors.Is(err, spec.ErrPasswordRequired) {
+			switch {
+			case errors.Is(err, spec.ErrPasswordRequired):
 				*outErr = C.int(-4) // EON_ERR_PASSWORD_REQUIRED
-			} else if errors.Is(err, spec.ErrInvalidPassword) {
+			case errors.Is(err, spec.ErrInvalidPassword):
 				*outErr = C.int(-5) // EON_ERR_INVALID_PASSWORD
-			} else if errors.Is(err, spec.ErrInvalidHeader) {
+			case errors.Is(err, spec.ErrInvalidHeader):
 				*outErr = C.int(-2) // EON_ERR_INVALID_HEADER
-			} else if errors.Is(err, spec.ErrInvalidTrailer) {
+			case errors.Is(err, spec.ErrInvalidTrailer):
 				*outErr = C.int(-3) // EON_ERR_INVALID_TRAILER
-			} else {
+			default:
 				*outErr = C.int(-1) // EON_ERR_IO
 			}
 		}

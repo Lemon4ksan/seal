@@ -1109,10 +1109,6 @@ func ApplyOption(entry *file.File, opts ...option.Option) *file.File {
 	return entry
 }
 
-func applyOption(entry *file.File, opt option.Option) {
-	ApplyOption(entry, opt)
-}
-
 // WithContainer assigns an explicit serialization [container.Container] engine to the archive.
 func WithContainer(c container.Container) option.Option {
 	return option.Option{

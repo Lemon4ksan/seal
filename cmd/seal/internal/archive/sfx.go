@@ -262,7 +262,7 @@ func (s *SFXCmd) Run(ctx context.Context, args []string, stdout, _ io.Writer) er
 		fmt.Sprintf("%v (%.2f MB/s)", elapsed, float64(totalBytes)/(1024*1024)/elapsed.Seconds()),
 	)
 	box.AddRow("Launch Instructions", tuikit.Green("Double-click "+filepath.Base(outFile)+" in Explorer to run!"))
-	box.Render(stdout)
+	_ = box.Render(stdout)
 
 	return nil
 }
