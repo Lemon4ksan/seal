@@ -2,7 +2,7 @@
 
 # seal
 
-### Universal Fault-Tolerant Archiving & Cloud-Native Container Substrate
+### High-Throughput Fault-Tolerant Archiving & Container Format for Go 1.27+
 
 _«Entropy destroys all data — let **eon** preserve reality for eternity.»_
 
@@ -14,7 +14,7 @@ _«Entropy destroys all data — let **eon** preserve reality for eternity.»_
 [![Self-Healing](https://img.shields.io/badge/resilience-GF(2%5E8)%20Reed--Solomon-orange?style=flat-square)](docs/EON_SPEC.md)
 [![Security](https://img.shields.io/badge/security-Zip%20Slip%20%26%20Bomb%20Proof-success?style=flat-square)](#security-by-default)
 
-**seal** is an ultra-fast, lock-free archive engine, compression substrate, and storage framework for Go 1.27+. It powers the next-generation **EON (`.eon`)** container format — featuring mathematical Cauchy Reed-Solomon self-healing, $O(1)$ LBA page seeking, sub-chunk micro-framing (down to $\le 64$ KB RAM), phase-based temporal tiering, and single-instance deduplication.
+**seal** is a high-performance, zero-allocation archive engine and container format implementation for Go 1.27+. It powers the **EON (`.eon`)** container format — featuring Cauchy Reed-Solomon erasure coding for self-healing, $O(1)$ LBA page seeking, sub-chunk micro-framing (down to $\le 64$ KB RAM), phase-based temporal tiering, and single-instance deduplication.
 
 #### English • [Русский](README_RU.md) • [EON Format Specification](docs/EON_SPEC.md) • [Architecture Concept](archive) • [Virtual Filesystem](vfs)
 
@@ -28,7 +28,7 @@ _«Entropy destroys all data — let **eon** preserve reality for eternity.»_
 * **Single-Instance Storage (Deduplication):** Redundant files (verified via BLAKE3-256) reference existing chunk extents at **0 bytes** extra storage and 0 CPU re-compression cost.
 * **Configurable Logical Block Addressing (LBA):** Disk offsets align to $2^{\text{BlockSizeShift}}$ (default: 4096 bytes / 4 KB), enabling zero-copy `mmap`, `io_uring`, and `splice()` operations.
 * **Zero-Alloc In-Memory VFS:** Build, mutate, sort, and mount virtual archives directly in RAM as standard `io/fs.FS` filesystems.
-* **Safe by Default:** Active kernel-grade shields against Zip Slip (`../` path traversal) and Decompression Bombs (`42.zip`).
+* **Safe by Default:** Built-in validation against Zip Slip (`../` path traversal) and decompression bomb attacks.
 
 ## Installation
 
