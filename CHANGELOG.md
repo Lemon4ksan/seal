@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/Lemon4ksan/seal/compare/v0.1.0...v0.1.1) (2026-11-01)
+
+
+### Features
+
+* modernize for foundation compatibility and update documentation ([#5](https://github.com/Lemon4ksan/seal/issues/5)) ([924a4af](https://github.com/Lemon4ksan/seal/commit/924a4affd9b01d8b8c9ca96192de2bbc9779a824))
+
 ## 0.1.0 (2026-10-16)
 
 
