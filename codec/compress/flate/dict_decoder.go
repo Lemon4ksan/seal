@@ -211,7 +211,7 @@ func (dd *dictDecoder) tryWriteCopy(dist, length int) int {
 	if dist == 2 {
 		v := endian.Load16(dd.hist, srcPos)
 		for dstPos+2 <= endPos {
-			endian.Store16(dd.hist[dstPos:], v)
+			endian.Store16(dd.hist, dstPos, v)
 			dstPos += 2
 		}
 		if dstPos < endPos {
@@ -225,7 +225,7 @@ func (dd *dictDecoder) tryWriteCopy(dist, length int) int {
 	if dist == 4 {
 		v := endian.Load32(dd.hist, srcPos)
 		for dstPos+4 <= endPos {
-			endian.Store32(dd.hist[dstPos:], v)
+			endian.Store32(dd.hist, dstPos, v)
 			dstPos += 4
 		}
 		for dstPos < endPos {
