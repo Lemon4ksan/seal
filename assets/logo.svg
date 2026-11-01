@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <radialGradient id="seal-glow" cx="32" cy="32" r="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FBBF24" stop-opacity="0.24"/>
+      <stop offset="55%" stop-color="#FB7185" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#4F46E5" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="eon-facet-tl" x1="21.5" y1="17" x2="34" y2="29" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFBEB"/>
+      <stop offset="45%" stop-color="#FDE047"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="eon-facet-tr" x1="34" y1="17" x2="46.5" y2="29" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="50%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#EA580C"/>
+    </linearGradient>
+    <linearGradient id="eon-facet-bl" x1="21.5" y1="29" x2="34" y2="41.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="55%" stop-color="#EA580C"/>
+      <stop offset="100%" stop-color="#BE123C"/>
+    </linearGradient>
+    <linearGradient id="eon-facet-br" x1="34" y1="29" x2="46.5" y2="41.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#EA580C"/>
+      <stop offset="50%" stop-color="#E11D48"/>
+      <stop offset="100%" stop-color="#881337"/>
+    </linearGradient>
+    <linearGradient id="eon-table" x1="27.5" y1="22.5" x2="40.5" y2="35.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFBEB"/>
+      <stop offset="45%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+
+    <linearGradient id="eon-shell" x1="35" y1="9" x2="54" y2="47" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FEF08A"/>
+      <stop offset="45%" stop-color="#FB923C"/>
+      <stop offset="100%" stop-color="#E11D48"/>
+    </linearGradient>
+
+    <linearGradient id="seal-body-lit" x1="9" y1="10" x2="38" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFF7ED"/>
+      <stop offset="35%" stop-color="#FDBA74"/>
+      <stop offset="75%" stop-color="#FB7185"/>
+      <stop offset="100%" stop-color="#9F1239"/>
+    </linearGradient>
+
+    <linearGradient id="seal-body-shade" x1="18" y1="13" x2="42" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FB923C"/>
+      <stop offset="48%" stop-color="#E11D48"/>
+      <stop offset="100%" stop-color="#4C0519"/>
+    </linearGradient>
+
+    <linearGradient id="seal-flipper-tip" x1="17.5" y1="29.5" x2="29.8" y2="36.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FCA582" stop-opacity="0"/>
+      <stop offset="55%" stop-color="#F97316" stop-opacity="0.92"/>
+      <stop offset="100%" stop-color="#BE123C" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="32" cy="32" r="28" fill="url(#seal-glow)"/>
+
+  <path d="M 36.2 9.2
+           C 49.8 10.8, 58.2 22.5, 55.2 36.2
+           C 54.0 41.2, 51.2 44.8, 47.5 46.8
+           C 49.4 43.2, 50.6 39.2, 51.2 34.8
+           C 52.5 23.2, 45.4 13.8, 35.8 11.8
+           C 34.4 11.5, 34.8 9.0, 36.2 9.2 Z" fill="url(#eon-shell)"/>
+
+  <polygon points="34.0,16.5 21.5,29.0 34.5,29.5 34.0,22.0" fill="url(#eon-facet-tl)"/>
+  <polygon points="34.0,16.5 33.5,29.5 46.5,29.0" fill="url(#eon-facet-tr)"/>
+  <polygon points="21.5,29.0 34.5,28.5 34.0,41.5" fill="url(#eon-facet-bl)"/>
+  <polygon points="33.5,28.5 46.5,29.0 34.0,41.5" fill="url(#eon-facet-br)"/>
+  <polygon points="34.0,22.0 41.0,29.0 34.0,36.0 27.0,29.0" fill="url(#eon-table)"/>
+
+  <path d="M 27.5 11.5
+           C 30.8 11.6, 32.8 12.6, 32.2 14.4
+           C 31.2 16.8, 27.5 18.2, 24.5 20.5
+           C 19.2 24.8, 19.2 35.2, 25.2 41.0
+           C 30.2 45.8, 37.5 46.8, 43.5 45.2
+           C 45.2 44.8, 46.2 46.2, 44.5 48.2
+           C 42.8 50.2, 40.2 51.2, 37.8 51.5
+           C 39.8 53.0, 39.2 55.4, 36.5 56.0
+           C 31.5 56.8, 25.5 54.5, 22.0 50.8
+           C 14.5 43.5, 11.0 31.5, 16.0 16.5
+           C 18.5 12.0, 23.5 11.3, 27.5 11.5 Z" fill="url(#seal-body-shade)"/>
+
+  <path d="M 19.5 10.2
+           C 22.8 9.7, 25.5 11.3, 28.8 11.5
+           C 31.0 11.6, 32.3 12.1, 32.1 13.3
+           C 31.7 14.9, 27.8 16.0, 24.0 17.5
+           C 18.5 19.8, 14.8 25.5, 15.2 33.5
+           C 15.6 41.2, 21.2 48.2, 29.5 50.8
+           C 33.2 52.0, 36.0 52.0, 37.8 51.5
+           C 30.8 54.8, 19.8 53.5, 12.6 46.8
+           C 5.0 39.8, 5.0 24.5, 12.2 14.8
+           C 14.2 12.2, 16.8 10.6, 19.5 10.2 Z" fill="url(#seal-body-lit)"/>
+
+  <path d="M 19.0 21.1
+           C 15.8 25.0, 17.5 27.5, 21.5 28.8
+           C 26.5 30.4, 30.4 33.2, 29.6 36.4
+           C 28.8 39.2, 23.8 39.6, 18.8 37.8
+           C 15.2 36.5, 12.8 33.8, 12.2 29.8
+           C 11.6 25.5, 15.5 22.0, 19.0 21.1 Z" fill="url(#seal-body-lit)"/>
+
+  <path d="M 19.0 21.1
+           C 15.8 25.0, 17.5 27.5, 21.5 28.8
+           C 26.5 30.4, 30.4 33.2, 29.6 36.4
+           C 28.8 39.2, 23.8 39.6, 18.8 37.8
+           C 15.2 36.5, 12.8 33.8, 12.2 29.8
+           C 11.6 25.5, 15.5 22.0, 19.0 21.1 Z" fill="url(#seal-flipper-tip)"/>
+</svg>

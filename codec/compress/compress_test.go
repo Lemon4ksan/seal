@@ -561,7 +561,7 @@ func TestLZMA2RoundTrip(t *testing.T) {
 func TestLZMA2Scoped(t *testing.T) {
 	t.Parallel()
 
-	scope := borrow.NewScope()
+	scope := borrow.AcquireScope()
 	defer scope.Release()
 
 	payload := []byte(strings.Repeat("Seal Scoped LZMA2 zero allocation borrow testing. ", 50))
@@ -603,7 +603,7 @@ func TestLZ4RoundTrip(t *testing.T) {
 func TestLZ4Scoped(t *testing.T) {
 	t.Parallel()
 
-	scope := borrow.NewScope()
+	scope := borrow.AcquireScope()
 	defer scope.Release()
 
 	payload := []byte(strings.Repeat("Zero allocation scoped LZ4 compression for FastMount profile. ", 100))

@@ -1,102 +1,93 @@
-<div align="center">
+<img src="assets/logo.svg" align="right" width="128" height="128" alt="seal logo" />
 
 # seal
 
-### High-Throughput Fault-Tolerant Archiving & Container Format for Go 1.27+
-
-_«Entropy destroys all data — let **eon** preserve reality for eternity.»_
+_«Entropy destroys all data — let eon preserve reality for eternity»_
 
 [![Go Version](https://img.shields.io/badge/go-1.27%2B-007d9c?logo=go&logoColor=white&style=flat-square)](https://go.dev/)
 [![Go Reference](https://img.shields.io/badge/godoc-reference-007d9c?style=flat-square)](https://pkg.go.dev/github.com/lemon4ksan/seal)
+[![Architecture](https://img.shields.io/badge/arch-EON%20%7C%20Reed--Solomon%20%7C%20LBA-0d9488?style=flat-square)](#rules)
+[![Ecosystem](https://img.shields.io/badge/ecosystem-foundation%20%7C%20ctrl-0284c7?style=flat-square)](https://github.com/lemon4ksan/foundation)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
-[![Zero-Alloc](https://img.shields.io/badge/memory-0%20B%2Fop%20%7C%200%20allocs-brightgreen?style=flat-square)](#-performance--benchmarks)
-[![Deterministic RAM](https://img.shields.io/badge/ram%20ceiling-%E2%89%A4%2032%20MB-blueviolet?style=flat-square)](docs/EON_SPEC.md)
-[![Self-Healing](https://img.shields.io/badge/resilience-GF(2%5E8)%20Reed--Solomon-orange?style=flat-square)](docs/EON_SPEC.md)
-[![Security](https://img.shields.io/badge/security-Zip%20Slip%20%26%20Bomb%20Proof-success?style=flat-square)](#security-by-default)
 
-**seal** is a high-performance, zero-allocation archive engine and container format implementation for Go 1.27+. It powers the **EON (`.eon`)** container format — featuring Cauchy Reed-Solomon erasure coding for self-healing, $O(1)$ LBA page seeking, sub-chunk micro-framing (down to $\le 64$ KB RAM), phase-based temporal tiering, and single-instance deduplication.
+**[English](README.md)** | **[Русский](README_RU.md)** | **[EON Format Specification](docs/EON_SPEC.md)**
 
-#### English • [Русский](README_RU.md) • [EON Format Specification](docs/EON_SPEC.md) • [Architecture Concept](archive) • [Virtual Filesystem](vfs)
+Fault-tolerant archive engine and container format implementation for Go 1.27+. Powers the **EON (`.eon`)** container format alongside `.7z`, `.zip`, `.tar`, and `.zst`, combining Cauchy Reed-Solomon erasure coding over $GF(2^8)$, $O(1)$ LBA page seeking, deterministic $\le 32\text{ MB}$ RAM ceilings, and BLAKE3-256 single-instance deduplication.
 
-</div>
+## Design tradeoffs
 
-## Key Architectural Guarantees
+| `archive/zip` / `archive/tar` / monolithic `.7z` | What `seal` (`.eon`) does instead | What you pay |
+| :--- | :--- | :--- |
+| `.tar.gz` and solid `.7z` archives require linear scanning or decompressing gigabytes to read a single file | Stores a 32-byte Footer and Compressed Table of Contents (`CTOC`) with $2^{\text{BlockSizeShift}}$ (4 KB) LBA alignment for $<2\text{ ms}$ $O(1)$ random access and `mmap` | 4 KB LBA block alignment introduces small padding gaps between independent solid chunks |
+| Large solid LZMA2 dictionaries can consume $1\text{–}4\text{ GB}$ of RAM during extraction, triggering `OOMKilled` in containers | Partitions payloads into independent solid chunks bounded at $\le 32\text{ MB}$ uncompressed (with sub-chunk micro-framing down to $\le 64\text{ KB}$) | Bounding solid chunks to 32 MB trades ~1–2% compression ratio on multi-gigabyte homogeneous inputs compared to unbounded monolithic dictionaries |
+| Single flipped bit or bad sector corrupts the entire compressed stream | Computes Cauchy Reed-Solomon recovery blocks over $GF(2^8)$ and verifies extents via a BLAKE3-256 Merkle tree | Self-healing parity shards add configurable storage and CPU encoding overhead when enabled |
+| Standard library extractors trust archive paths and uncompressed size headers | Enforces active Zip Slip path normalization and decompression bomb expansion guards by default | Non-canonical paths escaping the target root (`../`) are rejected unless explicitly remapped via VFS |
 
-* **Instant Cold Starts ($O(1)$ LBA Seeking):** Mount container filesystems and read single files in under **2 milliseconds** via 32-byte Footer indices without full archive extraction.
-* **Deterministic Memory Ceiling ($\le 32$ MB RAM):** Payloads are partitioned into independent solid chunks of at most 32 MB uncompressed bytes. Eliminates `OOMKilled` crashes under strict Kubernetes/cgroup quotas.
-* **Self-Healing Media Resilience:** Integrated Cauchy Reed-Solomon erasure coding over $GF(2^8)$ mathematically reconstructs damaged or corrupted blocks on decaying media.
-* **Single-Instance Storage (Deduplication):** Redundant files (verified via BLAKE3-256) reference existing chunk extents at **0 bytes** extra storage and 0 CPU re-compression cost.
-* **Configurable Logical Block Addressing (LBA):** Disk offsets align to $2^{\text{BlockSizeShift}}$ (default: 4096 bytes / 4 KB), enabling zero-copy `mmap`, `io_uring`, and `splice()` operations.
-* **Zero-Alloc In-Memory VFS:** Build, mutate, sort, and mount virtual archives directly in RAM as standard `io/fs.FS` filesystems.
-* **Safe by Default:** Built-in validation against Zip Slip (`../` path traversal) and decompression bomb attacks.
+## Rules
+
+1. **Deterministic memory ceiling.** Archive packing and extraction never exceed the configured chunk ceiling ($\le 32\text{ MB}$ RAM by default), preventing unbounded heap growth on untrusted archives.
+2. **Zero-allocation steady-state streaming.** Block readers, checksum verifiers, and VFS iterators reuse pooled buffers (`0 B/op` on 64 KB streaming turns).
+3. **Safe extraction by default.** Every extraction path validates relative paths against Zip Slip (`../`), symlink escapes, and decompression bomb amplification ratios before touching the host filesystem.
+4. **Content-addressed deduplication.** Identical file payloads (matched by BLAKE3-256) reference existing chunk extents at zero additional storage or re-compression cost.
+
+## Layout
+
+- [`seal` (root)](.) — High-level `Compress`, `Extract`, `ReadFile`, generic `ReadTo[T]`, `Verify`, `Tree`, `NewArchive`, and typed error predicates (`IsNotFound`, `IsZipSlip`, `IsCorrupted`).
+- [`archive`](archive) — Multi-format container codecs (`EON`, `7z` / `LZMA2`, `ZIP`, `TAR`), Cauchy Reed-Solomon $GF(2^8)$ recovery, BLAKE3-256 integrity trees, Ed25519 TLV signatures, and XChaCha20-Poly1305 / AES-256-GCM encryption.
+- [`vfs`](vfs) — In-memory virtual filesystem implementing `io/fs.FS` for constructing, mutating, sorting, and streaming archives without intermediate disk files.
+- [`cmd/seal`](cmd/seal) — Standalone CLI utility built on [`ctrl`](https://github.com/lemon4ksan/ctrl) (`create`, `extract`, `list`, `cat`, `test`, `tree`).
+- [`docs/EON_SPEC.md`](docs/EON_SPEC.md) — Binary wire layout, LBA alignment, CTOC, and erasure coding specification for `.eon`.
 
 ## Installation
-
-`seal` requires Go version `1.27` or higher.
 
 ```bash
 go get github.com/lemon4ksan/seal
 ```
 
-## Quickstart
+## Usage
 
-### 1. One-Line Packing & Extraction
+### Packing, Safe Extraction & $O(1)$ Random File Read
 
 ```go
 package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/lemon4ksan/seal"
 )
 
+type AppConfig struct {
+	Port int `json:"port"`
+}
+
 func main() {
 	ctx := context.Background()
 
-	// Pack a directory into an optimized archive (.eon, .zip, .tar.gz, .7z auto-detected from extension)
+	// Pack directory (.eon, .zip, .tar.gz, .7z inferred from extension)
 	if err := seal.Compress(ctx, "./dist", "release.eon"); err != nil {
 		log.Fatal(err)
 	}
 
-	// Safe extract (Zip Slip & Decompression Bomb shields active by default)
+	// Read and unmarshal a single file in O(1) time without full extraction
+	cfg, err := seal.ReadTo[AppConfig](ctx, "release.eon", "configs/app.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Port: %d\n", cfg.Port)
+
+	// Extract with active Zip Slip and decompression bomb protection
 	if err := seal.Extract(ctx, "release.eon", "./output"); err != nil {
 		log.Fatal(err)
 	}
 }
 ```
 
-### 2. High-Speed Targeted File Access ($O(1)$ Seek)
-
-Read targeted files from huge archives without decompressing the entire file:
+### In-Memory Virtual Archive (`vfs` / `io/fs.FS`)
 
 ```go
-ctx := context.Background()
-
-// Read a single configuration file directly into memory in <2ms
-data, err := seal.ReadFile(ctx, "bundle.eon", "configs/app.json")
-if err != nil {
-	log.Fatal(err)
-}
-
-// Or unmarshal JSON directly into a struct with generics
-cfg, err := seal.ReadTo[AppConfig](ctx, "bundle.eon", "configs/app.json")
-
-// Verify payload integrity across all entries
-err = seal.Verify(ctx, "bundle.eon")
-
-// Render an ASCII hierarchy tree of the archive
-tree, _ := seal.Tree(ctx, "bundle.eon")
-fmt.Println(tree)
-```
-
-## In-Memory Virtual Archives (VFS Builder)
-
-Construct, mutate, encrypt, and stream archives entirely in RAM without hitting the disk:
-
-```go
-// Create a virtual archive with WinZip AES-256 encryption
 archive := seal.NewArchive(
 	seal.WithContainer(container.Zip),
 	seal.WithCompression(seal.Deflate, 9),
@@ -104,116 +95,42 @@ archive := seal.NewArchive(
 	seal.WithSortStrategy(seal.SortNameAsc),
 )
 
-// Add byte slices, strings, or lazy streams
 archive.AddBytes([]byte(`{"status":"ok"}`), "meta/health.json")
 archive.AddString("v1.0.0", "VERSION")
-archive.AddLazy("dump.sql", func() (io.ReadCloser, error) {
-	return os.Open("/var/dump.sql")
-})
-
-// Mount standard Go embed filesystems
-archive.AddFS(embeddedAssets)
-
-// Mutate virtual hierarchy
 archive.Rename("meta/health.json", "status.json")
 
-// Use directly as an io/fs.FS filesystem
-file, err := archive.Open("status.json")
-
-// Stream compressed output directly to HTTP response or disk
-_, err = archive.WriteTo(ctx, w)
+// Mount directly as a standard Go io/fs.FS or stream to an io.Writer
+file, _ := archive.Open("status.json")
+defer file.Close()
 ```
 
-## Feature & Format Matrix
-
-| Feature / Capability | Go `archive/zip` | Go `archive/tar` | 7-Zip (.7z) | OCI Layer (`.tar.gz`) | **EON (`.eon`)** |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Instant Random Access ($O(1)$)** | ✓ (Slow tables) | ✗ (Full scan) | ✗ (Monolithic solid) | ✗ (Full scan) | **✓ (Footer + CTOC)** |
-| **Deterministic RAM Ceiling** | ✗ (Unbounded) | ✗ (Unbounded) | ✗ (Up to 4+ GB) | ✗ (Unbounded) | **✓ (Strictly $\le$ 32 MB)** |
-| **Zero-Copy Memory Pages (`mmap`)** | ✗ (Unaligned) | ✗ (Stream only) | ✗ (Unaligned) | ✗ (Stream only) | **✓ (4KB Block Alignment)** |
-| **Self-Healing Bit-Rot Recovery** | ✗ | ✗ | ✗ | ✗ | **✓ (Cauchy RS $GF(2^8)$)** |
-| **Cryptographic Integrity** | ⚠️ (CRC32 only) | ✗ | ⚠️ (CRC32/SHA256) | ⚠️ (SHA256 per layer) | **✓ (BLAKE3-256 Tree)** |
-| **Single-Instance Deduplication** | ✗ | ✗ | ⚠️ (LZMA window only) | ✗ | **✓ (WIM-Grade BLAKE3)** |
-| **Digital Signatures** | ✗ | ✗ | ✗ | ⚠️ (Cosign detached) | **✓ (Native Ed25519 TLV)** |
-| **Kernel Zip-Slip Shield** | ✗ (Vulnerable) | ✗ (Vulnerable) | ⚠️ (Tool-dependent) | ✗ (Vulnerable) | **✓ (Built-in Active Shield)** |
-
-## ⚡ Performance & Benchmarks
-
-### 1. 7-Zip (.7z / LZMA2) vs Official 7-Zip CLI (C/C++)
-Benchmarked on 12-thread AMD64 (Go 1.27) with a real-world multi-file project dataset (Go source code, binaries, JSON):
-
-| Compression Level | Metric | `seal` (Pure Go + SIMD) | 7-Zip Official (C/C++) | Speedup |
-| :--- | :--- | :---: | :---: | :---: |
-| **Level 1** *(Fastest)* | Compression (12 Threads) | **56 ms** (136.1 MB/s) | 147 ms (51.7 MB/s) | **⚡ 2.6x Faster** |
-| | Decompression (12 Threads) | **34 ms** (227.6 MB/s) | 105 ms (72.7 MB/s) | **⚡ 3.1x Faster** |
-| | Ratio / Size | 22.1% (1.72 MB) | 20.1% (1.57 MB) | Δ 2.0% |
-| **Level 5** *(Normal)* | Compression (12 Threads) | **48 ms** (158.3 MB/s) | 415 ms (18.4 MB/s) | **⚡ 8.6x Faster** |
-| | Decompression (12 Threads) | **39 ms** (194.2 MB/s) | 109 ms (69.9 MB/s) | **⚡ 2.8x Faster** |
-| | Ratio / Size | 22.1% (1.72 MB) | 21.0% (1.63 MB) | Δ 1.1% |
-| **Level 9** *(Ultra)* | Compression (12 Threads) | **66 ms** (116.1 MB/s) | 918 ms (8.3 MB/s) | **⚡ 13.9x Faster** |
-| | Decompression (12 Threads) | **32 ms** (240.2 MB/s) | 165 ms (46.1 MB/s) | **⚡ 5.2x Faster** |
-| | Ratio / Size | 22.0% (1.72 MB) | 20.7% (1.61 MB) | Δ 1.3% |
-
-### 2. General Archiving Throughput (64 KB Blocks)
-
-| Engine / Substrate | Throughput | Allocations | Memory / op | Formats | Zip Slip Shield |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **`seal` (Zero-Alloc)** | **1.82 GB/s** | **0 allocs/op** | **0 B/op** | **EON / 7Z / ZIP / TAR / ZST** | **✓ (Built-in)** |
-| Go `archive/zip` | 680 MB/s | 14 allocs/op | 1,420 B/op | ZIP only | ✗ (Vulnerable) |
-| Go `archive/tar` | 710 MB/s | 12 allocs/op | 1,180 B/op | TAR only | ✗ (Vulnerable) |
-| `mholt/archiver/v4` | 520 MB/s | 38 allocs/op | 4,280 B/op | Multi | ⚠️ (Manual) |
-
-## Security by Default
-
-1. **Active Zip Slip Shield:** Automatically normalizes and verifies relative paths. Rejects any entry attempting directory escape (`../../etc/shadow`).
-2. **Decompression Bomb Guard:** Continuously monitors uncompressed expansion ratios and halts execution if nested compression bombs (e.g. `42.zip`) exceed safety bounds.
-3. **Cryptographic Signatures (Ed25519):** Native Extra Field TLV embedding for tamper-evident supply chain security.
-4. **AEAD Encryption:** Solid chunk payloads encrypted with **XChaCha20-Poly1305** or **AES-256-GCM** using deterministic nonces.
-5. **WinZip AES-256 & ZipCrypto:** Full backwards compatibility with encrypted legacy ZIP archives.
-
-## Error Handling
-
-Handle archive edge cases with built-in predicate helpers:
-
-```go
-data, err := seal.ReadFile(ctx, seal.FromFilePath("archive.eon"), "app.json")
-if err != nil {
-	switch {
-	case seal.IsNotFound(err):
-		// Entry does not exist in archive
-	case seal.IsPasswordMismatch(err):
-		// Wrong passphrase or missing encryption key
-	case seal.IsZipSlip(err):
-		// Malicious path traversal attempt detected
-	case seal.IsResourceLimit(err):
-		// Decompression bomb threshold exceeded
-	case seal.IsCorrupted(err):
-		// BLAKE3 mismatch, CRC-32 error, or truncated file frame
-	}
-}
-```
-
-## CLI Utility
-
-`seal` includes a self-contained command-line tool:
+### CLI
 
 ```bash
-# Pack a directory into a high-performance .eon container
+# Pack a directory into an .eon container
 seal create -o bundle.eon -l 9 ./dist
 
-# Inspect entries, compression ratios, and deduplicated slices
+# Inspect entries, compression ratios, and deduplicated extents
 seal list bundle.eon
 
-# Extract single entry directly to stdout in O(1) time
-seal cat bundle.eon config.json
+# Extract a single entry to stdout in O(1) time
+seal cat bundle.eon configs/app.json
 
-# Check cryptographic integrity & self-heal damaged blocks
+# Verify BLAKE3-256 tree and self-heal damaged sectors via Reed-Solomon parity
 seal test bundle.eon
-
-# Render terminal ASCII tree
-seal tree bundle.eon
 ```
 
-## 📄 License
+## Benchmarks
 
-This project is licensed under the **BSD 3-Clause License**. See the [LICENSE](LICENSE) file for details.
+Measured on 12-thread AMD64 (Go 1.27) across a multi-file source/binary dataset and 64 KB streaming blocks:
+
+| Workload | Metric | `seal` | Reference Baseline |
+| :--- | :--- | ---: | ---: |
+| `.7z` / LZMA2 Level 1 (12T) | Compress / Decompress | `136.1 MB/s` / `227.6 MB/s` | `51.7 MB/s` / `72.7 MB/s` (7-Zip CLI) |
+| `.7z` / LZMA2 Level 5 (12T) | Compress / Decompress | `158.3 MB/s` / `194.2 MB/s` | `18.4 MB/s` / `69.9 MB/s` (7-Zip CLI) |
+| `.7z` / LZMA2 Level 9 (12T) | Compress / Decompress | `116.1 MB/s` / `240.2 MB/s` | `8.3 MB/s` / `46.1 MB/s` (7-Zip CLI) |
+| 64 KB Streaming Pipeline | Throughput / Allocations | `1,820 MB/s` (`0 B/op`, `0 allocs`) | `680 MB/s` (`1,420 B/op`, `archive/zip`) |
+
+## License
+
+BSD 3-Clause License. See [LICENSE](LICENSE) for full text.
